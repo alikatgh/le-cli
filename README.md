@@ -37,7 +37,7 @@ Prebuilt binaries (macOS + Linux, amd64 + arm64) are attached to each
 tar -xzf le_*.tar.gz && sudo mv le /usr/local/bin/
 ```
 
-Homebrew (once the tap is set up — see [RELEASING.md](RELEASING.md)):
+Homebrew:
 
 ```sh
 brew install alikatgh/tap/le
