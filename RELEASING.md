@@ -38,22 +38,22 @@ class Le < Formula
   on_macos do
     on_arm do
       url "https://github.com/alikatgh/le-cli/releases/download/v0.1.0/le_0.1.0_darwin_arm64.tar.gz"
-      sha256 "REPLACE_WITH_darwin_arm64_SHA"
+      sha256 "da0953b4403bc6f65a9047125cde6b9932ef4209c874ccbce034f96bae1d6900"
     end
     on_intel do
       url "https://github.com/alikatgh/le-cli/releases/download/v0.1.0/le_0.1.0_darwin_amd64.tar.gz"
-      sha256 "REPLACE_WITH_darwin_amd64_SHA"
+      sha256 "68704cc76a205a956426724c3dd05e14a281c9336f3a6ad812082f316e56f76e"
     end
   end
 
   on_linux do
     on_arm do
       url "https://github.com/alikatgh/le-cli/releases/download/v0.1.0/le_0.1.0_linux_arm64.tar.gz"
-      sha256 "REPLACE_WITH_linux_arm64_SHA"
+      sha256 "bb54ad0ef1b8c0d5991a436965f165d64116943a3095b695afcb8a5d5a0e8954"
     end
     on_intel do
       url "https://github.com/alikatgh/le-cli/releases/download/v0.1.0/le_0.1.0_linux_amd64.tar.gz"
-      sha256 "REPLACE_WITH_linux_amd64_SHA"
+      sha256 "329dfba47131b49c8a201160a37225de1f006621ec92bdf9bac3157d6046d21c"
     end
   end
 
