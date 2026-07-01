@@ -185,6 +185,15 @@ func DockerContainerID(name string) (string, bool) {
 // is (there's no "a different thing now answers to this label" scenario for
 // brew), so this only catches the narrower case of the formula having been
 // removed between scan and stop.
+//
+// This shells out to `brew services list`, which lists every known service
+// and is measurably slower than a single-formula lookup. `brew services info
+// <formula>` looks like the obvious faster replacement, but its exit code is
+// identical (1) for "no such formula" and "formula exists but its tap is
+// untrusted" — switching would silently misreport a legitimate untrusted-tap
+// service as unknown and refuse to stop it. Kept as `list` on purpose; the
+// latency is dominated by brew's process-startup overhead either way, so the
+// single-lookup form wouldn't meaningfully help.
 func BrewServiceKnown(formula string) bool {
 	out, err := exec.Command("brew", "services", "list").Output()
 	if err != nil {

@@ -2,9 +2,10 @@ package kill
 
 import "testing"
 
-// Regression tests for the audit finding: the docker container-recycling
-// guard had zero test coverage, so a refactor that inverted its condition
-// would have silently defeated the exact protection it exists to provide.
+// TestDockerGuardOK exercises the docker container-recycling guard in
+// isolation, so a future refactor that inverts its condition (silently
+// defeating the protection it exists to provide) fails a test instead of
+// shipping.
 func TestDockerGuardOK(t *testing.T) {
 	cases := []struct {
 		name      string

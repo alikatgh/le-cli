@@ -69,8 +69,9 @@ func TestReadPSMergesBothCalls(t *testing.T) {
 // restores all-or-nothing: keep a row only if both halves landed.
 func TestDropPartialRowsRemovesCommandOnlyRow(t *testing.T) {
 	rows := map[int]psRow{}
-	parsePSCommandLines("7777 /usr/bin/node app.js", rows) // user/start call never ran for this pid
-	dropPartialRows(rows)
+	seenUser := map[int]bool{}
+	seenCommand := parsePSCommandLines("7777 /usr/bin/node app.js", rows) // user/start call never ran for this pid
+	dropPartialRows(rows, seenUser, seenCommand)
 	if _, ok := rows[7777]; ok {
 		t.Errorf("a command-only row should be dropped, got %v", rows[7777])
 	}
@@ -78,8 +79,9 @@ func TestDropPartialRowsRemovesCommandOnlyRow(t *testing.T) {
 
 func TestDropPartialRowsRemovesUserOnlyRow(t *testing.T) {
 	rows := map[int]psRow{}
-	parsePSUserLines("8888 Mon Jun 23 14:00:00 2026 root", rows) // command call never ran for this pid
-	dropPartialRows(rows)
+	seenUser := parsePSUserLines("8888 Mon Jun 23 14:00:00 2026 root", rows) // command call never ran for this pid
+	seenCommand := map[int]bool{}
+	dropPartialRows(rows, seenUser, seenCommand)
 	if _, ok := rows[8888]; ok {
 		t.Errorf("a user-only row should be dropped, got %v", rows[8888])
 	}
@@ -87,11 +89,27 @@ func TestDropPartialRowsRemovesUserOnlyRow(t *testing.T) {
 
 func TestDropPartialRowsKeepsCompleteRow(t *testing.T) {
 	rows := map[int]psRow{}
-	parsePSUserLines("42 Mon Jun 23 14:00:00 2026 jane doe", rows)
-	parsePSCommandLines("42 /usr/bin/python3 -m http.server 8000", rows)
-	dropPartialRows(rows)
+	seenUser := parsePSUserLines("42 Mon Jun 23 14:00:00 2026 jane doe", rows)
+	seenCommand := parsePSCommandLines("42 /usr/bin/python3 -m http.server 8000", rows)
+	dropPartialRows(rows, seenUser, seenCommand)
 	if _, ok := rows[42]; !ok {
 		t.Error("a fully-populated row should survive dropPartialRows")
+	}
+}
+
+// dropPartialRows used to infer "did this ps call report on this pid" from
+// whether the resulting field was a non-empty string. That conflates "the
+// call never saw this pid" with "the call saw this pid and its free-form
+// field is legitimately empty" (e.g. a zombie with no argv, per
+// TestParsePSCommandLinesEmptyCommand) — the latter would be dropped even
+// though both calls actually succeeded. Track membership instead.
+func TestDropPartialRowsKeepsRowWithLegitimatelyEmptyCommand(t *testing.T) {
+	rows := map[int]psRow{}
+	seenUser := parsePSUserLines("5555 Mon Jun 23 14:00:00 2026 root", rows)
+	seenCommand := parsePSCommandLines("5555", rows) // ps saw the pid but had no argv to report
+	dropPartialRows(rows, seenUser, seenCommand)
+	if _, ok := rows[5555]; !ok {
+		t.Error("a row both ps calls actually reported on should survive even if one field is legitimately empty")
 	}
 }
 

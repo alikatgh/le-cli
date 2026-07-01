@@ -107,6 +107,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case scannedMsg:
+		// Multiple scans can be in flight at once (tick, manual "r"
+		// refresh, and the post-stop refresh in stopResultMsg below all
+		// fire scanCmd() independently), and each stamps "at" only when
+		// IT finishes — Bubble Tea delivers messages in whatever order
+		// their goroutines happen to complete, which is not guaranteed
+		// to match the order the scans started or the order their
+		// timestamps would sort in. Applying an older result after a
+		// newer one has already landed would roll the table back to
+		// stale data, so drop anything not at least as recent as what's
+		// currently displayed.
+		if msg.at.Before(m.lastScan) {
+			return m, nil
+		}
 		m.all = msg.rows
 		m.loading = false
 		m.lastScan = msg.at
@@ -518,15 +531,27 @@ func truncate(s string, n int) string {
 	if n <= 1 {
 		return "…"
 	}
-	// Rune-based, not byte-based: the width check above is correct, but
-	// slicing by byte index can still cut a multi-byte UTF-8 character in
-	// half, producing invalid UTF-8 regardless of how the width compared.
-	r := []rune(s)
-	upTo := n - 1
-	if upTo > len(r) {
-		upTo = len(r)
+	// Accumulate by DISPLAY WIDTH, not rune count. A prior version of this
+	// fix switched from byte-slicing to rune-slicing to stop cutting
+	// multi-byte UTF-8 characters in half — that fixed the invalid-UTF-8
+	// crash risk, but a wide rune (CJK, some emoji) still costs 2 terminal
+	// columns while "costing" only 1 against a rune-count budget, so the
+	// result could still overflow the caller's column budget by up to ~2x
+	// (verified: a CJK container/directory name truncated to a rune count
+	// of 8 rendered at 15 display columns). Walk runes one at a time,
+	// tracking cumulative lipgloss.Width, so the output never exceeds n.
+	var b strings.Builder
+	width := 0
+	budget := n - 1 // reserve 1 column for the ellipsis, itself 1 column wide
+	for _, r := range s {
+		rw := lipgloss.Width(string(r))
+		if width+rw > budget {
+			break
+		}
+		b.WriteRune(r)
+		width += rw
 	}
-	return string(r[:upTo]) + "…"
+	return b.String() + "…"
 }
 
 func orDash(s string) string {

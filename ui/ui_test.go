@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/alikatgh/le-cli/intel"
 	"github.com/alikatgh/le-cli/scan"
@@ -108,6 +109,69 @@ func TestEmptyAndLoadingRender(t *testing.T) {
 	m, _ = m.Update(scannedMsg{rows: nil, at: time.Now()})
 	if v := m.(model).View(); v == "" {
 		t.Fatal("empty-state view should not be blank")
+	}
+}
+
+func TestTruncate(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		n    int
+		want string
+	}{
+		{"short string unchanged", "node", 10, "node"},
+		{"exact width fits", "node", 4, "node"},
+		{"ascii clipped to budget", "hello world", 8, "hello w…"},
+		{"n<1 returns empty", "anything", 0, ""},
+		{"n==1 returns just ellipsis", "anything", 1, "…"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := truncate(c.in, c.n); got != c.want {
+				t.Errorf("truncate(%q, %d) = %q, want %q", c.in, c.n, got, c.want)
+			}
+		})
+	}
+}
+
+// A prior fix made truncate rune-safe (no more slicing a multi-byte UTF-8
+// character in half) but still bounded the cut by RUNE COUNT, not display
+// width. A wide rune (CJK, some emoji) costs 2 terminal columns, so a
+// Unicode container/directory name could render at roughly 2x the caller's
+// column budget despite passing the rune-count check.
+func TestTruncateRespectsDisplayWidthForWideRunes(t *testing.T) {
+	in := "日本語のコンテナ名前" // 10 runes, each 2 columns wide = 20 columns
+	got := truncate(in, 8)
+	if w := lipgloss.Width(got); w > 8 {
+		t.Fatalf("truncate(%q, 8) = %q, display width %d, want <= 8", in, got, w)
+	}
+	if want := "日本語…"; got != want {
+		t.Errorf("truncate(%q, 8) = %q, want %q", in, got, want)
+	}
+}
+
+// Regression test: scanCmd() can have multiple scans in flight at once (tick,
+// manual refresh, post-stop refresh), and Bubble Tea delivers their results
+// in completion order, not start order — so an older scan can land after a
+// newer one already has. Applying it must not roll the table back.
+func TestScannedMsgIgnoresStaleResult(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	newer := time.Now()
+	older := newer.Add(-time.Minute)
+
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: newer})
+	if got := len(m.(model).all); got != 3 {
+		t.Fatalf("after newer scan: %d rows, want 3", got)
+	}
+
+	m, _ = m.Update(scannedMsg{rows: nil, at: older})
+	if got := len(m.(model).all); got != 3 {
+		t.Fatalf("after stale scan: %d rows, want 3 (stale result should be dropped)", got)
+	}
+	if !m.(model).lastScan.Equal(newer) {
+		t.Fatalf("lastScan = %v, want unchanged at %v", m.(model).lastScan, newer)
 	}
 }
 

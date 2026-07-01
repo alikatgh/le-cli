@@ -68,8 +68,7 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 // dockerGuardOK is the exact comparison the container-recycling guard rests
 // on, pulled out as a pure function so a future refactor that inverts it
 // (silently defeating the protection this exists to provide) has something to
-// catch it — the audit that found the original gap noted this logic had zero
-// test coverage.
+// catch it.
 func dockerGuardOK(scanArgID, curID string, lookupOK bool) bool {
 	if scanArgID == "" {
 		return true // nothing was captured at scan time to compare against

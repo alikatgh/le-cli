@@ -148,9 +148,9 @@ func readPS(csv string) map[int]psRow {
 	wg.Wait()
 
 	rows := map[int]psRow{}
-	parsePSUserLines(out1, rows)
-	parsePSCommandLines(out2, rows)
-	dropPartialRows(rows)
+	seenUser := parsePSUserLines(out1, rows)
+	seenCommand := parsePSCommandLines(out2, rows)
+	dropPartialRows(rows, seenUser, seenCommand)
 	return rows
 }
 
@@ -164,17 +164,23 @@ func readPS(csv string) map[int]psRow {
 // the half it did capture) restores the original "have everything or have
 // nothing for this PID" guarantee; Scan() already has a fallback (lsof's
 // short command name) for a PID readPS has no data for at all.
-func dropPartialRows(rows map[int]psRow) {
-	for pid, r := range rows {
-		haveUser := r.start != "" || r.user != ""
-		haveCommand := r.command != ""
-		if haveUser != haveCommand {
+//
+// seenUser/seenCommand record which PIDs each ps call actually produced a
+// line for — membership, not field emptiness. A PID a call SAW but whose
+// free-form field (user, or command) is legitimately empty is still
+// "complete"; inferring completeness from the field's string value alone
+// conflated that case with a PID a call never saw at all, and dropped a row
+// it should have kept.
+func dropPartialRows(rows map[int]psRow, seenUser, seenCommand map[int]bool) {
+	for pid := range rows {
+		if seenUser[pid] != seenCommand[pid] {
 			delete(rows, pid)
 		}
 	}
 }
 
-func parsePSUserLines(out string, rows map[int]psRow) {
+func parsePSUserLines(out string, rows map[int]psRow) map[int]bool {
+	seen := map[int]bool{}
 	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 7 { // pid + 5 lstart tokens + at least one user token
@@ -188,10 +194,13 @@ func parsePSUserLines(out string, rows map[int]psRow) {
 		r.start = strings.Join(fields[1:6], " ")
 		r.user = strings.Join(fields[6:], " ")
 		rows[pid] = r
+		seen[pid] = true
 	}
+	return seen
 }
 
-func parsePSCommandLines(out string, rows map[int]psRow) {
+func parsePSCommandLines(out string, rows map[int]psRow) map[int]bool {
+	seen := map[int]bool{}
 	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 1 {
@@ -206,7 +215,9 @@ func parsePSCommandLines(out string, rows map[int]psRow) {
 			r.command = strings.Join(fields[1:], " ")
 		}
 		rows[pid] = r
+		seen[pid] = true
 	}
+	return seen
 }
 
 // readCwd maps PID -> working directory via lsof's cwd file descriptor.
