@@ -61,6 +61,40 @@ func TestReadPSMergesBothCalls(t *testing.T) {
 	}
 }
 
+// Regression test for the sweep finding: readPS's two independent ps calls
+// removed the old single-call code's atomicity — a PID captured by only one
+// of the two calls (a transient per-call hiccup) used to ship a row pairing a
+// real CommandLine with an empty StartTime, silently steering kill.Stop's
+// stillSame() onto its weaker fallback for that listener. dropPartialRows
+// restores all-or-nothing: keep a row only if both halves landed.
+func TestDropPartialRowsRemovesCommandOnlyRow(t *testing.T) {
+	rows := map[int]psRow{}
+	parsePSCommandLines("7777 /usr/bin/node app.js", rows) // user/start call never ran for this pid
+	dropPartialRows(rows)
+	if _, ok := rows[7777]; ok {
+		t.Errorf("a command-only row should be dropped, got %v", rows[7777])
+	}
+}
+
+func TestDropPartialRowsRemovesUserOnlyRow(t *testing.T) {
+	rows := map[int]psRow{}
+	parsePSUserLines("8888 Mon Jun 23 14:00:00 2026 root", rows) // command call never ran for this pid
+	dropPartialRows(rows)
+	if _, ok := rows[8888]; ok {
+		t.Errorf("a user-only row should be dropped, got %v", rows[8888])
+	}
+}
+
+func TestDropPartialRowsKeepsCompleteRow(t *testing.T) {
+	rows := map[int]psRow{}
+	parsePSUserLines("42 Mon Jun 23 14:00:00 2026 jane doe", rows)
+	parsePSCommandLines("42 /usr/bin/python3 -m http.server 8000", rows)
+	dropPartialRows(rows)
+	if _, ok := rows[42]; !ok {
+		t.Error("a fully-populated row should survive dropPartialRows")
+	}
+}
+
 func TestPortOfHandlesIPv6AndWildcards(t *testing.T) {
 	cases := map[string]string{
 		"127.0.0.1:3000":     "3000",

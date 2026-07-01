@@ -55,21 +55,24 @@ const (
 	StopAvoid  StopKind = "avoid"  // no safe automatic action
 )
 
-// Profile is everything the UI needs to render and act on a listener.
+// Profile is everything the UI needs to render and act on a listener. Tagged
+// to match scan.Listener's lowerCamelCase `le list --json` convention — a
+// script written against `.profile.stopArgID` shouldn't have to special-case
+// this one nested object as PascalCase.
 type Profile struct {
-	Identity   string
-	Kind       Kind
-	Source     Source
-	Confidence int
-	Risk       Risk
-	StopKind   StopKind
-	StopArg    string // brew formula or container name
-	StopArgID  string // container short ID, re-verified before stopping (StopDocker only)
-	StopLabel  string // human description of the stop action
-	Restart    string
-	Note       string
-	Warning    string
-	Explain    string
+	Identity   string   `json:"identity"`
+	Kind       Kind     `json:"kind"`
+	Source     Source   `json:"source"`
+	Confidence int      `json:"confidence"`
+	Risk       Risk     `json:"risk"`
+	StopKind   StopKind `json:"stopKind"`
+	StopArg    string   `json:"stopArg"`   // brew formula or container name
+	StopArgID  string   `json:"stopArgID"` // container short ID, re-verified before stopping (StopDocker only)
+	StopLabel  string   `json:"stopLabel"` // human description of the stop action
+	Restart    string   `json:"restart"`
+	Note       string   `json:"note"`
+	Warning    string   `json:"warning"`
+	Explain    string   `json:"explain"`
 }
 
 // dockerContainer identifies a container by both the name used in
@@ -159,7 +162,11 @@ func parseDockerPorts(out string) map[string]dockerContainer {
 // same container it did at scan time — container names, unlike PIDs, can be
 // freed and reassigned to a completely different container.
 func DockerContainerID(name string) (string, bool) {
-	out, err := exec.Command("docker", "ps", "--filter", "name=^"+name+"$", "--format", "{{.ID}}").Output()
+	// Docker's --filter name= value is regex-matched, not literal — a name
+	// containing a regex metacharacter (".", "+", "*"... all legal in Docker
+	// container names, and routine in docker-compose-generated names) would
+	// otherwise match a differently-named container too. Escape it.
+	out, err := exec.Command("docker", "ps", "--filter", "name=^"+regexp.QuoteMeta(name)+"$", "--format", "{{.ID}}").Output()
 	if err != nil {
 		return "", false
 	}
@@ -168,6 +175,30 @@ func DockerContainerID(name string) (string, bool) {
 		return "", false // none, or ambiguous — don't guess
 	}
 	return id, true
+}
+
+// BrewServiceKnown reports whether brew currently lists the given formula at
+// all (started, stopped, error — any state). kill.Stop calls this immediately
+// before `brew services stop`, in the same spirit as DockerContainerID's
+// re-verification, though the underlying risk differs: a brew formula name
+// isn't reassignable to a different service the way a Docker container name
+// is (there's no "a different thing now answers to this label" scenario for
+// brew), so this only catches the narrower case of the formula having been
+// removed between scan and stop.
+func BrewServiceKnown(formula string) bool {
+	out, err := exec.Command("brew", "services", "list").Output()
+	if err != nil {
+		return true // brew itself unusable — don't block the stop attempt on this check
+	}
+	for i, line := range strings.Split(string(out), "\n") {
+		if i == 0 || strings.TrimSpace(line) == "" {
+			continue // header / blank
+		}
+		if strings.Fields(line)[0] == formula {
+			return true
+		}
+	}
+	return false
 }
 
 // Make is the port of ProcessProfile.make + ProcessSource.make.

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Listener is one process holding one or more localhost ports.
@@ -80,8 +81,16 @@ func Scan() ([]Listener, error) {
 		pids = append(pids, strconv.Itoa(p))
 	}
 	csv := strings.Join(pids, ",")
-	psInfo := readPS(csv)
-	cwds := readCwd(csv)
+	// readPS and readCwd are independent subprocess calls (ps vs lsof) with
+	// no data dependency on each other — run them concurrently so their
+	// blocking I/O waits overlap instead of summing.
+	var psInfo map[int]psRow
+	var cwds map[int]string
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); psInfo = readPS(csv) }()
+	go func() { defer wg.Done(); cwds = readCwd(csv) }()
+	wg.Wait()
 
 	listeners := make([]Listener, 0, len(order))
 	for _, pid := range order {
@@ -127,12 +136,42 @@ type psRow struct {
 // field after it. Putting each variable field last in its own call makes it
 // unambiguously "everything remaining on the line," however many words long.
 func readPS(csv string) map[int]psRow {
+	// The two ps calls are independent subprocess invocations — run them
+	// concurrently. Each writes only to its own local `out` string during the
+	// concurrent phase; the two parse passes below run after wg.Wait(), so
+	// both write to the shared `rows` map only sequentially, never at once.
+	var out1, out2 string
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); out1, _ = runCmd("ps", "-ww", "-p", csv, "-o", "pid=,lstart=,user=") }()
+	go func() { defer wg.Done(); out2, _ = runCmd("ps", "-ww", "-p", csv, "-o", "pid=,command=") }()
+	wg.Wait()
+
 	rows := map[int]psRow{}
-	out1, _ := runCmd("ps", "-ww", "-p", csv, "-o", "pid=,lstart=,user=")
 	parsePSUserLines(out1, rows)
-	out2, _ := runCmd("ps", "-ww", "-p", csv, "-o", "pid=,command=")
 	parsePSCommandLines(out2, rows)
+	dropPartialRows(rows)
 	return rows
+}
+
+// dropPartialRows enforces the old single-call code's all-or-nothing
+// semantic. A PID captured by only ONE of the two ps calls (e.g. a transient
+// per-call hiccup, not necessarily a PID recycle) would otherwise ship a row
+// pairing a real CommandLine with an empty StartTime — which silently steers
+// kill.Stop's stillSame() onto its weaker basename-only fallback for a
+// listener that could have had the strong lstart-based guard if either call
+// alone had succeeded fully. Dropping the row entirely (rather than keeping
+// the half it did capture) restores the original "have everything or have
+// nothing for this PID" guarantee; Scan() already has a fallback (lsof's
+// short command name) for a PID readPS has no data for at all.
+func dropPartialRows(rows map[int]psRow) {
+	for pid, r := range rows {
+		haveUser := r.start != "" || r.user != ""
+		haveCommand := r.command != ""
+		if haveUser != haveCommand {
+			delete(rows, pid)
+		}
+	}
 }
 
 func parsePSUserLines(out string, rows map[int]psRow) {
@@ -229,7 +268,7 @@ func dedup(in []string) []string {
 	return out
 }
 
-func atoi(s string) int        { n, _ := strconv.Atoi(s); return n }
+func atoi(s string) int { n, _ := strconv.Atoi(s); return n }
 func firstPortNum(p []string) int {
 	if len(p) == 0 {
 		return 1 << 30

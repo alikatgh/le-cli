@@ -24,6 +24,13 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 	}
 	switch p.StopKind {
 	case intel.StopBrew:
+		// Formula names aren't reassignable to a different service the way
+		// container names are, so this only catches "already uninstalled/
+		// removed between scan and stop" — a narrower check than Docker's,
+		// intentionally, not an oversight. See intel.BrewServiceKnown.
+		if !intel.BrewServiceKnown(p.StopArg) {
+			return "", fmt.Errorf("brew formula %q is no longer known to brew services — rescan and try again", p.StopArg)
+		}
 		out, err := exec.Command("brew", "services", "stop", p.StopArg).CombinedOutput()
 		if err != nil {
 			return "", fmt.Errorf("brew services stop %s: %s", p.StopArg, strings.TrimSpace(string(out)))
@@ -35,11 +42,13 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 		// it says nothing about whether p.StopArg still names the same
 		// container. Container names, unlike PIDs, can be freed and
 		// reassigned, so re-check the ID immediately before acting.
+		var curID string
+		var lookupOK bool
 		if p.StopArgID != "" {
-			curID, ok := intel.DockerContainerID(p.StopArg)
-			if !ok || curID != p.StopArgID {
-				return "", fmt.Errorf("container %q changed since scan — rescan and try again", p.StopArg)
-			}
+			curID, lookupOK = intel.DockerContainerID(p.StopArg)
+		}
+		if !dockerGuardOK(p.StopArgID, curID, lookupOK) {
+			return "", fmt.Errorf("container %q changed since scan — rescan and try again", p.StopArg)
 		}
 		out, err := exec.Command("docker", "stop", p.StopArg).CombinedOutput()
 		if err != nil {
@@ -54,6 +63,18 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 		}
 		return "sent SIGTERM to " + strconv.Itoa(l.PID), nil
 	}
+}
+
+// dockerGuardOK is the exact comparison the container-recycling guard rests
+// on, pulled out as a pure function so a future refactor that inverts it
+// (silently defeating the protection this exists to provide) has something to
+// catch it — the audit that found the original gap noted this logic had zero
+// test coverage.
+func dockerGuardOK(scanArgID, curID string, lookupOK bool) bool {
+	if scanArgID == "" {
+		return true // nothing was captured at scan time to compare against
+	}
+	return lookupOK && curID == scanArgID
 }
 
 // stillSame confirms the live PID is still the process we scanned. Start time

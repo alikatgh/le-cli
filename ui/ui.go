@@ -431,7 +431,7 @@ func (m model) detailView() string {
 		dimSt.Render(fmt.Sprintf("  (%d%% sure)  ", r.P.Confidence)) + risk
 	lines := []string{
 		title,
-		dimSt.Render("ports  ") + strings.Join(r.L.Ports, ", ") + dimSt.Render("   pid ")+fmt.Sprintf("%d", r.L.PID)+dimSt.Render("   owner ")+string(r.P.Source),
+		dimSt.Render("ports  ") + strings.Join(r.L.Ports, ", ") + dimSt.Render("   pid ") + fmt.Sprintf("%d", r.L.PID) + dimSt.Render("   owner ") + string(r.P.Source),
 		dimSt.Render("cmd    ") + truncate(r.L.CommandLine, m.w-12),
 		dimSt.Render("dir    ") + truncate(orDash(r.L.Cwd), m.w-12),
 		dimSt.Render("stop   ") + lipgloss.NewStyle().Foreground(brand).Render(stopShort(r.P)),
@@ -518,7 +518,15 @@ func truncate(s string, n int) string {
 	if n <= 1 {
 		return "…"
 	}
-	return s[:n-1] + "…"
+	// Rune-based, not byte-based: the width check above is correct, but
+	// slicing by byte index can still cut a multi-byte UTF-8 character in
+	// half, producing invalid UTF-8 regardless of how the width compared.
+	r := []rune(s)
+	upTo := n - 1
+	if upTo > len(r) {
+		upTo = len(r)
+	}
+	return string(r[:upTo]) + "…"
 }
 
 func orDash(s string) string {

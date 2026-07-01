@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -19,6 +20,11 @@ import (
 	"github.com/alikatgh/le-cli/tools"
 	"github.com/alikatgh/le-cli/ui"
 )
+
+// How long a config-warning stays on screen before the TUI takes over the
+// terminal via its alt-screen switch — long enough to read one line, short
+// enough not to feel like a hang.
+const configWarningPause = 1500 * time.Millisecond
 
 // Execute runs the root command. version is injected by main.
 func Execute(version string) {
@@ -34,11 +40,18 @@ func newRoot(version string) *cobra.Command {
 		Long: "le — a fast, keyboard-driven view of localhost listeners, with the\n" +
 			"smarts to stop each the right way (TERM, brew services, or docker).\n\n" +
 			"Run with no arguments to open the live TUI.",
-		Version:       version,
-		SilenceUsage:  true,
-		Args:          cobra.NoArgs,
+		Version:      version,
+		SilenceUsage: true,
+		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.Load()
+			cfg, warning := config.Load()
+			if warning != "" {
+				// Printed here, before ui.Run enters the alt-screen —
+				// otherwise this line is swallowed the instant the TUI
+				// takes over and a typo'd config becomes invisible.
+				fmt.Fprintln(os.Stderr, warning)
+				time.Sleep(configWarningPause)
+			}
 			return ui.Run(ui.Options{Interval: cfg.Interval(), Filter: cfg.Filter})
 		},
 	}
@@ -206,11 +219,15 @@ func truncate(s string, n int) string {
 	if n < 1 {
 		return ""
 	}
-	if len(s) <= n {
+	// Rune-based, not byte-based: a byte-length slice can cut a multi-byte
+	// UTF-8 character in half (accented paths, CJK project dirs, emoji-
+	// branded container names), producing invalid UTF-8 in the output.
+	r := []rune(s)
+	if len(r) <= n {
 		return s
 	}
 	if n <= 1 {
-		return s[:n]
+		return string(r[:n])
 	}
-	return s[:n-1] + "…"
+	return string(r[:n-1]) + "…"
 }

@@ -44,16 +44,19 @@ func Path() string {
 
 // Load reads the config file, returning defaults if it's absent or malformed.
 // A file that exists but can't be read for another reason (permissions, a
-// directory sitting at that path) is reported to stderr rather than silently
-// treated the same as "no config" — a typo'd config should be visible.
-func Load() Config {
+// directory sitting at that path) is NOT the same as "no config" — the
+// second return value is a non-empty warning in that case. Load itself never
+// prints: a bare stderr write here would be swallowed by the TUI's alt-screen
+// switch before a user could ever read it (see docs/BUG_JOURNAL.md). The
+// caller decides how/when to surface it.
+func Load() (Config, string) {
 	c := Config{IntervalSeconds: defaultIntervalSeconds}
 	data, err := os.ReadFile(Path())
 	if err != nil {
-		if !os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "le: could not read config at %s: %v\n", Path(), err)
+		if os.IsNotExist(err) {
+			return c, ""
 		}
-		return c
+		return c, fmt.Sprintf("le: could not read config at %s: %v", Path(), err)
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
@@ -74,5 +77,5 @@ func Load() Config {
 			c.Filter = val
 		}
 	}
-	return c
+	return c, ""
 }

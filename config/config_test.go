@@ -8,9 +8,12 @@ import (
 
 func TestLoadDefaultsWhenAbsent(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	c := Load()
+	c, warning := Load()
 	if c.IntervalSeconds != defaultIntervalSeconds || c.Filter != "" {
 		t.Errorf("got %+v, want defaults", c)
+	}
+	if warning != "" {
+		t.Errorf("warning = %q, want empty for a merely-absent config", warning)
 	}
 }
 
@@ -18,9 +21,12 @@ func TestLoadParsesIntervalAndFilter(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	writeConfig(t, dir, "interval = 2\nfilter = node\n")
-	c := Load()
+	c, warning := Load()
 	if c.IntervalSeconds != 2 || c.Filter != "node" {
 		t.Errorf("got %+v", c)
+	}
+	if warning != "" {
+		t.Errorf("warning = %q, want empty for a valid config", warning)
 	}
 }
 
@@ -28,7 +34,7 @@ func TestLoadIgnoresMalformedLinesFallsBackToDefault(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	writeConfig(t, dir, "not a valid line\ninterval = notanumber\nfilter = node\n")
-	c := Load()
+	c, _ := Load()
 	if c.IntervalSeconds != defaultIntervalSeconds {
 		t.Errorf("interval should fall back to default on a bad value, got %d", c.IntervalSeconds)
 	}
@@ -46,9 +52,16 @@ func TestLoadDoesNotPanicOnUnreadableExistingPath(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "le", "config"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	c := Load()
+	c, warning := Load()
 	if c.IntervalSeconds != defaultIntervalSeconds {
 		t.Errorf("got %+v, want defaults when config path is unreadable", c)
+	}
+	// Regression test for the sweep finding: this warning used to be printed
+	// directly by Load(), invisibly, right before the TUI's alt-screen
+	// switch hid it. Load must hand the warning BACK so the caller can
+	// surface it before entering the TUI.
+	if warning == "" {
+		t.Error("warning should be non-empty when the config path exists but can't be read")
 	}
 }
 
