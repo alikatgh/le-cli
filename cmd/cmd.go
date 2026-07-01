@@ -34,6 +34,13 @@ func Execute(version string) {
 	}
 }
 
+// NewRootForDocs builds the same command tree Execute uses, for tools that
+// need it without actually running the CLI (e.g. the man page generator in
+// internal/gendocs).
+func NewRootForDocs() *cobra.Command {
+	return newRoot("dev")
+}
+
 func newRoot(version string) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "le",

@@ -13,15 +13,21 @@ TARGETS=(darwin/amd64 darwin/arm64 linux/amd64 linux/arm64)
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
+# Man pages are committed (see internal/gendocs), not regenerated here, and
+# don't vary by platform/arch — copy once, bundle into every tarball.
+cp -R man "$OUT/man"
+
 for t in "${TARGETS[@]}"; do
   os="${t%/*}"; arch="${t#*/}"
   name="le_${VERSION}_${os}_${arch}"
   echo "building ${name}"
   GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
     go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "$OUT/le" .
-  tar -C "$OUT" -czf "$OUT/${name}.tar.gz" le
+  tar -C "$OUT" -czf "$OUT/${name}.tar.gz" le man
   rm -f "$OUT/le"
 done
+
+rm -rf "$OUT/man"
 
 ( cd "$OUT" && shasum -a 256 ./*.tar.gz > checksums.txt )
 
