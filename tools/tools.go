@@ -32,7 +32,7 @@ func Hold(port string) error {
 	if err != nil {
 		return fmt.Errorf("can't hold %s: %w", port, err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	// Accept and immediately drop connections so the socket stays healthy.
 	go func() {

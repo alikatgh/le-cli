@@ -153,13 +153,17 @@ func printJSON(w io.Writer, rows []row) error {
 }
 
 func printTable(w io.Writer, rows []row) {
+	// Errors from writing to w are deliberately discarded, same as
+	// tools.Hold's listener Close below — a broken pipe (e.g. `le list |
+	// head`) means every subsequent write fails identically, and this
+	// function has nothing more useful to do about it than to keep going.
 	if len(rows) == 0 {
-		fmt.Fprintln(w, "No localhost listeners found.")
+		_, _ = fmt.Fprintln(w, "No localhost listeners found.")
 		return
 	}
-	fmt.Fprintf(w, "%-7s  %-7s  %-22s  %-7s  %-8s  %s\n", "PORT", "PID", "WHAT", "RISK", "OWNER", "STOP WITH")
+	_, _ = fmt.Fprintf(w, "%-7s  %-7s  %-22s  %-7s  %-8s  %s\n", "PORT", "PID", "WHAT", "RISK", "OWNER", "STOP WITH")
 	for _, r := range rows {
-		fmt.Fprintf(w, "%-7s  %-7d  %-22s  %-7s  %-8s  %s\n",
+		_, _ = fmt.Fprintf(w, "%-7s  %-7d  %-22s  %-7s  %-8s  %s\n",
 			portCell(r.Ports), r.PID, truncate(r.Profile.Identity, 22), string(r.Profile.Risk),
 			string(r.Profile.Source), truncate(r.Profile.StopLabel, 40))
 	}
