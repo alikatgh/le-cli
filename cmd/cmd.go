@@ -6,6 +6,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -69,9 +70,9 @@ func listCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rows := gather()
 			if asJSON {
-				return printJSON(rows)
+				return printJSON(os.Stdout, rows)
 			}
-			printTable(rows)
+			printTable(os.Stdout, rows)
 			return nil
 		},
 	}
@@ -145,20 +146,20 @@ func gather() []row {
 	return rows
 }
 
-func printJSON(rows []row) error {
-	enc := json.NewEncoder(os.Stdout)
+func printJSON(w io.Writer, rows []row) error {
+	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(rows)
 }
 
-func printTable(rows []row) {
+func printTable(w io.Writer, rows []row) {
 	if len(rows) == 0 {
-		fmt.Println("No localhost listeners found.")
+		fmt.Fprintln(w, "No localhost listeners found.")
 		return
 	}
-	fmt.Printf("%-7s  %-7s  %-22s  %-7s  %-8s  %s\n", "PORT", "PID", "WHAT", "RISK", "OWNER", "STOP WITH")
+	fmt.Fprintf(w, "%-7s  %-7s  %-22s  %-7s  %-8s  %s\n", "PORT", "PID", "WHAT", "RISK", "OWNER", "STOP WITH")
 	for _, r := range rows {
-		fmt.Printf("%-7s  %-7d  %-22s  %-7s  %-8s  %s\n",
+		fmt.Fprintf(w, "%-7s  %-7d  %-22s  %-7s  %-8s  %s\n",
 			portCell(r.Ports), r.PID, truncate(r.Profile.Identity, 22), string(r.Profile.Risk),
 			string(r.Profile.Source), truncate(r.Profile.StopLabel, 40))
 	}
@@ -175,8 +176,11 @@ func portCell(ports []string) string {
 	}
 }
 
-func runStop(target string) error {
-	rows := gather()
+// matchRows finds every row addressed by target: a port match if any row
+// listens on it, otherwise (never both) a fallback to PID. Port takes
+// priority so a target that happens to look like both a live port and
+// someone else's PID resolves the way a human would expect it to.
+func matchRows(rows []row, target string) []row {
 	var matched []row
 	for _, r := range rows { // port match first
 		for _, p := range r.Ports {
@@ -195,6 +199,12 @@ func runStop(target string) error {
 			}
 		}
 	}
+	return matched
+}
+
+func runStop(target string) error {
+	rows := gather()
+	matched := matchRows(rows, target)
 	if len(matched) == 0 {
 		return fmt.Errorf("nothing listening on %s", target)
 	}
