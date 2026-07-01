@@ -7,6 +7,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -42,10 +43,16 @@ func Path() string {
 }
 
 // Load reads the config file, returning defaults if it's absent or malformed.
+// A file that exists but can't be read for another reason (permissions, a
+// directory sitting at that path) is reported to stderr rather than silently
+// treated the same as "no config" — a typo'd config should be visible.
 func Load() Config {
 	c := Config{IntervalSeconds: defaultIntervalSeconds}
 	data, err := os.ReadFile(Path())
 	if err != nil {
+		if !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "le: could not read config at %s: %v\n", Path(), err)
+		}
 		return c
 	}
 	for _, line := range strings.Split(string(data), "\n") {

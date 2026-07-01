@@ -118,32 +118,56 @@ type psRow struct {
 	command string
 }
 
-// readPS pulls full command line, start time, and user for a set of PIDs in
-// one call. lstart is always exactly 5 whitespace tokens
-// ("Mon Jun 23 14:00:00 2026"), which makes the trailing command field
-// (itself full of spaces) safe to parse.
+// readPS pulls start time, user, and full command line for a set of PIDs.
+// Two separate ps calls, each with its free-form field last, rather than one
+// "pid,lstart,user,command" line: lstart is a fixed 5 tokens, but user and
+// command are both variable-length and can each contain spaces (a
+// directory-joined account name; an argv with embedded spaces), so packing
+// both into one line made a single unexpected space silently shift every
+// field after it. Putting each variable field last in its own call makes it
+// unambiguously "everything remaining on the line," however many words long.
 func readPS(csv string) map[int]psRow {
 	rows := map[int]psRow{}
-	out, err := runCmd("ps", "-ww", "-p", csv, "-o", "pid=,lstart=,user=,command=")
-	if err != nil && out == "" {
-		return rows
-	}
+	out1, _ := runCmd("ps", "-ww", "-p", csv, "-o", "pid=,lstart=,user=")
+	parsePSUserLines(out1, rows)
+	out2, _ := runCmd("ps", "-ww", "-p", csv, "-o", "pid=,command=")
+	parsePSCommandLines(out2, rows)
+	return rows
+}
+
+func parsePSUserLines(out string, rows map[int]psRow) {
 	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) < 8 {
+		if len(fields) < 7 { // pid + 5 lstart tokens + at least one user token
 			continue
 		}
 		pid, err := strconv.Atoi(fields[0])
 		if err != nil {
 			continue
 		}
-		rows[pid] = psRow{
-			start:   strings.Join(fields[1:6], " "),
-			user:    fields[6],
-			command: strings.Join(fields[7:], " "),
-		}
+		r := rows[pid]
+		r.start = strings.Join(fields[1:6], " ")
+		r.user = strings.Join(fields[6:], " ")
+		rows[pid] = r
 	}
-	return rows
+}
+
+func parsePSCommandLines(out string, rows map[int]psRow) {
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 1 {
+			continue
+		}
+		pid, err := strconv.Atoi(fields[0])
+		if err != nil {
+			continue
+		}
+		r := rows[pid]
+		if len(fields) > 1 {
+			r.command = strings.Join(fields[1:], " ")
+		}
+		rows[pid] = r
+	}
 }
 
 // readCwd maps PID -> working directory via lsof's cwd file descriptor.

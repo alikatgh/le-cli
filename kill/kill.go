@@ -30,6 +30,17 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 		}
 		return "brew services stop " + p.StopArg, nil
 	case intel.StopDocker:
+		// The PID guard above only confirms the scanned PID (often a Docker
+		// helper process, not the container itself) hasn't been recycled —
+		// it says nothing about whether p.StopArg still names the same
+		// container. Container names, unlike PIDs, can be freed and
+		// reassigned, so re-check the ID immediately before acting.
+		if p.StopArgID != "" {
+			curID, ok := intel.DockerContainerID(p.StopArg)
+			if !ok || curID != p.StopArgID {
+				return "", fmt.Errorf("container %q changed since scan — rescan and try again", p.StopArg)
+			}
+		}
 		out, err := exec.Command("docker", "stop", p.StopArg).CombinedOutput()
 		if err != nil {
 			return "", fmt.Errorf("docker stop %s: %s", p.StopArg, strings.TrimSpace(string(out)))

@@ -393,8 +393,15 @@ func (m model) tableView() string {
 		if i == m.cursor {
 			b.WriteString(selSt.Width(m.w).Render(line))
 		} else {
-			b.WriteString(lipgloss.NewStyle().Foreground(riskColor(r.P.Risk)).Render(line[:8]))
-			b.WriteString(line[8:])
+			// %-8s is a MINIMUM width, not a cap — a listener with many ports
+			// (portCell -> "54321 +12") can render wider than 8, so the risk
+			// color must split at the port cell's real width, not a fixed 8.
+			portWidth := lipgloss.Width(portCell(r.L.Ports))
+			if portWidth < 8 {
+				portWidth = 8
+			}
+			b.WriteString(lipgloss.NewStyle().Foreground(riskColor(r.P.Risk)).Render(line[:portWidth]))
+			b.WriteString(line[portWidth:])
 		}
 		if i < end-1 {
 			b.WriteString("\n")

@@ -203,6 +203,9 @@ func runStop(target string) error {
 
 func truncate(s string, n int) string {
 	s = strings.TrimSpace(s)
+	if n < 1 {
+		return ""
+	}
 	if len(s) <= n {
 		return s
 	}

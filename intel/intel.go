@@ -64,6 +64,7 @@ type Profile struct {
 	Risk       Risk
 	StopKind   StopKind
 	StopArg    string // brew formula or container name
+	StopArgID  string // container short ID, re-verified before stopping (StopDocker only)
 	StopLabel  string // human description of the stop action
 	Restart    string
 	Note       string
@@ -71,10 +72,18 @@ type Profile struct {
 	Explain    string
 }
 
+// dockerContainer identifies a container by both the name used in
+// `docker stop <name>` and its short ID, so kill.Stop can re-verify the name
+// still points at the same container immediately before acting on it.
+type dockerContainer struct {
+	name string
+	id   string
+}
+
 // Env is the environment-wide context gathered once per scan.
 type Env struct {
-	BrewStarted  map[string]bool   // formula -> started via `brew services`
-	DockerByPort map[string]string // port -> container name
+	BrewStarted  map[string]bool            // formula -> started via `brew services`
+	DockerByPort map[string]dockerContainer // port -> container identity
 }
 
 // Detect gathers brew + docker context once. Both are best-effort: missing
@@ -106,23 +115,59 @@ func brewStarted() map[string]bool {
 
 var dockerPortRe = regexp.MustCompile(`(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]|::):(\d+)->`)
 
-func dockerByPort() map[string]string {
-	m := map[string]string{}
-	out, err := exec.Command("docker", "ps", "--format", "{{.Names}}\t{{.Ports}}").Output()
+func dockerByPort() map[string]dockerContainer {
+	out, err := exec.Command("docker", "ps", "--format", "{{.ID}}\t{{.Names}}\t{{.Ports}}").Output()
 	if err != nil {
-		return m
+		return map[string]dockerContainer{}
 	}
-	for _, line := range strings.Split(string(out), "\n") {
-		parts := strings.SplitN(line, "\t", 2)
-		if len(parts) != 2 {
+	return parseDockerPorts(string(out))
+}
+
+// parseDockerPorts is split out from dockerByPort so it's testable without
+// shelling out. A port that two different containers both claim — a real,
+// if transient, state during a container restart or handoff — is dropped
+// rather than silently attributed to whichever line happened to come last:
+// a wrong attribution here would make kill.Stop issue `docker stop` against
+// the wrong container.
+func parseDockerPorts(out string) map[string]dockerContainer {
+	m := map[string]dockerContainer{}
+	ambiguous := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) != 3 {
 			continue
 		}
-		name, ports := parts[0], parts[1]
+		id, name, ports := parts[0], parts[1], parts[2]
 		for _, match := range dockerPortRe.FindAllStringSubmatch(ports, -1) {
-			m[match[1]] = name
+			port := match[1]
+			if existing, ok := m[port]; ok && existing.name != name {
+				ambiguous[port] = true
+				continue
+			}
+			m[port] = dockerContainer{name: name, id: id}
 		}
 	}
+	for port := range ambiguous {
+		delete(m, port)
+	}
 	return m
+}
+
+// DockerContainerID returns the short ID of the currently-running container
+// with the given exact name, if exactly one matches. kill.Stop calls this
+// immediately before a `docker stop` to confirm the name still points at the
+// same container it did at scan time — container names, unlike PIDs, can be
+// freed and reassigned to a completely different container.
+func DockerContainerID(name string) (string, bool) {
+	out, err := exec.Command("docker", "ps", "--filter", "name=^"+name+"$", "--format", "{{.ID}}").Output()
+	if err != nil {
+		return "", false
+	}
+	id := strings.TrimSpace(string(out))
+	if id == "" || strings.Contains(id, "\n") {
+		return "", false // none, or ambiguous — don't guess
+	}
+	return id, true
 }
 
 // Make is the port of ProcessProfile.make + ProcessSource.make.
@@ -141,10 +186,10 @@ func Make(l scan.Listener, env Env) Profile {
 	p.StopLabel = "Send TERM to PID " + itoa(l.PID)
 
 	switch {
-	case container != "":
-		p.Identity, p.Source, p.Confidence, p.Risk = container, SrcContainer, 88, Med
-		p.StopKind, p.StopArg, p.StopLabel = StopDocker, container, "docker stop "+container
-		p.Restart = "docker start " + container
+	case container.name != "":
+		p.Identity, p.Source, p.Confidence, p.Risk = container.name, SrcContainer, 88, Med
+		p.StopKind, p.StopArg, p.StopArgID, p.StopLabel = StopDocker, container.name, container.id, "docker stop "+container.name
+		p.Restart = "docker start " + container.name
 		p.Explain = "Published by a Docker-compatible container."
 		p.Warning = "Stopping the container is safer than killing the Docker helper process."
 
@@ -240,7 +285,7 @@ func Make(l scan.Listener, env Env) Profile {
 		p.Identity = displayName(l)
 	}
 	if p.Source == "" {
-		p.Source = sourceFor(l, p, container != "", managedBrew, system, bgApp)
+		p.Source = sourceFor(l, p, container.name != "", managedBrew, system, bgApp)
 	}
 	return p
 }
@@ -466,18 +511,13 @@ func brewFormula(cmd string) string {
 	return ""
 }
 
-func containerFor(l scan.Listener, env Env) string {
+func containerFor(l scan.Listener, env Env) dockerContainer {
 	for _, port := range l.Ports {
-		if name, ok := env.DockerByPort[port]; ok {
-			return name
+		if c, ok := env.DockerByPort[port]; ok {
+			return c
 		}
 	}
-	t := strings.ToLower(l.Command + " " + l.CommandLine)
-	if strings.Contains(t, "docker") || strings.Contains(t, "orbstack") ||
-		strings.Contains(t, "colima") || strings.Contains(t, "rancher") {
-		return "" // a docker helper, but we couldn't map a container name
-	}
-	return ""
+	return dockerContainer{} // a docker helper, if any, with no mapped container name
 }
 
 func isSystem(l scan.Listener) bool {
