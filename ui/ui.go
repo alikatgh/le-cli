@@ -4,6 +4,8 @@ package ui
 
 import (
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +16,17 @@ import (
 	"github.com/alikatgh/le-cli/intel"
 	"github.com/alikatgh/le-cli/kill"
 	"github.com/alikatgh/le-cli/scan"
+)
+
+// Sortable columns, in the same left-to-right order they appear in the
+// table — number keys 1-5 select one directly, matching the table's own
+// column order so the key-to-column mapping needs no legend to be obvious.
+const (
+	sortPort = iota
+	sortPID
+	sortWhat
+	sortRisk
+	sortOwner
 )
 
 const defaultInterval = 3 * time.Second
@@ -55,6 +68,8 @@ type model struct {
 	loading   bool
 	lastScan  time.Time
 	interval  time.Duration
+	sortCol   int
+	sortAsc   bool
 }
 
 // New builds the initial model from launch options.
@@ -68,7 +83,7 @@ func New(opts Options) model {
 	if interval <= 0 {
 		interval = defaultInterval
 	}
-	m := model{filter: ti, loading: true, interval: interval}
+	m := model{filter: ti, loading: true, interval: interval, sortCol: sortPort, sortAsc: true}
 	m.applyFilter()
 	return m
 }
@@ -211,6 +226,15 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.flash, m.loading = "", true
 		return m, scanCmd()
+	case "1", "2", "3", "4", "5":
+		col := int(msg.String()[0] - '1')
+		if m.sortCol == col {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortCol, m.sortAsc = col, true
+		}
+		m.sortView()
+		m.clamp()
 	case "x", "s":
 		if r, ok := m.selected(); ok {
 			if r.P.StopKind == intel.StopAvoid {
@@ -278,20 +302,72 @@ func (m *model) clamp() {
 
 func (m *model) applyFilter() {
 	q := strings.ToLower(strings.TrimSpace(m.filter.Value()))
+	// Always build a fresh slice, even for the no-filter case: m.view is
+	// sorted in place below, and aliasing it to m.all's backing array would
+	// silently reorder m.all too (harmless today since a scan wholesale-
+	// replaces m.all next cycle, but a landmine for any future code that
+	// assumes m.all keeps its scan order).
+	out := make([]Row, 0, len(m.all))
 	if q == "" {
-		m.view = m.all
-		return
-	}
-	var out []Row
-	for _, r := range m.all {
-		hay := strings.ToLower(strings.Join([]string{
-			strings.Join(r.L.Ports, " "), r.P.Identity, r.L.Command, r.L.CommandLine, r.L.Cwd, string(r.P.Source),
-		}, " "))
-		if strings.Contains(hay, q) {
-			out = append(out, r)
+		out = append(out, m.all...)
+	} else {
+		for _, r := range m.all {
+			hay := strings.ToLower(strings.Join([]string{
+				strings.Join(r.L.Ports, " "), r.P.Identity, r.L.Command, r.L.CommandLine, r.L.Cwd, string(r.P.Source),
+			}, " "))
+			if strings.Contains(hay, q) {
+				out = append(out, r)
+			}
 		}
 	}
 	m.view = out
+	m.sortView()
+}
+
+// sortView sorts m.view by the active column/direction in place. Stable so
+// ties (e.g. several rows at the same risk level) keep their prior relative
+// order instead of jumping around on every resort.
+func (m *model) sortView() {
+	sort.SliceStable(m.view, func(i, j int) bool {
+		if m.sortAsc {
+			return m.less(m.view[i], m.view[j])
+		}
+		return m.less(m.view[j], m.view[i])
+	})
+}
+
+func (m model) less(a, b Row) bool {
+	switch m.sortCol {
+	case sortPID:
+		return a.L.PID < b.L.PID
+	case sortWhat:
+		return strings.ToLower(a.P.Identity) < strings.ToLower(b.P.Identity)
+	case sortRisk:
+		return riskRank(a.P.Risk) < riskRank(b.P.Risk)
+	case sortOwner:
+		return a.P.Source < b.P.Source
+	default: // sortPort
+		return firstPortNum(a.L.Ports) < firstPortNum(b.L.Ports)
+	}
+}
+
+func riskRank(r intel.Risk) int {
+	switch r {
+	case intel.Low:
+		return 0
+	case intel.Med:
+		return 1
+	default: // intel.High
+		return 2
+	}
+}
+
+func firstPortNum(ports []string) int {
+	if len(ports) == 0 {
+		return 1 << 30 // sorts unlisted-port rows last
+	}
+	n, _ := strconv.Atoi(ports[0])
+	return n
 }
 
 func (m model) selected() (Row, bool) {
@@ -389,7 +465,9 @@ func (m model) tableView() string {
 	}
 
 	wWhat := clampInt(m.w-8-1-7-1-7-1-9-1-3, 14, 40)
-	header := fmt.Sprintf("%-8s %-7s %-*s %-7s %-9s %s", "PORT", "PID", wWhat, "WHAT", "RISK", "OWNER", "STOP")
+	header := fmt.Sprintf("%-8s %-7s %-*s %-7s %-9s %s",
+		m.colLabel("PORT", sortPort), m.colLabel("PID", sortPID), wWhat, m.colLabel("WHAT", sortWhat),
+		m.colLabel("RISK", sortRisk), m.colLabel("OWNER", sortOwner), "STOP")
 	var b strings.Builder
 	b.WriteString(headSt.Render(header) + "\n")
 
@@ -421,6 +499,21 @@ func (m model) tableView() string {
 		}
 	}
 	return b.String()
+}
+
+// colLabel appends a plain-ASCII direction marker to a column header when
+// it's the active sort column, so the sort state is visible without opening
+// help. ASCII only (never a wide/CJK glyph): this string feeds straight into
+// a fmt "%-Ns" pad, which counts runes, not display width — a wide marker
+// would throw off the same column alignment truncate() had to be fixed for.
+func (m model) colLabel(name string, col int) string {
+	if m.sortCol != col {
+		return name
+	}
+	if m.sortAsc {
+		return name + "^"
+	}
+	return name + "v"
 }
 
 func portCell(ports []string) string {
@@ -475,7 +568,7 @@ func (m model) footerView() string {
 		}
 		return okSt.Render(m.flash)
 	}
-	keys := []string{"j/k move", "/ filter", "x stop", "r refresh", "? help", "q quit"}
+	keys := []string{"j/k move", "/ filter", "1-5 sort", "x stop", "r refresh", "? help", "q quit"}
 	var parts []string
 	for _, k := range keys {
 		sp := strings.SplitN(k, " ", 2)
@@ -490,6 +583,7 @@ func (m model) helpView() string {
 		{"k / ↑", "move up"},
 		{"g / G", "jump to top / bottom"},
 		{"/", "filter (esc clears)"},
+		{"1-5", "sort by port / pid / what / risk / owner — press again to reverse"},
 		{"x or s", "stop the selected listener (with confirm)"},
 		{"r", "refresh now"},
 		{"?", "toggle this help"},

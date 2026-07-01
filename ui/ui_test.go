@@ -83,9 +83,19 @@ func TestModelLifecycle(t *testing.T) {
 		t.Fatal("confirm should be dismissed after n")
 	}
 
-	// an avoid-row must refuse to confirm
+	// an avoid-row must refuse to confirm. Find it by property, not a
+	// hardcoded index — which row lands where depends on the active sort.
 	mm := m.(model)
-	mm.cursor = 2 // macOS service (StopAvoid)
+	mm.cursor = -1
+	for i, r := range mm.view {
+		if r.P.StopKind == intel.StopAvoid {
+			mm.cursor = i
+			break
+		}
+	}
+	if mm.cursor < 0 {
+		t.Fatal("no StopAvoid row in sample data")
+	}
 	var mi tea.Model = mm
 	mi, _ = mi.Update(key("x"))
 	if mi.(model).confirm {
@@ -195,5 +205,120 @@ func TestMouse(t *testing.T) {
 	}
 	if m.(model).View() == "" {
 		t.Fatal("empty view after mouse input")
+	}
+}
+
+// sortRows is a fixture where every column sorts into a different order, so
+// a comparator wired to the wrong field (or an alphabetical string compare
+// where a severity rank belongs) shows up as a wrong sequence, not a
+// coincidentally-correct one.
+func sortRows() []Row {
+	return []Row{
+		{L: scan.Listener{PID: 50, Ports: []string{"9000"}},
+			P: intel.Profile{Identity: "alpha", Risk: intel.High, Source: intel.SrcApp, StopKind: intel.StopTerm}},
+		{L: scan.Listener{PID: 800, Ports: []string{"3000"}},
+			P: intel.Profile{Identity: "charlie", Risk: intel.Low, Source: intel.SrcHomebrew, StopKind: intel.StopTerm}},
+		{L: scan.Listener{PID: 200, Ports: []string{"6000"}},
+			P: intel.Profile{Identity: "bravo", Risk: intel.Med, Source: intel.SrcFramework, StopKind: intel.StopTerm}},
+	}
+}
+
+func identities(rows []Row) []string {
+	out := make([]string, len(rows))
+	for i, r := range rows {
+		out[i] = r.P.Identity
+	}
+	return out
+}
+
+func assertOrder(t *testing.T, m tea.Model, want ...string) {
+	t.Helper()
+	got := identities(m.(model).view)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("view order = %v, want %v", got, want)
+	}
+}
+
+func TestSortColumns(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sortRows(), at: time.Now()})
+
+	// Default: port ascending (9000 alpha, 3000 charlie, 6000 bravo).
+	assertOrder(t, m, "charlie", "bravo", "alpha")
+
+	// "1" re-selects the already-active port column => reverses it.
+	m, _ = m.Update(key("1"))
+	assertOrder(t, m, "alpha", "bravo", "charlie")
+	m, _ = m.Update(key("1"))
+	assertOrder(t, m, "charlie", "bravo", "alpha")
+
+	// "2" switches to PID (50, 800, 200) => ascending regardless of the
+	// previous column's direction.
+	m, _ = m.Update(key("2"))
+	assertOrder(t, m, "alpha", "bravo", "charlie")
+	m, _ = m.Update(key("2"))
+	assertOrder(t, m, "charlie", "bravo", "alpha")
+
+	// "3" sorts by identity, case-insensitively alphabetical.
+	m, _ = m.Update(key("3"))
+	assertOrder(t, m, "alpha", "bravo", "charlie")
+
+	// "4" sorts by risk SEVERITY (low < medium < high), not alphabetically
+	// ("high" < "low" < "medium" would give the wrong order).
+	m, _ = m.Update(key("4"))
+	assertOrder(t, m, "charlie", "bravo", "alpha")
+
+	// "5" sorts by owner/source string.
+	m, _ = m.Update(key("5"))
+	assertOrder(t, m, "alpha", "bravo", "charlie")
+}
+
+// Regression test: m.view used to alias m.all's backing array in the
+// no-filter case, so sorting m.view (a slice op) silently reordered m.all
+// too. Confirm a sort leaves m.all in its original scan order.
+func TestSortDoesNotReorderAll(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sortRows(), at: time.Now()})
+	m, _ = m.Update(key("4")) // reorders m.view by risk
+
+	want := identities(sortRows())
+	if got := identities(m.(model).all); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("m.all = %v, want unchanged scan order %v", got, want)
+	}
+}
+
+// The active sort survives filtering: applyFilter rebuilds m.view from
+// scratch on every keystroke, so the sort has to be reapplied each time, not
+// just once at scan time.
+func TestSortSurvivesFilter(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sortRows(), at: time.Now()})
+	m, _ = m.Update(key("3")) // sort by identity ascending: alpha, bravo, charlie
+
+	m, _ = m.Update(key("/"))
+	for _, r := range "a" { // matches all three (alpha, bravo, charlie all contain "a")
+		m, _ = m.Update(key(string(r)))
+	}
+	assertOrder(t, m, "alpha", "bravo", "charlie")
+}
+
+func TestSortHeaderShowsDirection(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sortRows(), at: time.Now()})
+
+	if v := m.(model).View(); !strings.Contains(v, "PORT^") {
+		t.Errorf("expected default ascending port indicator PORT^ in view, got:\n%s", v)
+	}
+	m, _ = m.Update(key("4"))
+	if v := m.(model).View(); !strings.Contains(v, "RISK^") {
+		t.Errorf("expected RISK^ after pressing 4, got:\n%s", v)
+	}
+	m, _ = m.Update(key("4"))
+	if v := m.(model).View(); !strings.Contains(v, "RISKv") {
+		t.Errorf("expected RISKv after pressing 4 twice, got:\n%s", v)
 	}
 }
