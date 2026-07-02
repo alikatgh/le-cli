@@ -95,6 +95,9 @@ func waitHint(timeout time.Duration) string {
 // timeout > 0, until the deadline elapses first (→ false). A non-positive
 // timeout means no deadline: it blocks until cond is met.
 func waitUntil(cond func() bool, timeout time.Duration) bool {
+	if cond() {
+		return true
+	}
 	t := time.NewTicker(pollEvery)
 	defer t.Stop()
 	var deadline <-chan time.Time
@@ -108,7 +111,10 @@ func waitUntil(cond func() bool, timeout time.Duration) bool {
 				return true
 			}
 		case <-deadline:
-			return false
+			// One final check AT the deadline. Without it, a timeout shorter
+			// than pollEvery (e.g. -t 200ms) always fired before the first
+			// tick and returned false even if cond had already become true.
+			return cond()
 		}
 	}
 }

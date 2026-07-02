@@ -5,12 +5,20 @@
 package scan
 
 import (
+	"os"
 	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 )
+
+// cLocaleEnv runs ps/lsof under LC_ALL=C so their output is the stable,
+// English, fixed-shape format we parse. Without it, ps lstart is rendered
+// via the caller's locale (LC_TIME) — e.g. ru_RU/ja_JP produce a different
+// token count and word order, which broke the fixed-offset lstart parse and,
+// downstream, the PID-recycle guard.
+var cLocaleEnv = append(os.Environ(), "LC_ALL=C")
 
 // Listener is one process holding one or more localhost ports.
 type Listener struct {
@@ -29,7 +37,9 @@ type Listener struct {
 // full Scan orchestration without shelling out. Overrides must stay
 // goroutine-safe: readPS invokes this from two goroutines at once.
 var runCmd = func(name string, args ...string) (string, error) {
-	out, err := exec.Command(name, args...).Output()
+	cmd := exec.Command(name, args...)
+	cmd.Env = cLocaleEnv
+	out, err := cmd.Output()
 	return string(out), err
 }
 

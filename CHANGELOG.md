@@ -5,6 +5,19 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+- `le stop --dir .` (and any relative path, or `--dir /`) matched zero
+  listeners — the path wasn't absolutized before comparison. Found by an
+  adversarial review of the v0.1.6 changes.
+- `le wait`/`le ready` with a `--timeout` shorter than ~400ms always timed out
+  even when the port was already in the target state.
+- `le stop` could falsely refuse every process as "recycled" under a
+  non-English locale (`LC_TIME`), because `ps` renders its start-time column
+  differently; `ps`/`lsof` now run under `LC_ALL=C`.
+- The recycle guard's no-start-time fallback compared only the executable
+  basename, so a recycled PID sharing an interpreter (`node`, `python`) could
+  be signalled; it now requires a full command match and refuses otherwise.
+
 ## [0.1.6] - 2026-07-02
 
 ### Added

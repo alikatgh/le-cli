@@ -71,15 +71,29 @@ func TestStillSamePSErrorIsNotSame(t *testing.T) {
 	}
 }
 
-func TestStillSameCommandFallbackMatch(t *testing.T) {
+func TestStillSameCommandFallbackFullMatch(t *testing.T) {
 	defer withStubs(t)()
-	// No start time captured -> fall back to comparing the executable basename.
+	// No start time captured -> fall back to a FULL command-line match.
 	runOutput = func(name string, args ...string) (string, error) {
-		return "/usr/local/bin/node /app/server.js\n", nil
+		return "/usr/bin/node app.js --port 3000\n", nil
 	}
-	l := scan.Listener{PID: 1, CommandLine: "/usr/bin/node app.js"}
+	l := scan.Listener{PID: 1, CommandLine: "/usr/bin/node app.js --port 3000"}
 	if !stillSame(l) {
-		t.Error("same exe basename via command fallback should match")
+		t.Error("an identical full command line via the fallback should match")
+	}
+}
+
+// Safety fix: a bare/short command name (all scan captures when it loses the
+// ps row) must NOT match a different, fully-specified process that merely
+// shares the interpreter — else a recycled PID could get the wrong SIGTERM.
+func TestStillSameCommandFallbackRefusesBasenameOnly(t *testing.T) {
+	defer withStubs(t)()
+	runOutput = func(name string, args ...string) (string, error) {
+		return "/usr/local/bin/node other-project/other-app.js\n", nil
+	}
+	l := scan.Listener{PID: 1, CommandLine: "node"} // lsof short name only
+	if stillSame(l) {
+		t.Error("a basename-only stored command must not match a different full command")
 	}
 }
 
@@ -90,7 +104,7 @@ func TestStillSameCommandFallbackMismatch(t *testing.T) {
 	}
 	l := scan.Listener{PID: 1, CommandLine: "/usr/bin/node app.js"}
 	if stillSame(l) {
-		t.Error("different exe basename must not match")
+		t.Error("a different command must not match")
 	}
 }
 

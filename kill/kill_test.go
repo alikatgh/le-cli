@@ -29,33 +29,15 @@ func TestDockerGuardOK(t *testing.T) {
 	}
 }
 
-func TestSameExe(t *testing.T) {
-	cases := []struct {
-		a, b string
-		want bool
-	}{
-		{"/usr/bin/node app.js --port 3000", "/usr/bin/node app.js", true},
-		{"/usr/bin/node", "/usr/local/bin/node", true},
-		{"/usr/bin/python3 -m http.server", "/usr/bin/node", false},
-		{"", "/usr/bin/node", false},
-	}
-	for _, c := range cases {
-		if got := sameExe(c.a, c.b); got != c.want {
-			t.Errorf("sameExe(%q, %q) = %v, want %v", c.a, c.b, got, c.want)
-		}
-	}
-}
-
-func TestArgv0Base(t *testing.T) {
+func TestNormalizeWS(t *testing.T) {
 	cases := map[string]string{
-		"/usr/bin/node app.js --port 3000": "node",
-		"":                                 "",
-		"   ":                              "",
-		"relative/path/to/bin arg1":        "bin",
+		"Thu Jul  2 11:18:47 2026": "Thu Jul 2 11:18:47 2026",
+		"  spaced   out  ":         "spaced out",
+		"":                         "",
 	}
 	for in, want := range cases {
-		if got := argv0Base(in); got != want {
-			t.Errorf("argv0Base(%q) = %q, want %q", in, got, want)
+		if got := normalizeWS(in); got != want {
+			t.Errorf("normalizeWS(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -254,6 +255,37 @@ func TestMatchDirNoMatch(t *testing.T) {
 	rows := []row{{Listener: scan.Listener{PID: 1, Cwd: "/somewhere/else"}}}
 	if got := matchDir(rows, "/proj"); len(got) != 0 {
 		t.Errorf("matchDir found %d, want 0", len(got))
+	}
+}
+
+// Regression: `le stop --dir .` (and any relative path) must resolve to an
+// absolute path before matching against lsof's always-absolute cwds. It used
+// to compare "." against absolute cwds and match nothing.
+func TestMatchDirRelativePathResolvesToCwd(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// resolvePath applies EvalSymlinks, so match against the resolved cwd to
+	// stay correct on symlinked temp roots (e.g. macOS /var -> /private/var).
+	resolved := resolvePath(cwd)
+	rows := []row{
+		{Listener: scan.Listener{PID: 1, Cwd: resolved}, Profile: intel.Profile{Identity: "here"}},
+		{Listener: scan.Listener{PID: 2, Cwd: "/somewhere/unrelated"}, Profile: intel.Profile{Identity: "there"}},
+	}
+	got := matchDir(rows, ".")
+	if len(got) != 1 || got[0].Profile.Identity != "here" {
+		t.Fatalf(`matchDir(".") = %+v, want the row whose cwd is the current dir`, got)
+	}
+}
+
+func TestWithinDirRootMatchesEverything(t *testing.T) {
+	// `--dir /` should match every absolute cwd, not none (the "//" prefix bug).
+	if !withinDir("/Users/me/project", "/") {
+		t.Error(`withinDir("/Users/me/project", "/") = false, want true`)
+	}
+	if !withinDir("/", "/") {
+		t.Error(`withinDir("/", "/") = false, want true`)
 	}
 }
 

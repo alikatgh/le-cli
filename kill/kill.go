@@ -6,8 +6,8 @@ package kill
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -19,13 +19,19 @@ import (
 // Command execution is indirected through package vars so tests can exercise
 // Stop's strategy branches and stillSame's recycle guard without shelling out
 // or signalling real processes. Production values just call the real tools.
+// ps runs under LC_ALL=C so its lstart output is the stable English format
+// scan.go captured under the same locale — otherwise stillSame would compare
+// a C-locale re-read against a differently-localized capture and falsely
+// report a recycled PID.
 var (
 	runCombined = func(name string, args ...string) (string, error) {
 		out, err := exec.Command(name, args...).CombinedOutput()
 		return string(out), err
 	}
 	runOutput = func(name string, args ...string) (string, error) {
-		out, err := exec.Command(name, args...).Output()
+		cmd := exec.Command(name, args...)
+		cmd.Env = append(os.Environ(), "LC_ALL=C")
+		out, err := cmd.Output()
 		return string(out), err
 	}
 	termProcess = func(pid int) error { return syscall.Kill(pid, syscall.SIGTERM) }
@@ -92,8 +98,8 @@ func dockerGuardOK(scanArgID, curID string, lookupOK bool) bool {
 }
 
 // stillSame confirms the live PID is still the process we scanned. Start time
-// is authoritative; if we never captured one, fall back to comparing the
-// executable basename so we don't refuse a legitimate stop.
+// is authoritative; if we never captured one, fall back to comparing the full
+// command line, refusing anything short of an exact match (see below).
 func stillSame(l scan.Listener) bool {
 	if l.StartTime != "" {
 		out, err := runOutput("ps", "-p", strconv.Itoa(l.PID), "-o", "lstart=")
@@ -112,24 +118,18 @@ func stillSame(l scan.Listener) bool {
 	if err != nil {
 		return false
 	}
-	cur := strings.TrimSpace(out)
-	return cur != "" && sameExe(cur, l.CommandLine)
+	// No start time — the command line is the only identity left. Require a
+	// FULL match, not just the executable basename: when scan loses a PID's ps
+	// row it falls back to lsof's short command NAME (e.g. "node"), which can't
+	// tell two `node` servers apart, so a basename compare would happily
+	// signal a recycled-to unrelated `node` process. Demanding a full-argv
+	// match means that weak case refuses instead (a rescan recaptures the
+	// start time and takes the strong path) — refusing beats a wrong SIGTERM.
+	return normalizeWS(out) != "" && normalizeWS(out) == normalizeWS(l.CommandLine)
 }
 
 // normalizeWS collapses each run of whitespace to a single space and trims
 // the ends, so two spellings of the same ps timestamp compare equal.
 func normalizeWS(s string) string {
 	return strings.Join(strings.Fields(s), " ")
-}
-
-func sameExe(a, b string) bool {
-	return argv0Base(a) == argv0Base(b)
-}
-
-func argv0Base(cmd string) string {
-	fields := strings.Fields(cmd)
-	if len(fields) == 0 {
-		return ""
-	}
-	return filepath.Base(fields[0])
 }

@@ -321,12 +321,18 @@ func matchDir(rows []row, dir string) []row {
 	return out
 }
 
-// resolvePath canonicalizes a path via EvalSymlinks, falling back to a plain
-// Clean when the path can't be resolved (doesn't exist, permission, etc.) so
-// matching still works on a best-effort basis.
+// resolvePath canonicalizes a path to an absolute, symlink-resolved form.
+// The Abs step is essential: `--dir .` (the most natural invocation) and any
+// other relative path must be absolutized before comparison, since the cwds
+// it's matched against — from lsof — are always absolute. EvalSymlinks alone
+// does NOT absolutize. Falls back to Clean when a step fails (path doesn't
+// exist, permission) so matching still works best-effort.
 func resolvePath(p string) string {
 	if p == "" {
 		return ""
+	}
+	if abs, err := filepath.Abs(p); err == nil {
+		p = abs
 	}
 	if r, err := filepath.EvalSymlinks(p); err == nil {
 		return r
@@ -345,7 +351,15 @@ func withinDir(cwd, dir string) bool {
 	if c == d {
 		return true
 	}
-	return strings.HasPrefix(c, d+string(filepath.Separator))
+	// Anchor on a separator so /a/b matches /a/b/c but not /a/bc. Clean strips
+	// a trailing separator EXCEPT on root ("/"), so only append one when d
+	// doesn't already end in it — otherwise `--dir /` becomes "//" and matches
+	// nothing instead of every absolute path.
+	sep := string(filepath.Separator)
+	if !strings.HasSuffix(d, sep) {
+		d += sep
+	}
+	return strings.HasPrefix(c, d)
 }
 
 // stopMatched runs stop over each matched row, printing a ✓/✗ line per

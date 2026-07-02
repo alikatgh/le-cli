@@ -102,6 +102,17 @@ func TestWaitUntilReturnsWhenCondBecomesTrue(t *testing.T) {
 	}
 }
 
+// Regression: a timeout shorter than pollEvery (400ms) used to ALWAYS return
+// false — the deadline fired before the first tick, and the deadline branch
+// didn't check cond. A cond already true must succeed even with a tiny timeout.
+func TestWaitUntilShortTimeoutStillSeesTrueCond(t *testing.T) {
+	runWithin(t, 2*time.Second, func() {
+		if !waitUntil(func() bool { return true }, 10*time.Millisecond) {
+			t.Error("waitUntil with an already-true cond and a sub-pollEvery timeout should return true")
+		}
+	})
+}
+
 func TestWaitUntilTimesOut(t *testing.T) {
 	// A cond that never becomes true must return false once the timeout
 	// elapses, rather than blocking forever.
