@@ -1,5 +1,9 @@
 # le — Localhost Explorer for the terminal
 
+[![ci](https://github.com/alikatgh/le-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/alikatgh/le-cli/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/alikatgh/le-cli?sort=semver)](https://github.com/alikatgh/le-cli/releases/latest)
+[![license](https://img.shields.io/github/license/alikatgh/le-cli)](LICENSE)
+
 A fast, keyboard-driven TUI for seeing what's listening on your machine and
 stopping it the right way. The terminal sibling of the
 [Localhost Explorer](https://localhostexplorer.com) menu bar app — same

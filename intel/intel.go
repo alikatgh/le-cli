@@ -99,12 +99,19 @@ func Detect() Env {
 }
 
 func brewStarted() map[string]bool {
-	m := map[string]bool{}
 	out, err := exec.Command("brew", "services", "list").Output()
 	if err != nil {
-		return m
+		return map[string]bool{}
 	}
-	for i, line := range strings.Split(string(out), "\n") {
+	return parseBrewStarted(string(out))
+}
+
+// parseBrewStarted extracts the set of formulae `brew services` reports as
+// active (started or scheduled), split out from the exec so it's testable.
+// The name→managed mapping it produces gates Make's managedBrew classification.
+func parseBrewStarted(out string) map[string]bool {
+	m := map[string]bool{}
+	for i, line := range strings.Split(out, "\n") {
 		if i == 0 || strings.TrimSpace(line) == "" {
 			continue // header / blank
 		}

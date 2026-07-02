@@ -59,6 +59,36 @@ func TestWordMatchBoundaries(t *testing.T) {
 	}
 }
 
+func TestParseBrewStarted(t *testing.T) {
+	// Real `brew services list` shape: header, then "name status user file".
+	out := "Name    Status  User  File\n" +
+		"redis   started me    ~/Library/.../redis.plist\n" +
+		"mongodb-community started me ~/...\n" +
+		"postgresql stopped me ~/...\n" +
+		"unbound scheduled root ~/...\n" +
+		"\n"
+	got := parseBrewStarted(out)
+	if !got["redis"] || !got["mongodb-community"] || !got["unbound"] {
+		t.Errorf("started/scheduled services missing: %v", got)
+	}
+	if got["postgresql"] {
+		t.Error("a stopped service must not be reported as started")
+	}
+	if len(got) != 3 {
+		t.Errorf("got %d active services, want 3: %v", len(got), got)
+	}
+}
+
+func TestParseBrewStartedEmpty(t *testing.T) {
+	if got := parseBrewStarted(""); len(got) != 0 {
+		t.Errorf("parseBrewStarted(empty) = %v, want empty", got)
+	}
+	// Header only, no services.
+	if got := parseBrewStarted("Name Status User File\n"); len(got) != 0 {
+		t.Errorf("parseBrewStarted(header only) = %v, want empty", got)
+	}
+}
+
 func TestBrewFormulaSkipsBareHomebrewSegment(t *testing.T) {
 	if f := brewFormula("/opt/homebrew/opt/mongodb-community/bin/mongod"); f != "mongodb-community" {
 		t.Errorf("got %q, want mongodb-community", f)
