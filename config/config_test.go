@@ -49,7 +49,7 @@ func TestLoadDoesNotPanicOnUnreadableExistingPath(t *testing.T) {
 	// Make "config" a directory instead of a file, so ReadFile fails with
 	// something other than "not exist" — Load must still return defaults,
 	// not panic or crash the whole CLI over a malformed config path.
-	if err := os.MkdirAll(filepath.Join(dir, "le", "config"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "le", "config"), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	c, warning := Load()
@@ -75,10 +75,10 @@ func TestIntervalClampsNonPositive(t *testing.T) {
 func writeConfig(t *testing.T, xdgDir, content string) {
 	t.Helper()
 	leDir := filepath.Join(xdgDir, "le")
-	if err := os.MkdirAll(leDir, 0o755); err != nil {
+	if err := os.MkdirAll(leDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(leDir, "config"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(leDir, "config"), []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

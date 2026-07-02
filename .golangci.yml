@@ -1,0 +1,11 @@
+version: "2"
+
+# Keep golangci-lint's default set (errcheck, govet, ineffassign, staticcheck,
+# unused) and add gosec — le shells out to ps/lsof/brew/docker, so a security
+# linter watching the subprocess/permission surface earns its place. The one
+# justified G204 (DockerContainerID's escaped, shell-free exec arg) is
+# annotated inline with #nosec rather than excluded here, so a NEW unsafe
+# exec still fails the gate.
+linters:
+  enable:
+    - gosec

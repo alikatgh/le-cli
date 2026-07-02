@@ -169,6 +169,10 @@ var DockerContainerID = func(name string) (string, bool) {
 	// containing a regex metacharacter (".", "+", "*"... all legal in Docker
 	// container names, and routine in docker-compose-generated names) would
 	// otherwise match a differently-named container too. Escape it.
+	//
+	// #nosec G204 -- name is passed as a discrete exec argument (no shell), so
+	// there's no command injection; regexp.QuoteMeta additionally neutralizes
+	// the regex metacharacters that are the only injection surface here.
 	out, err := exec.Command("docker", "ps", "--filter", "name=^"+regexp.QuoteMeta(name)+"$", "--format", "{{.ID}}").Output()
 	if err != nil {
 		return "", false

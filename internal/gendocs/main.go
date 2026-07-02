@@ -15,7 +15,7 @@ import (
 
 func main() {
 	const dir = "man"
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		log.Fatal(err)
 	}
 	header := &doc.GenManHeader{
