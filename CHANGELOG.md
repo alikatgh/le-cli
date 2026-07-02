@@ -9,6 +9,9 @@ All notable changes to `le` are documented here. Format loosely follows
 - `le stop --dry-run` (`-n`) prints exactly what a stop would act on — process,
   pid, and strategy — without touching anything. Handy to preview a `--dir`
   sweep before running it for real.
+- `le list [filter]` narrows the table to rows matching the filter text across
+  port / name / command / folder / owner — the same match the TUI's `/` uses,
+  now available one-shot for scripts (`le list node --json`).
 
 ## [0.1.5] - 2026-07-02
 

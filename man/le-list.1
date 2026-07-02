@@ -6,11 +6,13 @@ le-list - Print a one-shot table of listeners (no TUI)
 
 
 .SH SYNOPSIS
-\fBle list [flags]\fP
+\fBle list [filter] [flags]\fP
 
 
 .SH DESCRIPTION
-Print a one-shot table of listeners (no TUI)
+Print every localhost listener as a table (or JSON). An optional
+filter narrows it to rows matching that text in the port, name,
+command, folder, or owner — the same match the TUI's / filter uses.
 
 
 .SH OPTIONS

@@ -71,12 +71,18 @@ func newRoot(version string) *cobra.Command {
 func listCmd() *cobra.Command {
 	var asJSON bool
 	c := &cobra.Command{
-		Use:     "list",
+		Use:     "list [filter]",
 		Aliases: []string{"ls"},
 		Short:   "Print a one-shot table of listeners (no TUI)",
-		Args:    cobra.NoArgs,
+		Long: "Print every localhost listener as a table (or JSON). An optional\n" +
+			"filter narrows it to rows matching that text in the port, name,\n" +
+			"command, folder, or owner — the same match the TUI's / filter uses.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rows := gather()
+			if len(args) == 1 {
+				rows = filterRows(rows, args[0])
+			}
 			if asJSON {
 				return printJSON(os.Stdout, rows)
 			}
@@ -86,6 +92,26 @@ func listCmd() *cobra.Command {
 	}
 	c.Flags().BoolVar(&asJSON, "json", false, "output as JSON")
 	return c
+}
+
+// filterRows keeps the rows matching q (case-insensitive substring) across the
+// port, identity, command, folder, and owner fields — the same set the TUI's
+// filter searches, so `le list node` and typing "node" in the TUI agree.
+func filterRows(rows []row, q string) []row {
+	q = strings.ToLower(strings.TrimSpace(q))
+	if q == "" {
+		return rows
+	}
+	var out []row
+	for _, r := range rows {
+		hay := strings.ToLower(strings.Join([]string{
+			strings.Join(r.Ports, " "), r.Profile.Identity, r.Command, r.CommandLine, r.Cwd, string(r.Profile.Source),
+		}, " "))
+		if strings.Contains(hay, q) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func stopCmd() *cobra.Command {

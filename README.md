@@ -59,6 +59,7 @@ Homebrew and Docker detection are best-effort — missing tools are skipped.
 ```sh
 le                 # launch the live TUI (default)
 le list            # print a one-shot table and exit (alias: le ls)
+le list node       # …filtered to rows matching "node" (port/name/cmd/dir/owner)
 le list --json     # structured output for scripts / jq
 le stop 3000       # stop whatever is on port 3000, the smart way
 le stop 1183       # …or by PID

@@ -257,6 +257,37 @@ func TestMatchDirNoMatch(t *testing.T) {
 	}
 }
 
+func TestFilterRows(t *testing.T) {
+	rows := []row{
+		sampleRow("3000", 100, "node"),
+		sampleRow("8000", 200, "django"),
+		{Listener: scan.Listener{PID: 300, Ports: []string{"5432"}, Cwd: "/proj/db"},
+			Profile: intel.Profile{Identity: "Postgres", Source: intel.SrcHomebrew}},
+	}
+	cases := []struct {
+		q     string
+		want  int
+		check string // an identity that must be present (empty = skip)
+	}{
+		{"node", 1, "node"},         // identity/command match
+		{"8000", 1, "django"},       // port match
+		{"/proj/db", 1, "Postgres"}, // cwd match
+		{"homebrew", 1, "Postgres"}, // source match
+		{"", 3, ""},                 // empty filter keeps all
+		{"nothingmatches", 0, ""},   // no match
+	}
+	for _, c := range cases {
+		got := filterRows(rows, c.q)
+		if len(got) != c.want {
+			t.Errorf("filterRows(%q) matched %d, want %d", c.q, len(got), c.want)
+			continue
+		}
+		if c.check != "" && got[0].Profile.Identity != c.check {
+			t.Errorf("filterRows(%q) top row = %q, want %q", c.q, got[0].Profile.Identity, c.check)
+		}
+	}
+}
+
 func TestPreviewMatched(t *testing.T) {
 	rows := []row{
 		{Listener: scan.Listener{PID: 100}, Profile: intel.Profile{Identity: "node", StopLabel: "Send TERM to PID 100"}},
