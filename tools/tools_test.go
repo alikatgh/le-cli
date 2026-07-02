@@ -99,3 +99,48 @@ func TestWaitUntilReturnsWhenCondBecomesTrue(t *testing.T) {
 		t.Errorf("waitUntil polled %d times, want at least 2", calls)
 	}
 }
+
+// The real reason `le wait` exists: block on a busy port, then return once it
+// frees. Exercises the polling path, not just the already-free fast path.
+func TestWaitFreeUnblocksWhenPortFrees(t *testing.T) {
+	port := freePort(t)
+	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", port))
+	if err != nil {
+		t.Skipf("setup bind failed: %v", err)
+	}
+	// Release the port shortly after WaitFree starts polling.
+	go func() {
+		time.Sleep(pollEvery + 100*time.Millisecond)
+		_ = ln.Close()
+	}()
+	runWithin(t, 5*time.Second, func() {
+		if err := WaitFree(port); err != nil {
+			t.Errorf("WaitFree = %v, want nil once the port freed", err)
+		}
+	})
+}
+
+// The real reason `le ready` exists: block until something starts listening.
+func TestWaitListeningUnblocksWhenSomethingListens(t *testing.T) {
+	port := freePort(t)
+	// The listener is handed back over a channel, not a shared var — the
+	// channel receive gives the happens-before that keeps -race quiet.
+	lnCh := make(chan net.Listener, 1)
+	go func() {
+		time.Sleep(pollEvery + 100*time.Millisecond)
+		l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", port))
+		if err != nil {
+			lnCh <- nil
+			return
+		}
+		lnCh <- l
+	}()
+	runWithin(t, 5*time.Second, func() {
+		if err := WaitListening(port); err != nil {
+			t.Errorf("WaitListening = %v, want nil once something listened", err)
+		}
+	})
+	if ln := <-lnCh; ln != nil {
+		_ = ln.Close()
+	}
+}
