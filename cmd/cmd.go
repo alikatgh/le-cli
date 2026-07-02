@@ -102,7 +102,10 @@ func filterRows(rows []row, q string) []row {
 	if q == "" {
 		return rows
 	}
-	var out []row
+	// Non-nil even when nothing matches, so `le list <filter> --json` emits []
+	// (not null) — matching the unfiltered zero-listener case and keeping jq /
+	// JSON.parse consumers happy.
+	out := make([]row, 0, len(rows))
 	for _, r := range rows {
 		hay := strings.ToLower(strings.Join([]string{
 			strings.Join(r.Ports, " "), r.Profile.Identity, r.Command, r.CommandLine, r.Cwd, string(r.Profile.Source),

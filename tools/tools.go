@@ -8,11 +8,25 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 )
 
 const pollEvery = 400 * time.Millisecond
+
+// validPort rejects a port net.Listen would fail on for reasons OTHER than
+// "occupied" — non-numeric or out of range. Without this, Free() collapses
+// such a failure into the same false it returns for a busy port, so
+// `le ready 99999` would falsely report "already listening" and `le wait
+// 99999` would block forever on a port that can never be observed.
+func validPort(port string) error {
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("invalid port %q: expected a number 1-65535", port)
+	}
+	return nil
+}
 
 // Free reports whether 127.0.0.1:<port> can be bound right now — i.e. nothing
 // is currently listening on it.
@@ -57,6 +71,9 @@ func Hold(port string) error {
 // the wait and returns an error if it elapses first; timeout <= 0 waits
 // indefinitely (Ctrl-C to stop).
 func WaitFree(port string, timeout time.Duration) error {
+	if err := validPort(port); err != nil {
+		return err
+	}
 	if Free(port) {
 		fmt.Printf("port %s is already free\n", port)
 		return nil
@@ -72,6 +89,9 @@ func WaitFree(port string, timeout time.Duration) error {
 // WaitListening blocks until something starts listening on <port> — the
 // "open when ready" primitive. See WaitFree for timeout semantics.
 func WaitListening(port string, timeout time.Duration) error {
+	if err := validPort(port); err != nil {
+		return err
+	}
 	if !Free(port) {
 		fmt.Printf("port %s is already listening\n", port)
 		return nil

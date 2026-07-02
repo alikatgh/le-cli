@@ -75,6 +75,20 @@ func TestWaitListeningReturnsImmediatelyWhenListening(t *testing.T) {
 	})
 }
 
+func TestWaitRejectsInvalidPort(t *testing.T) {
+	// An out-of-range or non-numeric port must return an error, not falsely
+	// "succeed" (ready) or block forever (wait) because Free() can't tell an
+	// invalid port from an occupied one.
+	for _, p := range []string{"99999", "70000", "0", "-1", "abc", ""} {
+		if err := WaitListening(p, 0); err == nil {
+			t.Errorf("WaitListening(%q) = nil, want an invalid-port error", p)
+		}
+		if err := WaitFree(p, 0); err == nil {
+			t.Errorf("WaitFree(%q) = nil, want an invalid-port error", p)
+		}
+	}
+}
+
 func TestHoldFailsWhenPortTaken(t *testing.T) {
 	port := freePort(t)
 	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", port))

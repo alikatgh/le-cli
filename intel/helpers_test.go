@@ -124,6 +124,46 @@ func TestIsSystem(t *testing.T) {
 	}
 }
 
+func TestBrewFormulaLowercasesName(t *testing.T) {
+	// The formula must come back lowercase to match brew's own names (which
+	// BrewStarted/BrewServiceKnown and the `formula == "redis"` checks use).
+	if f := brewFormula("/opt/homebrew/Cellar/REDIS/7.2.0/bin/redis-server"); f != "redis" {
+		t.Errorf("brewFormula(mixed-case) = %q, want redis", f)
+	}
+	if f := brewFormula("/opt/homebrew/Cellar/redis/7.2.0/bin/redis-server"); f != "redis" {
+		t.Errorf("brewFormula(lower) = %q, want redis", f)
+	}
+}
+
+func TestIsInterpreterRejectsPrefixLookalikes(t *testing.T) {
+	interp := []string{"python", "python3", "python3.11", "py", "ruby", "ruby2.7", "node", "deno", "bun", "/usr/bin/python3"}
+	for _, tok := range interp {
+		if !isInterpreter(tok) {
+			t.Errorf("isInterpreter(%q) = false, want true", tok)
+		}
+	}
+	notInterp := []string{"python-config", "python-build", "rubygems", "nodemon", "denoland", "bundler"}
+	for _, tok := range notInterp {
+		if isInterpreter(tok) {
+			t.Errorf("isInterpreter(%q) = true, want false (prefix lookalike)", tok)
+		}
+	}
+}
+
+func TestIsSystemMatchesDaemonBasenameNotSubstring(t *testing.T) {
+	// A root process whose PATH merely contains a daemon name is NOT a daemon.
+	if isSystem(scan.Listener{User: "root", CommandLine: "/private/tmp/launchd-test/server --flag"}) {
+		t.Error("root process with 'launchd' only in its path must not be flagged system")
+	}
+	if isSystem(scan.Listener{User: "root", CommandLine: "/opt/x/helper --tag=mdnsresponder_proxy"}) {
+		t.Error("root process with 'mdnsresponder' only in an arg must not be flagged system")
+	}
+	// A genuine daemon (matched by basename) still is.
+	if !isSystem(scan.Listener{User: "root", CommandLine: "/opt/foo/rapportd"}) {
+		t.Error("a real rapportd daemon should be flagged system")
+	}
+}
+
 func TestSourceFor(t *testing.T) {
 	// sourceFor is the Source safety net Make falls back to when a branch
 	// leaves Source unset. Priority order: container > brew > system > editor

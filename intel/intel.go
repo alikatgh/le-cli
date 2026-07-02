@@ -430,8 +430,29 @@ func interpreterIdentity(cmd string) (interpID, bool) {
 
 func isInterpreter(token string) bool {
 	b := strings.ToLower(filepath.Base(token))
-	return strings.HasPrefix(b, "python") || strings.HasPrefix(b, "ruby") ||
-		b == "node" || b == "deno" || b == "bun" || b == "py"
+	if b == "node" || b == "deno" || b == "bun" || b == "py" {
+		return true
+	}
+	// python / ruby may carry a version suffix (python3, python3.11, ruby2.7)
+	// but a bare HasPrefix also swept in unrelated tools whose name merely
+	// starts the same way — python-config, python-build, rubygems — and
+	// fabricated an interpreter identity for them. Only accept a trailing
+	// version (digits and dots).
+	return versionedName(b, "python") || versionedName(b, "ruby")
+}
+
+// versionedName reports whether b is exactly name, or name followed only by a
+// version suffix of digits and dots.
+func versionedName(b, name string) bool {
+	if !strings.HasPrefix(b, name) {
+		return false
+	}
+	for _, r := range b[len(name):] {
+		if (r < '0' || r > '9') && r != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 func canonicalInterp(token string) string {
@@ -551,7 +572,12 @@ func brewFormula(cmd string) string {
 		return ""
 	}
 	if m := cellarRe.FindStringSubmatch(cmd); m != nil {
-		f := strings.SplitN(m[1], "@", 2)[0] // redis@7 -> redis
+		// Lowercase the captured name: the regex matched against the original
+		// case, but brew's own formula names (what BrewStarted is keyed on and
+		// what BrewServiceKnown / the `formula == "redis"` checks compare
+		// against) are lowercase. A mixed-case path like /Cellar/REDIS/ would
+		// otherwise yield "REDIS" and miss every one of those.
+		f := strings.ToLower(strings.SplitN(m[1], "@", 2)[0]) // redis@7 -> redis
 		if f == "homebrew" {
 			return ""
 		}
@@ -576,14 +602,26 @@ func isSystem(l scan.Listener) bool {
 		return true
 	}
 	if l.User == "root" && !strings.Contains(c, "/cellar/") && !strings.Contains(c, "/users/") {
-		switch {
-		case strings.Contains(c, "rapportd"), strings.Contains(c, "sharingd"),
-			strings.Contains(c, "controlce"), strings.Contains(c, "launchd"),
-			strings.Contains(c, "mdnsresponder"):
+		// Match the daemon name against the EXECUTABLE's basename, not the
+		// whole command line — otherwise a root process whose path or args
+		// merely contained "launchd"/"mdnsresponder"/etc. (e.g.
+		// /tmp/launchd-test/server) was misflagged as a real macOS daemon and
+		// forced to High-risk / StopAvoid.
+		switch argv0Base(c) {
+		case "rapportd", "sharingd", "controlcenter", "launchd", "mdnsresponder":
 			return true
 		}
 	}
 	return false
+}
+
+// argv0Base returns the lowercased basename of a command line's first token.
+func argv0Base(cmd string) string {
+	fields := strings.Fields(cmd)
+	if len(fields) == 0 {
+		return ""
+	}
+	return filepath.Base(fields[0])
 }
 
 func isBackgroundApp(l scan.Listener) bool {

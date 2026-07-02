@@ -5,6 +5,21 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+- The TUI confirm dialog could stop the wrong process: a background refresh
+  landing while the dialog was open could move a different listener under the
+  cursor before you pressed `y`. The dialog now pins the row you selected.
+- `le` mis-handled a Homebrew formula whose Cellar path had non-lowercase
+  casing — the profile degraded and `brew services stop` could be refused for
+  a running service. The formula name is now normalized to lowercase.
+- `le ready <invalid-port>` falsely reported success and `le wait
+  <invalid-port>` hung; both now reject a non-numeric or out-of-range port.
+- `le list <filter> --json` emitted `null` instead of `[]` when nothing
+  matched, breaking `jq`/JSON consumers.
+- Process classification: binaries like `python-config`/`rubygems` were
+  misread as interpreters, and a root process with a daemon name anywhere in
+  its path was misflagged as a system daemon. Both now match precisely.
+
 ## [0.1.7] - 2026-07-02
 
 ### Fixed

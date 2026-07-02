@@ -62,6 +62,7 @@ type model struct {
 	filtering bool
 	filter    textinput.Model
 	confirm   bool
+	confirmed Row // the row pinned when the confirm dialog opened
 	flash     string
 	flashErr  bool
 	help      bool
@@ -174,10 +175,12 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "y", "Y", "enter":
 			m.confirm = false
-			if r, ok := m.selected(); ok {
-				m.flash = ""
-				return m, stopCmd(r)
-			}
+			// Act on the row pinned when the dialog opened, NOT m.selected():
+			// a background scan/tick can rebuild and re-sort the view while
+			// the dialog is up, moving a different process under the cursor.
+			// kill.Stop still re-verifies that pinned row's own PID.
+			m.flash = ""
+			return m, stopCmd(m.confirmed)
 		case "n", "N", "esc", "q":
 			m.confirm = false
 		}
@@ -240,7 +243,7 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if r.P.StopKind == intel.StopAvoid {
 				m.flash, m.flashErr = "won't auto-stop "+r.P.Identity+" — inspect it first", true
 			} else {
-				m.confirm = true
+				m.confirm, m.confirmed = true, r // pin the row now; see the y/enter handler
 			}
 		}
 	}
@@ -554,7 +557,9 @@ func (m model) detailView() string {
 
 func (m model) footerView() string {
 	if m.confirm {
-		r, _ := m.selected()
+		// Describe the PINNED row, so the prompt and the action can't disagree
+		// if the view shifted under the cursor while the dialog is open.
+		r := m.confirmed
 		q := lipgloss.NewStyle().Foreground(yellow).Render(
 			fmt.Sprintf("Stop %s?  → %s   ", r.P.Identity, stopShort(r.P)))
 		return q + keySt.Render("y") + dimSt.Render(" yes  ") + keySt.Render("n") + dimSt.Render(" no")

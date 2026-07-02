@@ -320,6 +320,26 @@ func TestFilterRows(t *testing.T) {
 	}
 }
 
+func TestFilterRowsEmptyIsNonNil(t *testing.T) {
+	// No match must return a non-nil empty slice so `le list <f> --json`
+	// emits [] (not null), matching the unfiltered zero-listener case.
+	rows := []row{sampleRow("3000", 100, "node")}
+	got := filterRows(rows, "nomatch")
+	if got == nil {
+		t.Fatal("filterRows with no match returned nil; want a non-nil empty slice")
+	}
+	if len(got) != 0 {
+		t.Fatalf("filterRows with no match returned %d rows, want 0", len(got))
+	}
+	var buf bytes.Buffer
+	if err := printJSON(&buf, got); err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(buf.String()) != "[]" {
+		t.Errorf("empty filtered JSON = %q, want []", strings.TrimSpace(buf.String()))
+	}
+}
+
 func TestPreviewMatched(t *testing.T) {
 	rows := []row{
 		{Listener: scan.Listener{PID: 100}, Profile: intel.Profile{Identity: "node", StopLabel: "Send TERM to PID 100"}},

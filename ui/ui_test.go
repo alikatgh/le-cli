@@ -185,6 +185,39 @@ func TestScannedMsgIgnoresStaleResult(t *testing.T) {
 	}
 }
 
+// Regression: opening the confirm dialog must PIN the selected row, so a
+// background scan that reorders/replaces the view can't retarget the pending
+// stop to a different process when the user presses y.
+func TestConfirmPinsRowAgainstBackgroundScan(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+
+	// Cursor 0 is the Node service (PID 101, a stoppable TERM row) after the
+	// default port-ascending sort. Open the confirm dialog on it.
+	m, _ = m.Update(key("x"))
+	if !m.(model).confirm {
+		t.Fatal("expected confirm after x")
+	}
+	pinned := m.(model).confirmed.L.PID
+	if pinned != 101 {
+		t.Fatalf("pinned PID = %d, want 101 (the Node row)", pinned)
+	}
+
+	// A background scan lands with PID 101 gone — the view rebuilds and the
+	// cursor now sits over a DIFFERENT process.
+	remaining := sampleRows()[1:] // drop the Node row (101)
+	m, _ = m.Update(scannedMsg{rows: remaining, at: time.Now().Add(time.Second)})
+
+	if sel, ok := m.(model).selected(); !ok || sel.L.PID == 101 {
+		t.Fatalf("after the scan, selected() should be a different row, got PID %d", sel.L.PID)
+	}
+	// The pinned row must NOT have changed — that's what y will act on.
+	if got := m.(model).confirmed.L.PID; got != 101 {
+		t.Errorf("confirmed row = PID %d after background scan, want it still pinned to 101", got)
+	}
+}
+
 func TestMouse(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
