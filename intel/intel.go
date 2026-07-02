@@ -161,7 +161,10 @@ func parseDockerPorts(out string) map[string]dockerContainer {
 // immediately before a `docker stop` to confirm the name still points at the
 // same container it did at scan time — container names, unlike PIDs, can be
 // freed and reassigned to a completely different container.
-func DockerContainerID(name string) (string, bool) {
+//
+// A package var, not a plain func, so kill's tests can stub the re-verify
+// result without a running Docker daemon.
+var DockerContainerID = func(name string) (string, bool) {
 	// Docker's --filter name= value is regex-matched, not literal — a name
 	// containing a regex metacharacter (".", "+", "*"... all legal in Docker
 	// container names, and routine in docker-compose-generated names) would
@@ -194,7 +197,9 @@ func DockerContainerID(name string) (string, bool) {
 // service as unknown and refuse to stop it. Kept as `list` on purpose; the
 // latency is dominated by brew's process-startup overhead either way, so the
 // single-lookup form wouldn't meaningfully help.
-func BrewServiceKnown(formula string) bool {
+//
+// A package var, not a plain func, so kill's tests can stub the check.
+var BrewServiceKnown = func(formula string) bool {
 	out, err := exec.Command("brew", "services", "list").Output()
 	if err != nil {
 		return true // brew itself unusable — don't block the stop attempt on this check

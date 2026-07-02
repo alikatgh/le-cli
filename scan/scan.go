@@ -24,7 +24,11 @@ type Listener struct {
 	Ports       []string `json:"ports"`
 }
 
-func runCmd(name string, args ...string) (string, error) {
+// runCmd runs a subprocess and returns its stdout. It's a package var, not a
+// plain func, so tests can substitute canned lsof/ps output and exercise the
+// full Scan orchestration without shelling out. Overrides must stay
+// goroutine-safe: readPS invokes this from two goroutines at once.
+var runCmd = func(name string, args ...string) (string, error) {
 	out, err := exec.Command(name, args...).Output()
 	return string(out), err
 }

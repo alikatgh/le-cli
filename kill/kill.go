@@ -16,6 +16,21 @@ import (
 	"github.com/alikatgh/le-cli/scan"
 )
 
+// Command execution is indirected through package vars so tests can exercise
+// Stop's strategy branches and stillSame's recycle guard without shelling out
+// or signalling real processes. Production values just call the real tools.
+var (
+	runCombined = func(name string, args ...string) (string, error) {
+		out, err := exec.Command(name, args...).CombinedOutput()
+		return string(out), err
+	}
+	runOutput = func(name string, args ...string) (string, error) {
+		out, err := exec.Command(name, args...).Output()
+		return string(out), err
+	}
+	termProcess = func(pid int) error { return syscall.Kill(pid, syscall.SIGTERM) }
+)
+
 // Stop runs the recommended action for a listener. It returns a short result
 // message, or an error if the PID was recycled or the action failed.
 func Stop(l scan.Listener, p intel.Profile) (string, error) {
@@ -31,9 +46,9 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 		if !intel.BrewServiceKnown(p.StopArg) {
 			return "", fmt.Errorf("brew formula %q is no longer known to brew services — rescan and try again", p.StopArg)
 		}
-		out, err := exec.Command("brew", "services", "stop", p.StopArg).CombinedOutput()
+		out, err := runCombined("brew", "services", "stop", p.StopArg)
 		if err != nil {
-			return "", fmt.Errorf("brew services stop %s: %s", p.StopArg, strings.TrimSpace(string(out)))
+			return "", fmt.Errorf("brew services stop %s: %s", p.StopArg, strings.TrimSpace(out))
 		}
 		return "brew services stop " + p.StopArg, nil
 	case intel.StopDocker:
@@ -50,15 +65,15 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 		if !dockerGuardOK(p.StopArgID, curID, lookupOK) {
 			return "", fmt.Errorf("container %q changed since scan — rescan and try again", p.StopArg)
 		}
-		out, err := exec.Command("docker", "stop", p.StopArg).CombinedOutput()
+		out, err := runCombined("docker", "stop", p.StopArg)
 		if err != nil {
-			return "", fmt.Errorf("docker stop %s: %s", p.StopArg, strings.TrimSpace(string(out)))
+			return "", fmt.Errorf("docker stop %s: %s", p.StopArg, strings.TrimSpace(out))
 		}
 		return "docker stop " + p.StopArg, nil
 	case intel.StopAvoid:
 		return "", fmt.Errorf("no safe automatic stop — inspect this process first")
 	default:
-		if err := syscall.Kill(l.PID, syscall.SIGTERM); err != nil {
+		if err := termProcess(l.PID); err != nil {
 			return "", fmt.Errorf("kill -TERM %d: %w", l.PID, err)
 		}
 		return "sent SIGTERM to " + strconv.Itoa(l.PID), nil
@@ -81,17 +96,17 @@ func dockerGuardOK(scanArgID, curID string, lookupOK bool) bool {
 // executable basename so we don't refuse a legitimate stop.
 func stillSame(l scan.Listener) bool {
 	if l.StartTime != "" {
-		out, err := exec.Command("ps", "-p", strconv.Itoa(l.PID), "-o", "lstart=").Output()
+		out, err := runOutput("ps", "-p", strconv.Itoa(l.PID), "-o", "lstart=")
 		if err != nil {
 			return false
 		}
-		return strings.TrimSpace(string(out)) == strings.TrimSpace(l.StartTime)
+		return strings.TrimSpace(out) == strings.TrimSpace(l.StartTime)
 	}
-	out, err := exec.Command("ps", "-ww", "-p", strconv.Itoa(l.PID), "-o", "command=").Output()
+	out, err := runOutput("ps", "-ww", "-p", strconv.Itoa(l.PID), "-o", "command=")
 	if err != nil {
 		return false
 	}
-	cur := strings.TrimSpace(string(out))
+	cur := strings.TrimSpace(out)
 	return cur != "" && sameExe(cur, l.CommandLine)
 }
 
