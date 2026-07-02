@@ -2,6 +2,33 @@
 
 Tags are plain `v*` (e.g. `v0.1.0`).
 
+## Before you tag — the checklist that exists because we skipped it
+
+v0.1.5 shipped with its flagship feature (`le stop --dir`) completely broken:
+the live-fire test only used absolute temp paths, never the relative `.` a
+human types, and the adversarial review that would have caught it ran *after*
+the release — so v0.1.7–v0.1.9 existed mostly to patch v0.1.5–v0.1.8. Review
+first, tag second:
+
+1. **Gate:** `go build ./... && go vet ./... && gofmt -l . && go test -race
+   ./... && golangci-lint run ./...` — all clean (same as CI, but don't tag on
+   hope).
+2. **Live-fire every new user-facing behavior on a real process** — and
+   exercise the inputs a human actually types, not just the ones convenient to
+   script: relative paths (`--dir .`), quoted config values, invalid ports,
+   single-digit dates, a non-English locale.
+3. **New feature or touched stop-path? Run an adversarial review of the diff
+   BEFORE tagging**, not as post-release QA. Three post-hoc review rounds
+   found 18 bugs in already-shipped releases; each would have been cheaper
+   caught pre-tag.
+4. **Batch.** One reviewed release beats three same-day patch releases.
+5. Promote `[Unreleased]` in CHANGELOG.md (date + compare links), then tag.
+
+After the release publishes: update the tap with the real `checksums.txt`
+values (cross-check every URL↔sha pair), `brew upgrade`, and verify the new
+behavior on the *installed* binary — plus
+`gh attestation verify <tarball> --repo alikatgh/le-cli`.
+
 ## Automated (GitHub Actions)
 
 ```sh
