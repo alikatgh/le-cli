@@ -219,15 +219,27 @@ func runStop(target string) error {
 	if len(matched) == 0 {
 		return fmt.Errorf("nothing listening on %s", target)
 	}
+	return stopMatched(os.Stdout, os.Stderr, matched, kill.Stop)
+}
+
+// stopMatched runs stop over each matched row, printing a ✓/✗ line per
+// result, and returns an error naming the partial-failure count if any row
+// couldn't be stopped. Split out (with injected writers + stop func) so the
+// aggregation and output — including the "N of M could not be stopped"
+// partial-failure path — are testable without touching real processes.
+func stopMatched(w, errW io.Writer, matched []row, stop func(scan.Listener, intel.Profile) (string, error)) error {
+	// Write errors are discarded, same as printTable: a broken output pipe
+	// fails every subsequent write identically and there's nothing more
+	// useful to do here than finish the stop attempts.
 	var failed int
 	for _, r := range matched {
-		msg, err := kill.Stop(r.Listener, r.Profile)
+		msg, err := stop(r.Listener, r.Profile)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "✗ %s (pid %d): %v\n", r.Profile.Identity, r.PID, err)
+			_, _ = fmt.Fprintf(errW, "✗ %s (pid %d): %v\n", r.Profile.Identity, r.PID, err)
 			failed++
 			continue
 		}
-		fmt.Printf("✓ %s (pid %d) — %s\n", r.Profile.Identity, r.PID, msg)
+		_, _ = fmt.Fprintf(w, "✓ %s (pid %d) — %s\n", r.Profile.Identity, r.PID, msg)
 	}
 	if failed > 0 {
 		return fmt.Errorf("%d of %d could not be stopped", failed, len(matched))

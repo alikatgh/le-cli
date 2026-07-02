@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -158,6 +159,56 @@ func TestNewRootRegistersAllSubcommands(t *testing.T) {
 		if !found {
 			t.Errorf("subcommand %q not registered on root", name)
 		}
+	}
+}
+
+func TestStopMatchedAllSucceed(t *testing.T) {
+	rows := []row{sampleRow("3000", 100, "node"), sampleRow("3000", 101, "vite")}
+	var out, errOut bytes.Buffer
+	stop := func(scan.Listener, intel.Profile) (string, error) { return "sent SIGTERM", nil }
+	if err := stopMatched(&out, &errOut, rows, stop); err != nil {
+		t.Fatalf("all-success should return nil, got %v", err)
+	}
+	if strings.Count(out.String(), "✓") != 2 {
+		t.Errorf("want two ✓ lines, got:\n%s", out.String())
+	}
+	if errOut.Len() != 0 {
+		t.Errorf("no failures should mean empty stderr, got:\n%s", errOut.String())
+	}
+}
+
+func TestStopMatchedPartialFailure(t *testing.T) {
+	rows := []row{sampleRow("3000", 100, "node"), sampleRow("3000", 101, "stuck")}
+	var out, errOut bytes.Buffer
+	// The second row fails.
+	stop := func(_ scan.Listener, p intel.Profile) (string, error) {
+		if p.Identity == "stuck" {
+			return "", errors.New("permission denied")
+		}
+		return "sent SIGTERM", nil
+	}
+	err := stopMatched(&out, &errOut, rows, stop)
+	if err == nil || !strings.Contains(err.Error(), "1 of 2 could not be stopped") {
+		t.Fatalf("partial failure error = %v, want '1 of 2 could not be stopped'", err)
+	}
+	if !strings.Contains(out.String(), "✓ node") {
+		t.Errorf("the succeeding row should still print a ✓ line, got:\n%s", out.String())
+	}
+	if !strings.Contains(errOut.String(), "✗ stuck") || !strings.Contains(errOut.String(), "permission denied") {
+		t.Errorf("the failing row should print a ✗ line with the error, got:\n%s", errOut.String())
+	}
+}
+
+func TestStopMatchedAllFail(t *testing.T) {
+	rows := []row{sampleRow("3000", 100, "a"), sampleRow("3000", 101, "b")}
+	var out, errOut bytes.Buffer
+	stop := func(scan.Listener, intel.Profile) (string, error) { return "", errors.New("nope") }
+	err := stopMatched(&out, &errOut, rows, stop)
+	if err == nil || !strings.Contains(err.Error(), "2 of 2 could not be stopped") {
+		t.Fatalf("all-fail error = %v, want '2 of 2 could not be stopped'", err)
+	}
+	if strings.Contains(out.String(), "✓") {
+		t.Errorf("no row succeeded, stdout should have no ✓, got:\n%s", out.String())
 	}
 }
 
