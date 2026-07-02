@@ -19,10 +19,18 @@ With --dir, stop every listener whose working directory is that path or
 nested under it — the terminal equivalent of the app's folder-stop, for
 clearing out everything a project spun up.
 
+.PP
+Use --dry-run to see exactly what would be stopped without touching
+anything — worth doing before a --dir sweep.
+
 
 .SH OPTIONS
 \fB-d\fP, \fB--dir\fP=""
 	stop every listener whose working directory is under this path
+
+.PP
+\fB-n\fP, \fB--dry-run\fP[=false]
+	print what would be stopped without stopping it
 
 .PP
 \fB-h\fP, \fB--help\fP[=false]

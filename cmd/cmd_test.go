@@ -257,6 +257,26 @@ func TestMatchDirNoMatch(t *testing.T) {
 	}
 }
 
+func TestPreviewMatched(t *testing.T) {
+	rows := []row{
+		{Listener: scan.Listener{PID: 100}, Profile: intel.Profile{Identity: "node", StopLabel: "Send TERM to PID 100"}},
+		{Listener: scan.Listener{PID: 200}, Profile: intel.Profile{Identity: "redis", StopLabel: "brew services stop redis"}},
+	}
+	var buf bytes.Buffer
+	previewMatched(&buf, rows)
+	out := buf.String()
+	if strings.Count(out, "would stop") != 2 {
+		t.Errorf("expected two 'would stop' lines, got:\n%s", out)
+	}
+	// The preview must name the process, pid, and the strategy — everything the
+	// user needs to sanity-check a sweep before running it for real.
+	for _, want := range []string{"node", "100", "Send TERM to PID 100", "redis", "200", "brew services stop redis"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("preview missing %q, got:\n%s", want, out)
+		}
+	}
+}
+
 func TestListCmdHasJSONFlagAndAlias(t *testing.T) {
 	c := listCmd()
 	if c.Flags().Lookup("json") == nil {

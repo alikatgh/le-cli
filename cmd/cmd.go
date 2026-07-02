@@ -90,6 +90,7 @@ func listCmd() *cobra.Command {
 
 func stopCmd() *cobra.Command {
 	var dir string
+	var dryRun bool
 	c := &cobra.Command{
 		Use:   "stop [port|pid]",
 		Short: "Stop a listener (by port/pid) or every listener under a directory",
@@ -98,22 +99,25 @@ func stopCmd() *cobra.Command {
 			"re-checked first, so a recycled PID is never the one that gets signalled.\n\n" +
 			"With --dir, stop every listener whose working directory is that path or\n" +
 			"nested under it — the terminal equivalent of the app's folder-stop, for\n" +
-			"clearing out everything a project spun up.",
+			"clearing out everything a project spun up.\n\n" +
+			"Use --dry-run to see exactly what would be stopped without touching\n" +
+			"anything — worth doing before a --dir sweep.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dir != "" {
 				if len(args) > 0 {
 					return fmt.Errorf("pass either a port/pid or --dir, not both")
 				}
-				return runStopDir(dir)
+				return runStopDir(dir, dryRun)
 			}
 			if len(args) != 1 {
 				return fmt.Errorf("give a port, a pid, or --dir <path>")
 			}
-			return runStop(args[0])
+			return runStop(args[0], dryRun)
 		},
 	}
 	c.Flags().StringVarP(&dir, "dir", "d", "", "stop every listener whose working directory is under this path")
+	c.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "print what would be stopped without stopping it")
 	return c
 }
 
@@ -233,22 +237,39 @@ func matchRows(rows []row, target string) []row {
 	return matched
 }
 
-func runStop(target string) error {
+func runStop(target string, dryRun bool) error {
 	rows := gather()
 	matched := matchRows(rows, target)
 	if len(matched) == 0 {
 		return fmt.Errorf("nothing listening on %s", target)
 	}
+	if dryRun {
+		previewMatched(os.Stdout, matched)
+		return nil
+	}
 	return stopMatched(os.Stdout, os.Stderr, matched, kill.Stop)
 }
 
-func runStopDir(dir string) error {
+func runStopDir(dir string, dryRun bool) error {
 	rows := gather()
 	matched := matchDir(rows, dir)
 	if len(matched) == 0 {
 		return fmt.Errorf("no listeners have a working directory under %s", dir)
 	}
+	if dryRun {
+		previewMatched(os.Stdout, matched)
+		return nil
+	}
 	return stopMatched(os.Stdout, os.Stderr, matched, kill.Stop)
+}
+
+// previewMatched lists what a stop WOULD act on, without touching anything —
+// the --dry-run body, split out (with an injected writer) so it's testable
+// and so both the port/pid and --dir paths render it identically.
+func previewMatched(w io.Writer, matched []row) {
+	for _, r := range matched {
+		_, _ = fmt.Fprintf(w, "would stop %s (pid %d) — %s\n", r.Profile.Identity, r.PID, r.Profile.StopLabel)
+	}
 }
 
 // matchDir returns every row whose working directory is dir or nested under
