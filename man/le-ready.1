@@ -10,12 +10,17 @@ le-ready - Block until something starts listening (open-when-ready)
 
 
 .SH DESCRIPTION
-Block until something starts listening (open-when-ready)
+Block until something is listening on \&. With --timeout, give up
+after that long and exit non-zero.
 
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
 	help for ready
+
+.PP
+\fB-t\fP, \fB--timeout\fP=0s
+	give up after this long (e.g. 30s); 0 waits forever
 
 
 .SH SEE ALSO

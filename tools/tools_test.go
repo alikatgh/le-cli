@@ -55,7 +55,7 @@ func runWithin(t *testing.T, d time.Duration, fn func()) {
 func TestWaitFreeReturnsImmediatelyWhenFree(t *testing.T) {
 	port := freePort(t)
 	runWithin(t, 2*time.Second, func() {
-		if err := WaitFree(port); err != nil {
+		if err := WaitFree(port, 0); err != nil {
 			t.Errorf("WaitFree(%s) = %v, want nil", port, err)
 		}
 	})
@@ -69,7 +69,7 @@ func TestWaitListeningReturnsImmediatelyWhenListening(t *testing.T) {
 	}
 	defer func() { _ = ln.Close() }()
 	runWithin(t, 2*time.Second, func() {
-		if err := WaitListening(port); err != nil {
+		if err := WaitListening(port, 0); err != nil {
 			t.Errorf("WaitListening(%s) = %v, want nil", port, err)
 		}
 	})
@@ -90,13 +90,47 @@ func TestHoldFailsWhenPortTaken(t *testing.T) {
 func TestWaitUntilReturnsWhenCondBecomesTrue(t *testing.T) {
 	calls := 0
 	runWithin(t, 3*time.Second, func() {
-		waitUntil(func() bool {
+		if !waitUntil(func() bool {
 			calls++
 			return calls >= 2 // true on the second poll
-		})
+		}, 0) {
+			t.Error("waitUntil returned false without a timeout")
+		}
 	})
 	if calls < 2 {
 		t.Errorf("waitUntil polled %d times, want at least 2", calls)
+	}
+}
+
+func TestWaitUntilTimesOut(t *testing.T) {
+	// A cond that never becomes true must return false once the timeout
+	// elapses, rather than blocking forever.
+	start := time.Now()
+	var timedOut bool
+	runWithin(t, 3*time.Second, func() {
+		timedOut = !waitUntil(func() bool { return false }, 600*time.Millisecond)
+	})
+	if !timedOut {
+		t.Error("waitUntil with an unsatisfiable cond should time out (return false)")
+	}
+	if elapsed := time.Since(start); elapsed < 500*time.Millisecond {
+		t.Errorf("returned after %s, want it to honor the ~600ms deadline", elapsed)
+	}
+}
+
+func TestWaitFreeTimesOutOnBusyPort(t *testing.T) {
+	port := freePort(t)
+	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", port))
+	if err != nil {
+		t.Skipf("setup bind failed: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+	var gotErr error
+	runWithin(t, 3*time.Second, func() {
+		gotErr = WaitFree(port, 500*time.Millisecond) // never frees
+	})
+	if gotErr == nil {
+		t.Error("WaitFree on a permanently-busy port with a timeout should return an error")
 	}
 }
 
@@ -114,7 +148,7 @@ func TestWaitFreeUnblocksWhenPortFrees(t *testing.T) {
 		_ = ln.Close()
 	}()
 	runWithin(t, 5*time.Second, func() {
-		if err := WaitFree(port); err != nil {
+		if err := WaitFree(port, 0); err != nil {
 			t.Errorf("WaitFree = %v, want nil once the port freed", err)
 		}
 	})
@@ -136,7 +170,7 @@ func TestWaitListeningUnblocksWhenSomethingListens(t *testing.T) {
 		lnCh <- l
 	}()
 	runWithin(t, 5*time.Second, func() {
-		if err := WaitListening(port); err != nil {
+		if err := WaitListening(port, 0); err != nil {
 			t.Errorf("WaitListening = %v, want nil once something listened", err)
 		}
 	})

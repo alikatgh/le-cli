@@ -10,12 +10,17 @@ le-wait - Block until a port frees up
 
 
 .SH DESCRIPTION
-Block until a port frees up
+Block until  is free. With --timeout, give up after that long and
+exit non-zero — so a script can bound the wait instead of hanging.
 
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
 	help for wait
+
+.PP
+\fB-t\fP, \fB--timeout\fP=0s
+	give up after this long (e.g. 30s); 0 waits forever
 
 
 .SH SEE ALSO

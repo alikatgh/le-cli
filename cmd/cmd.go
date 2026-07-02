@@ -157,21 +157,29 @@ func holdCmd() *cobra.Command {
 }
 
 func waitCmd() *cobra.Command {
-	return &cobra.Command{
+	var timeout time.Duration
+	c := &cobra.Command{
 		Use:   "wait <port>",
 		Short: "Block until a port frees up",
+		Long:  "Block until <port> is free. With --timeout, give up after that long and\nexit non-zero — so a script can bound the wait instead of hanging.",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return tools.WaitFree(args[0]) },
+		RunE:  func(cmd *cobra.Command, args []string) error { return tools.WaitFree(args[0], timeout) },
 	}
+	c.Flags().DurationVarP(&timeout, "timeout", "t", 0, "give up after this long (e.g. 30s); 0 waits forever")
+	return c
 }
 
 func readyCmd() *cobra.Command {
-	return &cobra.Command{
+	var timeout time.Duration
+	c := &cobra.Command{
 		Use:   "ready <port>",
 		Short: "Block until something starts listening (open-when-ready)",
+		Long:  "Block until something is listening on <port>. With --timeout, give up\nafter that long and exit non-zero.",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return tools.WaitListening(args[0]) },
+		RunE:  func(cmd *cobra.Command, args []string) error { return tools.WaitListening(args[0], timeout) },
 	}
+	c.Flags().DurationVarP(&timeout, "timeout", "t", 0, "give up after this long (e.g. 30s); 0 waits forever")
+	return c
 }
 
 func versionCmd(version string) *cobra.Command {

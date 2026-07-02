@@ -12,6 +12,9 @@ All notable changes to `le` are documented here. Format loosely follows
 - `le list [filter]` narrows the table to rows matching the filter text across
   port / name / command / folder / owner — the same match the TUI's `/` uses,
   now available one-shot for scripts (`le list node --json`).
+- `le wait` / `le ready` take `--timeout` (`-t`): bound the wait and exit
+  non-zero if it elapses, so a script can `le ready 5432 -t 30s || fail`
+  instead of hanging forever.
 
 ## [0.1.5] - 2026-07-02
 

@@ -53,37 +53,62 @@ func Hold(port string) error {
 	return nil
 }
 
-// WaitFree blocks until 127.0.0.1:<port> is free.
-func WaitFree(port string) error {
+// WaitFree blocks until 127.0.0.1:<port> is free. A positive timeout bounds
+// the wait and returns an error if it elapses first; timeout <= 0 waits
+// indefinitely (Ctrl-C to stop).
+func WaitFree(port string, timeout time.Duration) error {
 	if Free(port) {
 		fmt.Printf("port %s is already free\n", port)
 		return nil
 	}
-	fmt.Printf("waiting for port %s to free up… (Ctrl-C to stop)\n", port)
-	waitUntil(func() bool { return Free(port) })
+	fmt.Printf("waiting for port %s to free up… (%s)\n", port, waitHint(timeout))
+	if !waitUntil(func() bool { return Free(port) }, timeout) {
+		return fmt.Errorf("timed out after %s waiting for port %s to free", timeout, port)
+	}
 	fmt.Printf("✓ port %s is free\n", port)
 	return nil
 }
 
 // WaitListening blocks until something starts listening on <port> — the
-// "open when ready" primitive.
-func WaitListening(port string) error {
+// "open when ready" primitive. See WaitFree for timeout semantics.
+func WaitListening(port string, timeout time.Duration) error {
 	if !Free(port) {
 		fmt.Printf("port %s is already listening\n", port)
 		return nil
 	}
-	fmt.Printf("waiting for something to listen on %s… (Ctrl-C to stop)\n", port)
-	waitUntil(func() bool { return !Free(port) })
+	fmt.Printf("waiting for something to listen on %s… (%s)\n", port, waitHint(timeout))
+	if !waitUntil(func() bool { return !Free(port) }, timeout) {
+		return fmt.Errorf("timed out after %s waiting for a listener on port %s", timeout, port)
+	}
 	fmt.Printf("✓ port %s is now listening — http://localhost:%s/\n", port, port)
 	return nil
 }
 
-func waitUntil(cond func() bool) {
+func waitHint(timeout time.Duration) string {
+	if timeout > 0 {
+		return "up to " + timeout.String() + ", Ctrl-C to stop"
+	}
+	return "Ctrl-C to stop"
+}
+
+// waitUntil polls cond every pollEvery until it returns true (→ true) or, when
+// timeout > 0, until the deadline elapses first (→ false). A non-positive
+// timeout means no deadline: it blocks until cond is met.
+func waitUntil(cond func() bool, timeout time.Duration) bool {
 	t := time.NewTicker(pollEvery)
 	defer t.Stop()
-	for range t.C {
-		if cond() {
-			return
+	var deadline <-chan time.Time
+	if timeout > 0 {
+		deadline = time.After(timeout)
+	}
+	for {
+		select {
+		case <-t.C:
+			if cond() {
+				return true
+			}
+		case <-deadline:
+			return false
 		}
 	}
 }

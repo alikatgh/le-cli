@@ -68,6 +68,7 @@ le stop --dir . -n # dry run: show what --dir would stop, without stopping it
 le hold 3000       # squat a port so nothing else can grab it (Ctrl-C frees)
 le wait 5432       # block until a port frees up
 le ready 8080      # block until something starts listening (open-when-ready)
+le ready 8080 -t 30s  # …but give up after 30s and exit non-zero (for scripts)
 ```
 
 `wait` and `ready` are handy in scripts:
@@ -75,6 +76,7 @@ le ready 8080      # block until something starts listening (open-when-ready)
 ```sh
 le ready 5173 && open http://localhost:5173   # open the browser the moment Vite is up
 le wait 5432 && pg_ctl start                   # restart Postgres once the port clears
+le ready 5432 -t 30s || echo "db never came up"  # bounded wait, non-zero on timeout
 ```
 
 Every command has its own help: `le <command> --help`.
