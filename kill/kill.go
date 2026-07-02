@@ -125,7 +125,8 @@ func stillSame(l scan.Listener) bool {
 	// signal a recycled-to unrelated `node` process. Demanding a full-argv
 	// match means that weak case refuses instead (a rescan recaptures the
 	// start time and takes the strong path) — refusing beats a wrong SIGTERM.
-	return normalizeWS(out) != "" && normalizeWS(out) == normalizeWS(l.CommandLine)
+	cur := normalizeWS(out)
+	return cur != "" && cur == normalizeWS(l.CommandLine)
 }
 
 // normalizeWS collapses each run of whitespace to a single space and trims
