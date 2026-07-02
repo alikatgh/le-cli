@@ -35,6 +35,20 @@ func TestStillSameStartTimeMatch(t *testing.T) {
 	}
 }
 
+func TestStillSameToleratesLstartDoubleSpace(t *testing.T) {
+	defer withStubs(t)()
+	// Scan captured a single-space-normalized start time (via strings.Fields);
+	// a fresh `ps -o lstart=` on a single-digit day pads with a second space.
+	// These are the SAME instant and must still match.
+	runOutput = func(name string, args ...string) (string, error) {
+		return "Thu Jul  2 11:18:47 2026\n", nil // note the double space before "2"
+	}
+	l := scan.Listener{PID: 1, StartTime: "Thu Jul 2 11:18:47 2026"}
+	if !stillSame(l) {
+		t.Error("single- vs double-space in ps lstart must not read as a recycled PID")
+	}
+}
+
 func TestStillSameStartTimeMismatchIsRecycled(t *testing.T) {
 	defer withStubs(t)()
 	runOutput = func(name string, args ...string) (string, error) {

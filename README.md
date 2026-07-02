@@ -62,6 +62,7 @@ le list            # print a one-shot table and exit (alias: le ls)
 le list --json     # structured output for scripts / jq
 le stop 3000       # stop whatever is on port 3000, the smart way
 le stop 1183       # …or by PID
+le stop --dir .    # stop every listener whose working dir is under this path
 le hold 3000       # squat a port so nothing else can grab it (Ctrl-C frees)
 le wait 5432       # block until a port frees up
 le ready 8080      # block until something starts listening (open-when-ready)

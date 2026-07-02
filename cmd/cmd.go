@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -88,13 +89,32 @@ func listCmd() *cobra.Command {
 }
 
 func stopCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "stop <port|pid>",
-		Short: "Stop a listener the smart way (TERM / brew / docker)",
-		Long:  "Stop every listener on a port (or the process with a PID), each via its\nrecommended strategy. The PID is re-checked first, so a recycled PID is\nnever the one that gets signalled.",
-		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return runStop(args[0]) },
+	var dir string
+	c := &cobra.Command{
+		Use:   "stop [port|pid]",
+		Short: "Stop a listener (by port/pid) or every listener under a directory",
+		Long: "Stop a listener on a port (or the process with a PID), each via its\n" +
+			"recommended strategy (TERM / brew services / docker). The PID is\n" +
+			"re-checked first, so a recycled PID is never the one that gets signalled.\n\n" +
+			"With --dir, stop every listener whose working directory is that path or\n" +
+			"nested under it — the terminal equivalent of the app's folder-stop, for\n" +
+			"clearing out everything a project spun up.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if dir != "" {
+				if len(args) > 0 {
+					return fmt.Errorf("pass either a port/pid or --dir, not both")
+				}
+				return runStopDir(dir)
+			}
+			if len(args) != 1 {
+				return fmt.Errorf("give a port, a pid, or --dir <path>")
+			}
+			return runStop(args[0])
+		},
 	}
+	c.Flags().StringVarP(&dir, "dir", "d", "", "stop every listener whose working directory is under this path")
+	return c
 }
 
 func holdCmd() *cobra.Command {
@@ -220,6 +240,57 @@ func runStop(target string) error {
 		return fmt.Errorf("nothing listening on %s", target)
 	}
 	return stopMatched(os.Stdout, os.Stderr, matched, kill.Stop)
+}
+
+func runStopDir(dir string) error {
+	rows := gather()
+	matched := matchDir(rows, dir)
+	if len(matched) == 0 {
+		return fmt.Errorf("no listeners have a working directory under %s", dir)
+	}
+	return stopMatched(os.Stdout, os.Stderr, matched, kill.Stop)
+}
+
+// matchDir returns every row whose working directory is dir or nested under
+// it. Both sides are symlink-resolved first, so a listener started in a
+// symlinked project path still matches the real path the user passes (and
+// vice-versa) — the folder-match bug the macOS app already learned to handle.
+func matchDir(rows []row, dir string) []row {
+	target := resolvePath(dir)
+	var out []row
+	for _, r := range rows {
+		if withinDir(resolvePath(r.Cwd), target) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// resolvePath canonicalizes a path via EvalSymlinks, falling back to a plain
+// Clean when the path can't be resolved (doesn't exist, permission, etc.) so
+// matching still works on a best-effort basis.
+func resolvePath(p string) string {
+	if p == "" {
+		return ""
+	}
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return filepath.Clean(p)
+}
+
+// withinDir reports whether cwd is dir or a descendant of it, comparing
+// cleaned, separator-anchored paths — so /a/b matches /a/b/c but NOT /a/bc.
+func withinDir(cwd, dir string) bool {
+	if cwd == "" || dir == "" {
+		return false
+	}
+	c := filepath.Clean(cwd)
+	d := filepath.Clean(dir)
+	if c == d {
+		return true
+	}
+	return strings.HasPrefix(c, d+string(filepath.Separator))
 }
 
 // stopMatched runs stop over each matched row, printing a ✓/✗ line per

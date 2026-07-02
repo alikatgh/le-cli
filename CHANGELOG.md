@@ -5,6 +5,25 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+- `le stop --dir <path>` stops every listener whose working directory is that
+  path or nested under it — the terminal equivalent of the macOS app's
+  folder-stop, for clearing out everything a project spun up.
+
+### Fixed
+- `le stop` (by port, pid, or `--dir`) silently refused every process as
+  "recycled" on days 1–9 of the month: `ps` pads single-digit days in its
+  start-time output with a second space, and the scan and re-verify paths
+  normalized that whitespace differently, so the recycle guard never matched.
+
+### Internal
+- Continuous fuzzing (`fuzz.yml`) runs the ps/lsof/docker parser harnesses
+  nightly instead of only replaying their seed corpus.
+- Added gosec to the lint gate.
+- Test coverage raised across the core packages via a command-runner
+  dependency-injection refactor: `scan` 24→94%, `kill` 20→83%, `intel`
+  14→86%, `tools` 12→67%, `cmd` 0→64%.
+
 ## [0.1.4] - 2026-07-01
 
 ### Added

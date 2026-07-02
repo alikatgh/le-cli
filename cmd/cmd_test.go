@@ -212,6 +212,51 @@ func TestStopMatchedAllFail(t *testing.T) {
 	}
 }
 
+func TestWithinDir(t *testing.T) {
+	cases := []struct {
+		cwd, dir string
+		want     bool
+	}{
+		{"/proj/web", "/proj", true},         // nested
+		{"/proj", "/proj", true},             // exact
+		{"/proj/web/src", "/proj/web", true}, // deeper
+		{"/projector", "/proj", false},       // sibling prefix — must NOT match
+		{"/proj/web", "/proj/", true},        // trailing slash normalized by Clean
+		{"/other", "/proj", false},           // unrelated
+		{"", "/proj", false},                 // no cwd
+		{"/proj", "", false},                 // no dir
+	}
+	for _, c := range cases {
+		if got := withinDir(c.cwd, c.dir); got != c.want {
+			t.Errorf("withinDir(%q, %q) = %v, want %v", c.cwd, c.dir, got, c.want)
+		}
+	}
+}
+
+func TestMatchDir(t *testing.T) {
+	rows := []row{
+		{Listener: scan.Listener{PID: 1, Cwd: "/proj/web"}, Profile: intel.Profile{Identity: "web"}},
+		{Listener: scan.Listener{PID: 2, Cwd: "/proj/api"}, Profile: intel.Profile{Identity: "api"}},
+		{Listener: scan.Listener{PID: 3, Cwd: "/elsewhere"}, Profile: intel.Profile{Identity: "other"}},
+		{Listener: scan.Listener{PID: 4, Cwd: ""}, Profile: intel.Profile{Identity: "nocwd"}},
+	}
+	got := matchDir(rows, "/proj")
+	if len(got) != 2 {
+		t.Fatalf("matchDir(/proj) matched %d rows, want 2: %+v", len(got), got)
+	}
+	names := map[string]bool{got[0].Profile.Identity: true, got[1].Profile.Identity: true}
+	if !names["web"] || !names["api"] {
+		t.Errorf("matchDir matched %v, want web + api", names)
+	}
+}
+
+func TestMatchDirNoMatch(t *testing.T) {
+	rows := []row{{Listener: scan.Listener{PID: 1, Cwd: "/somewhere/else"}}}
+	if got := matchDir(rows, "/proj"); len(got) != 0 {
+		t.Errorf("matchDir found %d, want 0", len(got))
+	}
+}
+
 func TestListCmdHasJSONFlagAndAlias(t *testing.T) {
 	c := listCmd()
 	if c.Flags().Lookup("json") == nil {

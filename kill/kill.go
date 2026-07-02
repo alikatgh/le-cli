@@ -100,7 +100,13 @@ func stillSame(l scan.Listener) bool {
 		if err != nil {
 			return false
 		}
-		return strings.TrimSpace(out) == strings.TrimSpace(l.StartTime)
+		// Normalize whitespace on BOTH sides before comparing. `ps` lstart
+		// pads single-digit days with a second space ("Jul  2" vs "Jul 12"),
+		// and scan captures the start time via strings.Fields (which collapses
+		// that) while this fresh read only TrimSpaces it — so on days 1-9 the
+		// two spellings never matched and every stop was falsely refused as a
+		// recycled PID. Collapse runs of whitespace the same way here.
+		return normalizeWS(out) == normalizeWS(l.StartTime)
 	}
 	out, err := runOutput("ps", "-ww", "-p", strconv.Itoa(l.PID), "-o", "command=")
 	if err != nil {
@@ -108,6 +114,12 @@ func stillSame(l scan.Listener) bool {
 	}
 	cur := strings.TrimSpace(out)
 	return cur != "" && sameExe(cur, l.CommandLine)
+}
+
+// normalizeWS collapses each run of whitespace to a single space and trims
+// the ends, so two spellings of the same ps timestamp compare equal.
+func normalizeWS(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 func sameExe(a, b string) bool {

@@ -2,20 +2,29 @@
 .TH "LE" "1" "Jul 2026" "le" ""
 
 .SH NAME
-le-stop - Stop a listener the smart way (TERM / brew / docker)
+le-stop - Stop a listener (by port/pid) or every listener under a directory
 
 
 .SH SYNOPSIS
-\fBle stop  [flags]\fP
+\fBle stop [port|pid] [flags]\fP
 
 
 .SH DESCRIPTION
-Stop every listener on a port (or the process with a PID), each via its
-recommended strategy. The PID is re-checked first, so a recycled PID is
-never the one that gets signalled.
+Stop a listener on a port (or the process with a PID), each via its
+recommended strategy (TERM / brew services / docker). The PID is
+re-checked first, so a recycled PID is never the one that gets signalled.
+
+.PP
+With --dir, stop every listener whose working directory is that path or
+nested under it — the terminal equivalent of the app's folder-stop, for
+clearing out everything a project spun up.
 
 
 .SH OPTIONS
+\fB-d\fP, \fB--dir\fP=""
+	stop every listener whose working directory is under this path
+
+.PP
 \fB-h\fP, \fB--help\fP[=false]
 	help for stop
 
