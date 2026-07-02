@@ -5,11 +5,15 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-01
+
 ### Added
 - Per-column sorting in the TUI: number keys `1`-`5` sort by port / pid /
   what / risk / owner, press again to reverse. Risk sorts by severity
   (low < medium < high), not alphabetically. The active column shows a
   `^`/`v` indicator in the header.
+- Man pages (`man le`, `man le-stop`, …), generated from the command tree
+  and bundled into each release tarball.
 
 ### Internal
 - CI now runs on every push and PR (previously only on a release tag),
@@ -17,6 +21,8 @@ All notable changes to `le` are documented here. Format loosely follows
   and `golangci-lint`.
 - Added fuzz tests for the `ps`/`lsof`/`docker` output parsers.
 - `cmd/` package test coverage: 0% → 53.5%.
+- Added `CHANGELOG.md`, `SECURITY.md`, `CONTRIBUTING.md`, issue templates,
+  and Dependabot for Go modules and GitHub Actions.
 
 ## [0.1.3] - 2026-07-01
 
@@ -71,7 +77,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/alikatgh/le-cli/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/alikatgh/le-cli/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/alikatgh/le-cli/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/alikatgh/le-cli/compare/v0.1.0...v0.1.1
