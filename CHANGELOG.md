@@ -6,6 +6,9 @@ All notable changes to `le` are documented here. Format loosely follows
 ## [Unreleased]
 
 ### Added
+- The TUI shows a DIR column too (on terminals at least 118 columns wide),
+  sortable with `6` — folders at a glance in the live view, not just the
+  detail pane.
 - `le list` shows a DIR column — the listener's working directory,
   home-abbreviated (`~/code/app`) and truncated from the left so the
   project-identifying tail of the path survives. "Which project is this?"

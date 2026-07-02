@@ -363,6 +363,61 @@ func TestSortSurvivesFilter(t *testing.T) {
 	assertOrder(t, m, "alpha", "bravo", "charlie")
 }
 
+func TestDirCellWidthAwareLeftTruncation(t *testing.T) {
+	home := "/Users/me"
+	if got := dirCell("", home, 24); got != "-" {
+		t.Errorf("empty cwd = %q, want -", got)
+	}
+	if got := dirCell("/Users/me/code/app", home, 24); got != "~/code/app" {
+		t.Errorf("home abbrev = %q, want ~/code/app", got)
+	}
+	// Left-truncated: the trailing components must survive.
+	got := dirCell("/opt/very/long/path/to/project/web", home, 16)
+	if !strings.HasPrefix(got, "…") || !strings.HasSuffix(got, "project/web") {
+		t.Errorf("left truncation = %q, want …-prefixed with the tail intact", got)
+	}
+	// Display-width, not rune count: CJK path components are 2 columns each.
+	wide := dirCell("/proj/日本語のフォルダ名前です", home, 10)
+	if w := lipgloss.Width(wide); w > 10 {
+		t.Errorf("CJK path rendered at %d columns, want <= 10 (%q)", w, wide)
+	}
+}
+
+func TestSortByDirKey6(t *testing.T) {
+	rows := []Row{
+		{L: scan.Listener{PID: 1, Ports: []string{"3000"}, Cwd: "/zzz/proj"}, P: intel.Profile{Identity: "last", StopKind: intel.StopTerm}},
+		{L: scan.Listener{PID: 2, Ports: []string{"4000"}, Cwd: "/aaa/proj"}, P: intel.Profile{Identity: "first", StopKind: intel.StopTerm}},
+	}
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+
+	m, _ = m.Update(key("6"))
+	assertOrder(t, m, "first", "last") // /aaa before /zzz
+	m, _ = m.Update(key("6"))
+	assertOrder(t, m, "last", "first") // reversed
+}
+
+func TestDirColumnIsWidthAdaptive(t *testing.T) {
+	rows := []Row{{
+		L: scan.Listener{PID: 1, Ports: []string{"3000"}, Cwd: "/code/webapp"},
+		P: intel.Profile{Identity: "node", Source: intel.SrcTerminal, Risk: intel.Low, StopKind: intel.StopTerm},
+	}}
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+	if v := m.(model).View(); !strings.Contains(v, "DIR") || !strings.Contains(v, "/code/webapp") {
+		t.Errorf("wide window should show the DIR column with the cwd, got:\n%s", v)
+	}
+
+	// Narrow: the DIR column header disappears (the detail pane's lowercase
+	// "dir" line is unaffected — it always showed the cwd).
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	if v := m.(model).View(); strings.Contains(v, "DIR") {
+		t.Errorf("narrow window should hide the DIR column header, got:\n%s", v)
+	}
+}
+
 func TestSortHeaderShowsDirection(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})

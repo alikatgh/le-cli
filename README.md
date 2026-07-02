@@ -121,7 +121,7 @@ filter   = node   # initial TUI filter (default none)
 | `j` / `k` | move down / up                           |
 | `g` / `G` | jump to top / bottom                     |
 | `/`       | filter by port, name, folder (`esc` clears) |
-| `1`-`5`   | sort by port / pid / what / risk / owner (press again to reverse) |
+| `1`-`6`   | sort by port / pid / what / risk / owner / dir (press again to reverse) |
 | `x`       | stop the selected listener (asks first)  |
 | `r`       | refresh now                              |
 | `?`       | help                                     |

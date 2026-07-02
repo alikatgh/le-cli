@@ -4,6 +4,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,7 +20,7 @@ import (
 )
 
 // Sortable columns, in the same left-to-right order they appear in the
-// table — number keys 1-5 select one directly, matching the table's own
+// table — number keys 1-6 select one directly, matching the table's own
 // column order so the key-to-column mapping needs no legend to be obvious.
 const (
 	sortPort = iota
@@ -27,6 +28,7 @@ const (
 	sortWhat
 	sortRisk
 	sortOwner
+	sortDir
 )
 
 const defaultInterval = 3 * time.Second
@@ -229,7 +231,7 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.flash, m.loading = "", true
 		return m, scanCmd()
-	case "1", "2", "3", "4", "5":
+	case "1", "2", "3", "4", "5", "6":
 		col := int(msg.String()[0] - '1')
 		if m.sortCol == col {
 			m.sortAsc = !m.sortAsc
@@ -356,6 +358,8 @@ func (m model) less(a, b Row) bool {
 		return riskRank(a.P.Risk) < riskRank(b.P.Risk)
 	case sortOwner:
 		return a.P.Source < b.P.Source
+	case sortDir:
+		return strings.ToLower(a.L.Cwd) < strings.ToLower(b.L.Cwd)
 	default: // sortPort
 		return firstPortNum(a.L.Ports) < firstPortNum(b.L.Ports)
 	}
@@ -474,10 +478,26 @@ func (m model) tableView() string {
 		return dimSt.Render("  no listeners match.")
 	}
 
-	wWhat := clampInt(m.w-8-1-7-1-7-1-9-1-3, 14, 40)
-	header := fmt.Sprintf("%-8s %-7s %-*s %-7s %-9s %s",
-		m.colLabel("PORT", sortPort), m.colLabel("PID", sortPID), wWhat, m.colLabel("WHAT", sortWhat),
-		m.colLabel("RISK", sortRisk), m.colLabel("OWNER", sortOwner), "STOP")
+	// The DIR column appears only when the terminal is wide enough to fit it
+	// without starving WHAT/STOP — folders are the product's core "which
+	// project is this?" signal, but never at the cost of an unreadable table.
+	const dirW = 24
+	showDir := m.w >= 118
+	dirBudget := 0
+	if showDir {
+		dirBudget = dirW + 1
+	}
+	wWhat := clampInt(m.w-8-1-7-1-7-1-9-1-3-dirBudget, 14, 40)
+	var header string
+	if showDir {
+		header = fmt.Sprintf("%-8s %-7s %-*s %-*s %-7s %-9s %s",
+			m.colLabel("PORT", sortPort), m.colLabel("PID", sortPID), wWhat, m.colLabel("WHAT", sortWhat),
+			dirW, m.colLabel("DIR", sortDir), m.colLabel("RISK", sortRisk), m.colLabel("OWNER", sortOwner), "STOP")
+	} else {
+		header = fmt.Sprintf("%-8s %-7s %-*s %-7s %-9s %s",
+			m.colLabel("PORT", sortPort), m.colLabel("PID", sortPID), wWhat, m.colLabel("WHAT", sortWhat),
+			m.colLabel("RISK", sortRisk), m.colLabel("OWNER", sortOwner), "STOP")
+	}
 	var b strings.Builder
 	b.WriteString(headSt.Render(header) + "\n")
 
@@ -488,9 +508,17 @@ func (m model) tableView() string {
 	}
 	for i := m.offset; i < end; i++ {
 		r := m.view[i]
-		line := fmt.Sprintf("%-8s %-7d %-*s %-7s %-9s %s",
-			portCell(r.L.Ports), r.L.PID, wWhat, truncate(r.P.Identity, wWhat),
-			string(r.P.Risk), truncate(string(r.P.Source), 9), truncate(stopShort(r.P), m.w-wWhat-36))
+		var line string
+		if showDir {
+			line = fmt.Sprintf("%-8s %-7d %-*s %-*s %-7s %-9s %s",
+				portCell(r.L.Ports), r.L.PID, wWhat, truncate(r.P.Identity, wWhat),
+				dirW, dirCell(r.L.Cwd, homeDir, dirW),
+				string(r.P.Risk), truncate(string(r.P.Source), 9), truncate(stopShort(r.P), m.w-wWhat-36-dirBudget))
+		} else {
+			line = fmt.Sprintf("%-8s %-7d %-*s %-7s %-9s %s",
+				portCell(r.L.Ports), r.L.PID, wWhat, truncate(r.P.Identity, wWhat),
+				string(r.P.Risk), truncate(string(r.P.Source), 9), truncate(stopShort(r.P), m.w-wWhat-36))
+		}
 		if i == m.cursor {
 			b.WriteString(selSt.Width(m.w).Render(line))
 		} else {
@@ -580,7 +608,7 @@ func (m model) footerView() string {
 		}
 		return okSt.Render(m.flash)
 	}
-	keys := []string{"j/k move", "/ filter", "1-5 sort", "x stop", "r refresh", "? help", "q quit"}
+	keys := []string{"j/k move", "/ filter", "1-6 sort", "x stop", "r refresh", "? help", "q quit"}
 	var parts []string
 	for _, k := range keys {
 		sp := strings.SplitN(k, " ", 2)
@@ -595,7 +623,7 @@ func (m model) helpView() string {
 		{"k / ↑", "move up"},
 		{"g / G", "jump to top / bottom"},
 		{"/", "filter (esc clears)"},
-		{"1-5", "sort by port / pid / what / risk / owner — press again to reverse"},
+		{"1-6", "sort by port / pid / what / risk / owner / dir — press again to reverse"},
 		{"x or s", "stop the selected listener (with confirm)"},
 		{"r", "refresh now"},
 		{"?", "toggle this help"},
@@ -624,6 +652,44 @@ func stopShort(p intel.Profile) string {
 	default:
 		return "TERM"
 	}
+}
+
+// homeDir is resolved once for the DIR column's ~-abbreviation.
+var homeDir, _ = os.UserHomeDir()
+
+// dirCell renders a working directory for the table: ~-abbreviated and
+// clipped from the LEFT — a path's identity lives in its trailing
+// components ("…/big-app/api" beats "/Users/me/co…"). Clips by DISPLAY
+// width, not rune count: project paths can contain wide (CJK) runes, the
+// same trap truncate() had to be fixed for.
+func dirCell(cwd, home string, n int) string {
+	cwd = strings.TrimSpace(cwd)
+	if cwd == "" {
+		return "-"
+	}
+	if home != "" {
+		if cwd == home {
+			cwd = "~"
+		} else if strings.HasPrefix(cwd, home+"/") {
+			cwd = "~" + cwd[len(home):]
+		}
+	}
+	if lipgloss.Width(cwd) <= n {
+		return cwd
+	}
+	r := []rune(cwd)
+	width := 0
+	budget := n - 1 // reserve 1 column for the leading ellipsis
+	start := len(r)
+	for i := len(r) - 1; i >= 0; i-- {
+		rw := lipgloss.Width(string(r[i]))
+		if width+rw > budget {
+			break
+		}
+		width += rw
+		start = i
+	}
+	return "…" + string(r[start:])
 }
 
 func truncate(s string, n int) string {
