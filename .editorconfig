@@ -1,0 +1,29 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Go is tab-indented (gofmt enforces this; here for editors that don't run it).
+[*.go]
+indent_style = tab
+
+# gofmt owns Go formatting — don't let an editor "fix" trailing whitespace
+# inside a gofmt'd file in a way that fights the formatter on save.
+[Makefile]
+indent_style = tab
+
+[*.{yml,yaml,rb,md,json,toml}]
+indent_style = space
+indent_size = 2
+
+[*.sh]
+indent_style = space
+indent_size = 2
+
+# Generated man pages (roff) — leave exactly as the generator emits them.
+[*.1]
+trim_trailing_whitespace = false
+insert_final_newline = false
