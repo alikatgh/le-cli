@@ -37,7 +37,7 @@ Prebuilt binaries (macOS + Linux, amd64 + arm64) are attached to each
 tar -xzf le_*.tar.gz && sudo mv le /usr/local/bin/
 ```
 
-Homebrew:
+Homebrew (also installs man pages and shell completions):
 
 ```sh
 brew install alikatgh/tap/le
@@ -77,6 +77,9 @@ le wait 5432 && pg_ctl start                   # restart Postgres once the port 
 Every command has its own help: `le <command> --help`.
 
 ### Shell completions
+
+The Homebrew install sets these up for you. Installing another way, wire them
+up manually:
 
 ```sh
 le completion zsh  > "${fpath[1]}/_le"                     # zsh
