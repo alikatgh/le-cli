@@ -5,6 +5,17 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+- `le list` shows a DIR column — the listener's working directory,
+  home-abbreviated (`~/code/app`) and truncated from the left so the
+  project-identifying tail of the path survives. "Which project is this?"
+  no longer requires `--json` or the TUI's detail pane.
+
+### Internal
+- The release pipeline moved to goreleaser (same tarball names/contents);
+  with a `TAP_GITHUB_TOKEN` secret configured, the Homebrew tap updates
+  automatically on release.
+
 ## [0.1.11] - 2026-07-02
 
 ### Added

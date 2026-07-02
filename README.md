@@ -11,10 +11,10 @@ intelligence (it knows when `kill -9` won't stick), in a single static binary
 that also runs on Linux servers over SSH.
 
 ```
-PORT    PID     WHAT                RISK    OWNER     STOP WITH
-3000    38814   juice-shop          medium  container  docker stop juice-shop
-8001    43138   Django dev server   low     terminal   TERM
-27017   1183    MongoDB             high    homebrew   brew services stop mongodb-community
+PORT    PID     WHAT                DIR                 RISK    OWNER      STOP WITH
+3000    38814   juice-shop          ~/code/juice-shop   medium  container  docker stop juice-shop
+8001    43138   Django dev server   ~/code/api          low     terminal   TERM
+27017   1183    MongoDB             /opt/homebrew/var   high    homebrew   brew services stop mongodb-community
 ```
 
 ## Why

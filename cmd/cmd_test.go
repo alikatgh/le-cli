@@ -133,6 +133,44 @@ func TestPrintTableEmpty(t *testing.T) {
 	}
 }
 
+func TestDirCell(t *testing.T) {
+	home := "/Users/me"
+	cases := []struct {
+		name string
+		cwd  string
+		n    int
+		want string
+	}{
+		{"empty is dash", "", 26, "-"},
+		{"home abbreviated", "/Users/me/code/app", 26, "~/code/app"},
+		{"home itself", "/Users/me", 26, "~"},
+		{"home-prefixed sibling NOT abbreviated", "/Users/meister/app", 26, "/Users/meister/app"},
+		{"outside home untouched", "/opt/homebrew/var", 26, "/opt/homebrew/var"},
+		{"long path truncates from the LEFT", "/Users/me/code/very/deep/project/web", 16, "…eep/project/web"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := dirCell(c.cwd, home, c.n); got != c.want {
+				t.Errorf("dirCell(%q, %d) = %q, want %q", c.cwd, c.n, got, c.want)
+			}
+		})
+	}
+}
+
+func TestPrintTableIncludesDirColumn(t *testing.T) {
+	var buf bytes.Buffer
+	r := sampleRow("3000", 100, "node")
+	r.Cwd = "/opt/projects/webapp"
+	printTable(&buf, []row{r})
+	out := buf.String()
+	if !strings.Contains(out, "DIR") {
+		t.Errorf("table header missing DIR column:\n%s", out)
+	}
+	if !strings.Contains(out, "/opt/projects/webapp") {
+		t.Errorf("table row missing the working directory:\n%s", out)
+	}
+}
+
 func TestPrintTableRows(t *testing.T) {
 	var buf bytes.Buffer
 	printTable(&buf, []row{sampleRow("3000", 100, "node")})

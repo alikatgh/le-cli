@@ -231,12 +231,35 @@ func printTable(w io.Writer, rows []row) {
 		_, _ = fmt.Fprintln(w, "No localhost listeners found.")
 		return
 	}
-	_, _ = fmt.Fprintf(w, "%-7s  %-7s  %-22s  %-7s  %-8s  %s\n", "PORT", "PID", "WHAT", "RISK", "OWNER", "STOP WITH")
+	home, _ := os.UserHomeDir()
+	_, _ = fmt.Fprintf(w, "%-7s  %-7s  %-22s  %-26s  %-7s  %-8s  %s\n", "PORT", "PID", "WHAT", "DIR", "RISK", "OWNER", "STOP WITH")
 	for _, r := range rows {
-		_, _ = fmt.Fprintf(w, "%-7s  %-7d  %-22s  %-7s  %-8s  %s\n",
-			portCell(r.Ports), r.PID, truncate(r.Profile.Identity, 22), string(r.Profile.Risk),
+		_, _ = fmt.Fprintf(w, "%-7s  %-7d  %-22s  %-26s  %-7s  %-8s  %s\n",
+			portCell(r.Ports), r.PID, truncate(r.Profile.Identity, 22),
+			dirCell(r.Cwd, home, 26), string(r.Profile.Risk),
 			string(r.Profile.Source), truncate(r.Profile.StopLabel, 40))
 	}
+}
+
+// dirCell renders a working directory for the table: home-abbreviated
+// ("~/code/app") and truncated from the LEFT, because a path's identity
+// lives in its trailing components — "…/big-app/api" beats "/Users/me/co…".
+func dirCell(cwd, home string, n int) string {
+	if strings.TrimSpace(cwd) == "" {
+		return "-"
+	}
+	if home != "" {
+		if cwd == home {
+			cwd = "~"
+		} else if strings.HasPrefix(cwd, home+string(filepath.Separator)) {
+			cwd = "~" + cwd[len(home):]
+		}
+	}
+	r := []rune(cwd)
+	if len(r) <= n {
+		return cwd
+	}
+	return "…" + string(r[len(r)-(n-1):])
 }
 
 func portCell(ports []string) string {
