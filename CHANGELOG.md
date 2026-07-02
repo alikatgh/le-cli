@@ -5,6 +5,8 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-07-02
+
 ### Fixed
 - `le stop --dir .` (and any relative path, or `--dir /`) matched zero
   listeners — the path wasn't absolutized before comparison. Found by an
@@ -124,7 +126,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/alikatgh/le-cli/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/alikatgh/le-cli/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/alikatgh/le-cli/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/alikatgh/le-cli/compare/v0.1.3...v0.1.4
