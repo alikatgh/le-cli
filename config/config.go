@@ -67,7 +67,7 @@ func Load() (Config, string) {
 		if !ok {
 			continue
 		}
-		key, val = strings.TrimSpace(key), strings.TrimSpace(val)
+		key, val = strings.TrimSpace(key), unquote(strings.TrimSpace(val))
 		switch key {
 		case "interval":
 			if n, err := strconv.Atoi(val); err == nil {
@@ -78,4 +78,16 @@ func Load() (Config, string) {
 		}
 	}
 	return c, ""
+}
+
+// unquote strips one matching pair of surrounding single or double quotes, so
+// a naturally-written `filter = "node"` yields node, not the literal "node"
+// (which — being a substring nothing contains — would silently match nothing).
+func unquote(s string) string {
+	if len(s) >= 2 {
+		if q := s[0]; (q == '"' || q == '\'') && s[len(s)-1] == q {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
 }

@@ -113,6 +113,17 @@ func TestDropPartialRowsKeepsRowWithLegitimatelyEmptyCommand(t *testing.T) {
 	}
 }
 
+func TestPortsOfAndDedupAreNonNil(t *testing.T) {
+	// Empty input must yield a non-nil slice so Ports/Addrs serialize as []
+	// not null in `le list --json`.
+	if got := portsOf(nil); got == nil {
+		t.Error("portsOf(nil) returned nil; want non-nil empty slice")
+	}
+	if got := dedup(nil); got == nil {
+		t.Error("dedup(nil) returned nil; want non-nil empty slice")
+	}
+}
+
 func TestPortOfHandlesIPv6AndWildcards(t *testing.T) {
 	cases := map[string]string{
 		"127.0.0.1:3000":     "3000",

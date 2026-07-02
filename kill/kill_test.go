@@ -1,6 +1,10 @@
 package kill
 
-import "testing"
+import (
+	"errors"
+	"strings"
+	"testing"
+)
 
 // TestDockerGuardOK exercises the docker container-recycling guard in
 // isolation, so a future refactor that inverts its condition (silently
@@ -26,6 +30,20 @@ func TestDockerGuardOK(t *testing.T) {
 				t.Errorf("dockerGuardOK(%q, %q, %v) = %v, want %v", c.scanArgID, c.curID, c.lookupOK, got, c.want)
 			}
 		})
+	}
+}
+
+func TestCmdErrFallsBackToGoError(t *testing.T) {
+	// When the command produced no output, the Go error is the only
+	// diagnostic and must be surfaced, not a bare "action: ".
+	err := cmdErr("docker stop web", "", errors.New("exec: \"docker\": not found"))
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("cmdErr with empty output = %v, want it to include the Go error", err)
+	}
+	// When output IS present, prefer it.
+	err = cmdErr("docker stop web", "  Error: no such container  ", errors.New("exit 1"))
+	if err == nil || !strings.Contains(err.Error(), "no such container") {
+		t.Errorf("cmdErr with output = %v, want it to include the command output", err)
 	}
 }
 

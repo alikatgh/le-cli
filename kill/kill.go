@@ -54,7 +54,7 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 		}
 		out, err := runCombined("brew", "services", "stop", p.StopArg)
 		if err != nil {
-			return "", fmt.Errorf("brew services stop %s: %s", p.StopArg, strings.TrimSpace(out))
+			return "", cmdErr("brew services stop "+p.StopArg, out, err)
 		}
 		return "brew services stop " + p.StopArg, nil
 	case intel.StopDocker:
@@ -73,7 +73,7 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 		}
 		out, err := runCombined("docker", "stop", p.StopArg)
 		if err != nil {
-			return "", fmt.Errorf("docker stop %s: %s", p.StopArg, strings.TrimSpace(out))
+			return "", cmdErr("docker stop "+p.StopArg, out, err)
 		}
 		return "docker stop " + p.StopArg, nil
 	case intel.StopAvoid:
@@ -133,4 +133,16 @@ func stillSame(l scan.Listener) bool {
 // the ends, so two spellings of the same ps timestamp compare equal.
 func normalizeWS(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// cmdErr formats a stop failure, preferring the command's own stderr/stdout
+// but falling back to the Go error when that output is empty — e.g. the tool
+// wasn't found, so CombinedOutput's err is the only diagnostic and a bare
+// "docker stop x: " would tell the user nothing.
+func cmdErr(action string, out string, err error) error {
+	msg := strings.TrimSpace(out)
+	if msg == "" {
+		msg = err.Error()
+	}
+	return fmt.Errorf("%s: %s", action, msg)
 }

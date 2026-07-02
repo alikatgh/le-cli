@@ -6,6 +6,39 @@ import (
 	"testing"
 )
 
+func TestUnquote(t *testing.T) {
+	cases := map[string]string{
+		`"node"`: "node",
+		`'node'`: "node",
+		`node`:   "node",
+		`"node`:  `"node`, // unbalanced — left as-is
+		`""`:     "",
+		`"a'b"`:  "a'b", // inner mismatched quote preserved
+		``:       "",
+	}
+	for in, want := range cases {
+		if got := unquote(in); got != want {
+			t.Errorf("unquote(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestLoadStripsQuotesFromFilter(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	leDir := filepath.Join(dir, "le")
+	if err := os.MkdirAll(leDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(leDir, "config"), []byte("filter = \"node\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := Load()
+	if c.Filter != "node" {
+		t.Errorf("Filter = %q, want node (quotes stripped)", c.Filter)
+	}
+}
+
 func TestLoadDefaultsWhenAbsent(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	c, warning := Load()

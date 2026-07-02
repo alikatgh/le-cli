@@ -94,6 +94,15 @@ func TestMakeOllama(t *testing.T) {
 	check(t, "ollama", got, want{identity: "Ollama", source: SrcTerminal, kind: AI, risk: Med, stop: StopTerm})
 }
 
+func TestMakeOllamaBrewManagedOwnedByHomebrew(t *testing.T) {
+	// A brew-managed Ollama must report Source=homebrew (the Owner column),
+	// consistent with its StopKind=brew — not "terminal".
+	l := scan.Listener{PID: 1, Ports: []string{"11434"}, CommandLine: "/opt/homebrew/Cellar/ollama/0.1.0/bin/ollama serve"}
+	env := Env{BrewStarted: map[string]bool{"ollama": true}, DockerByPort: map[string]dockerContainer{}}
+	got := Make(l, env)
+	check(t, "ollama-brew", got, want{identity: "Ollama", source: SrcHomebrew, kind: AI, risk: Med, stop: StopBrew, stopArg: "ollama"})
+}
+
 func TestMakeDevServers(t *testing.T) {
 	cases := []struct {
 		name string

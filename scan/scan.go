@@ -260,7 +260,10 @@ func readCwd(csv string) map[int]string {
 
 func portsOf(addrs []string) []string {
 	seen := map[string]bool{}
-	var out []string
+	// Non-nil so Ports serializes as [] not null when a listener's address
+	// line was missing/unparseable — keeps `le list --json` uniform across
+	// rows for jq / JSON consumers.
+	out := make([]string, 0, len(addrs))
 	for _, a := range addrs {
 		if p := portOf(a); p != "" && !seen[p] {
 			seen[p] = true
@@ -283,7 +286,7 @@ func portOf(addr string) string {
 
 func dedup(in []string) []string {
 	seen := map[string]bool{}
-	var out []string
+	out := make([]string, 0, len(in)) // non-nil: Addrs serializes as [] not null
 	for _, s := range in {
 		if !seen[s] {
 			seen[s] = true

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -215,6 +216,30 @@ func TestConfirmPinsRowAgainstBackgroundScan(t *testing.T) {
 	// The pinned row must NOT have changed — that's what y will act on.
 	if got := m.(model).confirmed.L.PID; got != 101 {
 		t.Errorf("confirmed row = PID %d after background scan, want it still pinned to 101", got)
+	}
+}
+
+// Regression: a click in the empty space BELOW the last visible row must not
+// select an off-screen row. With more rows than fit, only rendered rows are
+// clickable.
+func TestMouseClickBelowVisibleRowsIsIgnored(t *testing.T) {
+	rows := make([]Row, 20)
+	for i := range rows {
+		rows[i] = Row{
+			L: scan.Listener{PID: 100 + i, Ports: []string{strconv.Itoa(3000 + i)}},
+			P: intel.Profile{Identity: "svc", Source: intel.SrcTerminal, Risk: intel.Low, StopKind: intel.StopTerm},
+		}
+	}
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 16}) // short window -> few visible rows
+	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+
+	before := m.(model).cursor
+	// Y far below the visible table (data rows start at Y=2; a short window
+	// shows only a handful) — must be ignored, cursor unchanged.
+	m, _ = m.Update(tea.MouseMsg{Y: 50, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if got := m.(model).cursor; got != before {
+		t.Errorf("click far below the visible rows moved cursor to %d (was %d); want unchanged", got, before)
 	}
 }
 

@@ -5,6 +5,22 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+- `le list --json` could emit `"ports": null` / `"addrs": null` on a row whose
+  address lsof couldn't resolve, inconsistent with every other row's `[]` —
+  breaking `jq`/JSON consumers on that one row. Both are always arrays now.
+- A Homebrew-managed Ollama reported its owner as "terminal" instead of
+  "homebrew", contradicting its `brew services stop` action.
+- A quoted config filter (`filter = "node"`) kept the quote characters and
+  matched nothing; surrounding quotes are now stripped.
+- A mouse click in the empty space below the last visible TUI row could select
+  an off-screen listener.
+- A failed `brew services stop` / `docker stop` could show an empty error
+  message when the tool itself wasn't found; the underlying error is now
+  surfaced.
+- Clearer restart hints for a raw (non-Homebrew) database and an open wildcard
+  listener.
+
 ## [0.1.8] - 2026-07-02
 
 ### Fixed

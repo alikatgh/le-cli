@@ -265,6 +265,10 @@ func Make(l scan.Listener, env Env) Profile {
 		p.Note = "Local AI service: apps using local models may fail when it stops."
 		p.Warning = "Stopping Ollama can interrupt local AI features in other apps."
 		if formula != "" {
+			// Brew-managed: own it as such (Source drives the Owner column), the
+			// same as database() and the generic brew branch — otherwise a
+			// launchd-managed Ollama misreports as a plain terminal process.
+			p.Source = SrcHomebrew
 			p.StopKind, p.StopArg, p.StopLabel = StopBrew, formula, "brew services stop "+formula
 			p.Restart = "brew services start " + formula
 		} else {
@@ -323,6 +327,7 @@ func Make(l scan.Listener, env Env) Profile {
 			p.Explain = "Listening on a wildcard address — reachable beyond localhost depending on your firewall."
 			p.Note = "Open listener: reachable beyond localhost if your network allows it."
 			p.Warning = "Check whether another device depends on this before stopping it."
+			p.Restart = "Use the original app or command that started it."
 		} else {
 			p.Identity, p.Source = displayName(l), SrcTerminal
 			p.Explain = "Local listener detected from lsof. No specific profile yet."
@@ -350,7 +355,7 @@ func database(p *Profile, id string, conf int, explain string, l scan.Listener, 
 		p.Restart = "brew services start " + formula
 	} else {
 		p.StopKind, p.StopLabel = StopTerm, "Careful TERM to PID "+itoa(l.PID)
-		p.Restart = strings.ToLower(id)
+		p.Restart = "start " + strings.ToLower(id) + " the way you originally launched it"
 		p.Source = SrcTerminal
 	}
 }

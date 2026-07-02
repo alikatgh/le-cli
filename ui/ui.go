@@ -265,7 +265,14 @@ func (m model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && !m.filtering && !m.confirm {
-		if idx := m.offset + (msg.Y - 2); msg.Y >= 2 && idx >= 0 && idx < len(m.view) {
+		// Only accept a click that lands on an actually-rendered row. Bounding
+		// on len(m.view) instead of the visible window let a click in the empty
+		// space below the last visible row select an off-screen row.
+		end := m.offset + m.listHeight()
+		if end > len(m.view) {
+			end = len(m.view)
+		}
+		if idx := m.offset + (msg.Y - 2); msg.Y >= 2 && idx >= m.offset && idx < end {
 			m.cursor = idx
 			m.clamp()
 		}
