@@ -1,0 +1,48 @@
+name: fuzz
+
+# The fuzz harnesses (scan/fuzz_test.go, intel/fuzz_test.go) run only their
+# seed corpus during normal `go test` in ci.yml — that catches regressions on
+# known inputs but never explores new ones. This runs the actual fuzzer on a
+# schedule so it keeps hunting for inputs that crash the ps/lsof/docker
+# parsers, and surfaces any crasher as a failed job + an uploaded corpus file
+# to reproduce from.
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # nightly, ~06:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: fuzz
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # one crashing target must not cancel the others
+      matrix:
+        include:
+          - { pkg: ./scan/, fn: FuzzParsePSUserLines }
+          - { pkg: ./scan/, fn: FuzzParsePSCommandLines }
+          - { pkg: ./scan/, fn: FuzzPortOf }
+          - { pkg: ./intel/, fn: FuzzParseDockerPorts }
+          - { pkg: ./intel/, fn: FuzzBrewFormula }
+          - { pkg: ./intel/, fn: FuzzWordMatch }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: fuzz ${{ matrix.fn }}
+        run: go test -run '^$' -fuzz='^${{ matrix.fn }}$' -fuzztime=180s ${{ matrix.pkg }}
+
+      - name: upload crash corpus
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-${{ matrix.fn }}
+          path: ${{ matrix.pkg }}testdata/fuzz/
+          if-no-files-found: ignore

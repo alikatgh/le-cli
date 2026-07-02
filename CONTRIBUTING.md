@@ -7,11 +7,20 @@ go build ./...
 go vet ./...
 gofmt -l .            # should print nothing
 go test -race ./...
+golangci-lint run ./...
 ```
 
-`ci.yml` runs exactly these four on every push and PR, on both Linux and
-macOS — a PR that fails one of them won't merge cleanly. There's no
-separate linter config right now, so `go vet` + `gofmt` are the bar.
+`ci.yml` runs all of these on every push and PR, on both Linux and macOS — a
+PR that fails one won't merge cleanly. golangci-lint is pinned to v2.2.2 there
+and runs with its defaults (no repo config).
+
+The ps/lsof/docker parsers have fuzz harnesses (`scan/fuzz_test.go`,
+`intel/fuzz_test.go`); their seed corpus runs as part of `go test`, and
+`fuzz.yml` fuzzes them for real on a nightly schedule. Run one locally with:
+
+```sh
+go test -run '^$' -fuzz=FuzzPortOf -fuzztime=30s ./scan/
+```
 
 ## Project layout
 
