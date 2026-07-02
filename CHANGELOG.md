@@ -5,6 +5,8 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-07-02
+
 ### Fixed
 - The TUI confirm dialog could stop the wrong process: a background refresh
   landing while the dialog was open could move a different listener under the
@@ -141,7 +143,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/alikatgh/le-cli/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/alikatgh/le-cli/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/alikatgh/le-cli/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/alikatgh/le-cli/compare/v0.1.4...v0.1.5
