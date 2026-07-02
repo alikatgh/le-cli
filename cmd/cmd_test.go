@@ -360,6 +360,72 @@ func TestPreviewMatched(t *testing.T) {
 	}
 }
 
+func TestStopMatchedJSONAllSucceed(t *testing.T) {
+	rows := []row{sampleRow("3000", 100, "node"), sampleRow("3001", 101, "vite")}
+	var buf bytes.Buffer
+	stop := func(scan.Listener, intel.Profile) (string, error) { return "sent SIGTERM", nil }
+	if err := stopMatchedJSON(&buf, rows, stop); err != nil {
+		t.Fatalf("all-success should return nil, got %v", err)
+	}
+	var got []stopResult
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, buf.String())
+	}
+	if len(got) != 2 || !got[0].OK || !got[1].OK || got[0].Action != "sent SIGTERM" {
+		t.Fatalf("results = %+v, want two ok rows with the stop message as action", got)
+	}
+	if got[0].DryRun {
+		t.Error("a real stop must not be marked dryRun")
+	}
+}
+
+func TestStopMatchedJSONPartialFailure(t *testing.T) {
+	rows := []row{sampleRow("3000", 100, "node"), sampleRow("3001", 101, "stuck")}
+	var buf bytes.Buffer
+	stop := func(_ scan.Listener, p intel.Profile) (string, error) {
+		if p.Identity == "stuck" {
+			return "", errors.New("permission denied")
+		}
+		return "sent SIGTERM", nil
+	}
+	err := stopMatchedJSON(&buf, rows, stop)
+	if err == nil || !strings.Contains(err.Error(), "1 of 2 could not be stopped") {
+		t.Fatalf("partial failure error = %v, want '1 of 2 could not be stopped'", err)
+	}
+	var got []stopResult
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("output is not valid JSON despite the failure: %v\n%s", err, buf.String())
+	}
+	// The failing row must still be IN the JSON, with ok=false and the error.
+	if len(got) != 2 || got[1].OK || !strings.Contains(got[1].Error, "permission denied") {
+		t.Fatalf("results = %+v, want the failed row present with ok=false and its error", got)
+	}
+	if !got[0].OK {
+		t.Error("the succeeding row should still be ok=true")
+	}
+}
+
+func TestPreviewMatchedJSON(t *testing.T) {
+	rows := []row{sampleRow("3000", 100, "node")}
+	var buf bytes.Buffer
+	if err := previewMatchedJSON(&buf, rows); err != nil {
+		t.Fatal(err)
+	}
+	var got []stopResult
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, buf.String())
+	}
+	if len(got) != 1 || !got[0].DryRun || !got[0].OK || got[0].Action != "TERM" {
+		t.Fatalf("results = %+v, want one dryRun=true ok row with the StopLabel as action", got)
+	}
+}
+
+func TestStopCmdHasJSONFlag(t *testing.T) {
+	if stopCmd().Flags().Lookup("json") == nil {
+		t.Error("stop command missing --json flag")
+	}
+}
+
 func TestListCmdHasJSONFlagAndAlias(t *testing.T) {
 	c := listCmd()
 	if c.Flags().Lookup("json") == nil {

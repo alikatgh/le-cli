@@ -76,6 +76,7 @@ le list --json     # structured output for scripts / jq
 le stop 3000       # stop whatever is on port 3000, the smart way
 le stop 1183       # …or by PID
 le stop --dir .    # stop every listener whose working dir is under this path
+le stop 3000 --json  # …with per-listener results as JSON (works with -n too)
 le stop --dir . -n # dry run: show what --dir would stop, without stopping it
 le hold 3000       # squat a port so nothing else can grab it (Ctrl-C frees)
 le wait 5432       # block until a port frees up

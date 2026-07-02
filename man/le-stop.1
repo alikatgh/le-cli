@@ -21,7 +21,8 @@ clearing out everything a project spun up.
 
 .PP
 Use --dry-run to see exactly what would be stopped without touching
-anything — worth doing before a --dir sweep.
+anything — worth doing before a --dir sweep. --json emits the per-
+listener outcomes (or the dry-run preview) as an array for scripts.
 
 
 .SH OPTIONS
@@ -35,6 +36,10 @@ anything — worth doing before a --dir sweep.
 .PP
 \fB-h\fP, \fB--help\fP[=false]
 	help for stop
+
+.PP
+\fB--json\fP[=false]
+	output per-listener results as JSON
 
 
 .SH SEE ALSO

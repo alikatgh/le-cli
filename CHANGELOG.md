@@ -5,6 +5,12 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+- `le stop --json` emits per-listener outcomes (pid, identity, ports, action,
+  ok, error) as a JSON array — and combines with `--dry-run` for a structured
+  preview. Closes the `le list --json` / `le stop` scripting asymmetry the
+  round-3 review flagged.
+
 ## [0.1.10] - 2026-07-02
 
 ### Internal

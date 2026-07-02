@@ -119,7 +119,7 @@ func filterRows(rows []row, q string) []row {
 
 func stopCmd() *cobra.Command {
 	var dir string
-	var dryRun bool
+	var dryRun, asJSON bool
 	c := &cobra.Command{
 		Use:   "stop [port|pid]",
 		Short: "Stop a listener (by port/pid) or every listener under a directory",
@@ -130,23 +130,25 @@ func stopCmd() *cobra.Command {
 			"nested under it — the terminal equivalent of the app's folder-stop, for\n" +
 			"clearing out everything a project spun up.\n\n" +
 			"Use --dry-run to see exactly what would be stopped without touching\n" +
-			"anything — worth doing before a --dir sweep.",
+			"anything — worth doing before a --dir sweep. --json emits the per-\n" +
+			"listener outcomes (or the dry-run preview) as an array for scripts.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dir != "" {
 				if len(args) > 0 {
 					return fmt.Errorf("pass either a port/pid or --dir, not both")
 				}
-				return runStopDir(dir, dryRun)
+				return runStopDir(dir, dryRun, asJSON)
 			}
 			if len(args) != 1 {
 				return fmt.Errorf("give a port, a pid, or --dir <path>")
 			}
-			return runStop(args[0], dryRun)
+			return runStop(args[0], dryRun, asJSON)
 		},
 	}
 	c.Flags().StringVarP(&dir, "dir", "d", "", "stop every listener whose working directory is under this path")
 	c.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "print what would be stopped without stopping it")
+	c.Flags().BoolVar(&asJSON, "json", false, "output per-listener results as JSON")
 	return c
 }
 
@@ -214,10 +216,10 @@ func gather() []row {
 	return rows
 }
 
-func printJSON(w io.Writer, rows []row) error {
+func printJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	return enc.Encode(rows)
+	return enc.Encode(v)
 }
 
 func printTable(w io.Writer, rows []row) {
@@ -274,30 +276,38 @@ func matchRows(rows []row, target string) []row {
 	return matched
 }
 
-func runStop(target string, dryRun bool) error {
+func runStop(target string, dryRun, asJSON bool) error {
 	rows := gather()
 	matched := matchRows(rows, target)
 	if len(matched) == 0 {
 		return fmt.Errorf("nothing listening on %s", target)
 	}
+	return dispatchStop(matched, dryRun, asJSON)
+}
+
+// dispatchStop is the shared tail of the port/pid and --dir paths: render the
+// dry-run preview or execute the stops, as text or JSON.
+func dispatchStop(matched []row, dryRun, asJSON bool) error {
 	if dryRun {
+		if asJSON {
+			return previewMatchedJSON(os.Stdout, matched)
+		}
 		previewMatched(os.Stdout, matched)
 		return nil
+	}
+	if asJSON {
+		return stopMatchedJSON(os.Stdout, matched, kill.Stop)
 	}
 	return stopMatched(os.Stdout, os.Stderr, matched, kill.Stop)
 }
 
-func runStopDir(dir string, dryRun bool) error {
+func runStopDir(dir string, dryRun, asJSON bool) error {
 	rows := gather()
 	matched := matchDir(rows, dir)
 	if len(matched) == 0 {
 		return fmt.Errorf("no listeners have a working directory under %s", dir)
 	}
-	if dryRun {
-		previewMatched(os.Stdout, matched)
-		return nil
-	}
-	return stopMatched(os.Stdout, os.Stderr, matched, kill.Stop)
+	return dispatchStop(matched, dryRun, asJSON)
 }
 
 // previewMatched lists what a stop WOULD act on, without touching anything —
@@ -370,6 +380,57 @@ func withinDir(cwd, dir string) bool {
 // couldn't be stopped. Split out (with injected writers + stop func) so the
 // aggregation and output — including the "N of M could not be stopped"
 // partial-failure path — are testable without touching real processes.
+// stopResult is one element of `le stop --json` output. lowerCamelCase keys,
+// matching scan.Listener / intel.Profile, so scripts see one convention.
+type stopResult struct {
+	PID      int      `json:"pid"`
+	Identity string   `json:"identity"`
+	Ports    []string `json:"ports"`
+	Action   string   `json:"action"` // what ran (or would run, for a dry run)
+	DryRun   bool     `json:"dryRun"`
+	OK       bool     `json:"ok"`
+	Error    string   `json:"error,omitempty"` // set when ok is false
+}
+
+// previewMatchedJSON is --dry-run --json: every row is previewable, nothing
+// is executed, so ok is always true and action is the recommended strategy.
+func previewMatchedJSON(w io.Writer, matched []row) error {
+	results := make([]stopResult, 0, len(matched))
+	for _, r := range matched {
+		results = append(results, stopResult{
+			PID: r.PID, Identity: r.Profile.Identity, Ports: r.Ports,
+			Action: r.Profile.StopLabel, DryRun: true, OK: true,
+		})
+	}
+	return printJSON(w, results)
+}
+
+// stopMatchedJSON executes the stops like stopMatched but reports each
+// outcome as JSON on w instead of ✓/✗ lines. The exit-code contract is the
+// same: an error naming the partial-failure count when any row failed.
+func stopMatchedJSON(w io.Writer, matched []row, stop func(scan.Listener, intel.Profile) (string, error)) error {
+	results := make([]stopResult, 0, len(matched))
+	var failed int
+	for _, r := range matched {
+		res := stopResult{PID: r.PID, Identity: r.Profile.Identity, Ports: r.Ports}
+		msg, err := stop(r.Listener, r.Profile)
+		if err != nil {
+			res.Action, res.Error = r.Profile.StopLabel, err.Error()
+			failed++
+		} else {
+			res.Action, res.OK = msg, true
+		}
+		results = append(results, res)
+	}
+	if err := printJSON(w, results); err != nil {
+		return err
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d of %d could not be stopped", failed, len(matched))
+	}
+	return nil
+}
+
 func stopMatched(w, errW io.Writer, matched []row, stop func(scan.Listener, intel.Profile) (string, error)) error {
 	// Write errors are discarded, same as printTable: a broken output pipe
 	// fails every subsequent write identically and there's nothing more
