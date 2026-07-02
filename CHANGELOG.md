@@ -5,6 +5,10 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Internal
+- Release tarballs now carry a signed build-provenance attestation, verifiable
+  with `gh attestation verify <tarball> --repo alikatgh/le-cli`.
+
 ## [0.1.9] - 2026-07-02
 
 ### Fixed

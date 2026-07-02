@@ -41,6 +41,14 @@ Prebuilt binaries (macOS + Linux, amd64 + arm64) are attached to each
 tar -xzf le_*.tar.gz && sudo mv le /usr/local/bin/
 ```
 
+Each release tarball carries a signed [build-provenance
+attestation](https://docs.github.com/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds)
+— verify it came from this repo's CI before trusting it:
+
+```sh
+gh attestation verify le_*.tar.gz --repo alikatgh/le-cli
+```
+
 Homebrew (also installs man pages and shell completions):
 
 ```sh

@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write     # for build-provenance attestation (GitHub OIDC)
+  attestations: write
 
 jobs:
   release:
@@ -36,3 +38,13 @@ jobs:
             --title "le $VER" \
             --notes "Prebuilt \`le\` binaries for macOS and Linux (amd64 + arm64). See README.md." \
             dist/*.tar.gz dist/checksums.txt
+
+      # Cryptographic build provenance, verifiable with `gh attestation verify
+      # <tarball> --repo alikatgh/le-cli`. GitHub-native (OIDC) — no external
+      # service. Runs AFTER the release is published, so a hiccup here can
+      # never un-publish the binaries; worst case the job goes red with the
+      # release already live.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: 'dist/*.tar.gz'
