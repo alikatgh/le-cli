@@ -1,6 +1,12 @@
 name: release
 
-# Cuts a GitHub release when a v* tag is pushed.
+# Cuts a GitHub release when a v* tag is pushed. goreleaser builds the 4
+# platform tarballs (binary + man pages), checksums.txt, and the release —
+# and, when the TAP_GITHUB_TOKEN secret is configured (a fine-grained PAT
+# with contents:write on alikatgh/homebrew-tap), also pushes the updated
+# formula to the tap, replacing the error-prone hand-edit of four sha256s
+# per release. Without the secret the tap step is skipped and the bump
+# stays manual (see RELEASING.md).
 on:
   push:
     tags:
@@ -26,18 +32,20 @@ jobs:
       - name: Test
         run: go test ./...
 
-      - name: Build release artifacts
-        run: ./build-release.sh "${GITHUB_REF_NAME#v}"
-
-      - name: Publish GitHub release
+      # Pinned goreleaser version so releases are reproducible run-over-run;
+      # bump deliberately. (`brews` is deprecated upstream — see the note in
+      # .goreleaser.yaml for why we stay on it for now.)
+      - name: Release via goreleaser
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
         run: |
-          VER="${GITHUB_REF_NAME#v}"
-          gh release create "$GITHUB_REF_NAME" \
-            --title "le $VER" \
-            --notes "Prebuilt \`le\` binaries for macOS and Linux (amd64 + arm64). See README.md." \
-            dist/*.tar.gz dist/checksums.txt
+          if [ -n "$TAP_GITHUB_TOKEN" ]; then
+            go run github.com/goreleaser/goreleaser/v2@v2.16.0 release --clean
+          else
+            echo "TAP_GITHUB_TOKEN not configured — skipping the Homebrew tap update (bump manually per RELEASING.md)"
+            TAP_GITHUB_TOKEN="" go run github.com/goreleaser/goreleaser/v2@v2.16.0 release --clean --skip=homebrew
+          fi
 
       # Cryptographic build provenance, verifiable with `gh attestation verify
       # <tarball> --repo alikatgh/le-cli`. GitHub-native (OIDC) — no external

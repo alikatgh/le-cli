@@ -36,23 +36,31 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The [`release`](.github/workflows/release.yml) workflow runs the tests,
-cross-compiles macOS + Linux binaries (amd64 + arm64), and attaches the
-tarballs + `checksums.txt` to a GitHub release.
+The [`release`](.github/workflows/release.yml) workflow runs the tests, then
+[goreleaser](.goreleaser.yaml) cross-compiles macOS + Linux binaries
+(amd64 + arm64), attaches the tarballs (binary + man pages) +
+`checksums.txt` to a GitHub release, and attests build provenance.
 
-## Manual (no CI required)
+**Homebrew tap automation:** if the repo has a `TAP_GITHUB_TOKEN` secret
+(a fine-grained PAT with `contents: write` on `alikatgh/homebrew-tap`),
+goreleaser also pushes the updated formula — no hand-editing of sha256s.
+Without the secret, the tap step is skipped and the bump is manual
+(section below).
+
+## Local dry-run (no publishing)
 
 ```sh
-./build-release.sh 0.1.0
-gh release create v0.1.0 \
-  --title "le 0.1.0" \
-  --notes "Prebuilt le binaries for macOS and Linux." \
-  dist/*.tar.gz dist/checksums.txt
+TAP_GITHUB_TOKEN="" goreleaser release --snapshot --clean --skip=homebrew
 ```
+
+Builds everything into `dist/` exactly as CI would, without touching
+GitHub or the tap — the way to validate packaging changes before tagging.
 
 ## Homebrew (optional, recommended for reach)
 
-One-time: create a public tap repo `alikatgh/homebrew-tap`. After each release,
+One-time: create a public tap repo `alikatgh/homebrew-tap`. Only needed when
+the `TAP_GITHUB_TOKEN` secret is NOT configured — otherwise goreleaser does
+this automatically. After each release,
 add/update `Formula/le.rb` with the version and the sha256s from
 `dist/checksums.txt`:
 

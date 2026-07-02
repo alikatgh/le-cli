@@ -1,0 +1,71 @@
+# goreleaser config — replaces build-release.sh + the hand-run Homebrew tap
+# bump. Everything mirrors the previous pipeline byte-for-byte where it
+# matters: archive names (le_<ver>_<os>_<arch>.tar.gz), contents (le + man/),
+# and a plain checksums.txt — so existing formula URLs and verification
+# habits keep working. The brews section automates the tap update that was
+# previously a hand-edit of four sha256s per release (a transposition there
+# would break `brew install` for everyone; automation deletes that error
+# class). CI skips the tap push when TAP_GITHUB_TOKEN isn't configured.
+version: 2
+
+project_name: le
+
+builds:
+  - main: .
+    binary: le
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - man/*.1
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  # CHANGELOG.md is the authoritative history; a commit-derived changelog
+  # would just duplicate it noisily.
+  disable: true
+
+release:
+  name_template: "le {{ .Version }}"
+  header: |
+    Prebuilt `le` binaries for macOS and Linux (amd64 + arm64). See
+    [CHANGELOG.md](https://github.com/alikatgh/le-cli/blob/main/CHANGELOG.md)
+    for what changed, and README.md for install instructions.
+
+# NOTE: `brews` is deprecated in goreleaser v2 in favor of `homebrew_casks`,
+# but our tap serves a FORMULA and existing users installed it as one —
+# migrating to a cask is a user-visible change (uninstall/reinstall
+# semantics) to decide separately, not a side effect of adopting goreleaser.
+# Deliberately staying on `brews` until that migration is chosen; revisit
+# when goreleaser announces removal.
+brews:
+  - name: le
+    repository:
+      owner: alikatgh
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://localhostexplorer.com
+    description: See and stop what's listening on localhost, from the terminal
+    license: MIT
+    commit_msg_template: "le {{ .Version }}"
+    install: |
+      bin.install "le"
+      man1.install Dir["man/*.1"]
+      # Cobra ships `le completion <shell>`; generate + install so `le <tab>`
+      # works out of the box. Runs the just-installed binary at install time,
+      # so nothing extra is bundled in the tarball. Homebrew's helper emits
+      # zsh + fish for Cobra tools (zsh is the macOS default shell).
+      generate_completions_from_executable(bin/"le", "completion")
+    test: |
+      system "#{bin}/le", "--version"
