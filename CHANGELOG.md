@@ -5,9 +5,13 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-07-02
+
 ### Internal
 - Release tarballs now carry a signed build-provenance attestation, verifiable
   with `gh attestation verify <tarball> --repo alikatgh/le-cli`.
+- Status badges (CI / release / license) on the README; `.editorconfig` for
+  the repo's non-Go files; the `brew services list` parse is now unit-tested.
 
 ## [0.1.9] - 2026-07-02
 
@@ -165,7 +169,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.10...HEAD
+[0.1.10]: https://github.com/alikatgh/le-cli/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/alikatgh/le-cli/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/alikatgh/le-cli/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/alikatgh/le-cli/compare/v0.1.6...v0.1.7
