@@ -5,6 +5,8 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-07-03
+
 ### Added
 - TUI: `o` opens the selected listener's port in your browser, and `c`
   copies its stop command to the clipboard via OSC 52 — which means the
@@ -194,7 +196,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.12...HEAD
+[0.1.12]: https://github.com/alikatgh/le-cli/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/alikatgh/le-cli/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/alikatgh/le-cli/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/alikatgh/le-cli/compare/v0.1.8...v0.1.9
