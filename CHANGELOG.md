@@ -5,6 +5,16 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Changed
+- TUI: visual hierarchy pass. Every row leads with a risk-colored gutter
+  rail; the RISK cell carries its color (bold above low) instead of tinting
+  the port number; pid/dir/owner recede so identity and the stop command
+  read first. The header shows a risk pulse (`2 high · 3 medium`) and the
+  active filter query; the detail pane hints `(c copies)` on the stop line;
+  the stop confirmation leads with `⚠`.
+- TUI: table cells pad by display width, not rune count — CJK identities
+  (8 columns in 4 runes) no longer shift every column after WHAT.
+
 ## [0.1.12] - 2026-07-03
 
 ### Added

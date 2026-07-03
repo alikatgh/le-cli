@@ -520,13 +520,38 @@ func (m model) headerView() string {
 	left := titleSt.Render("le") + dimSt.Render(" · localhost explorer")
 	count := fmt.Sprintf("%d listening", len(m.view))
 	if m.filter.Value() != "" {
-		count = fmt.Sprintf("%d of %d", len(m.view), len(m.all))
+		count = fmt.Sprintf("%d of %d · /%s", len(m.view), len(m.all), m.filter.Value())
+	}
+	// Risk pulse: elevated counts get their color in the header, so a
+	// screenful of green never hides the two rows that matter.
+	var hi, med int
+	for _, r := range m.view {
+		switch r.P.Risk {
+		case intel.Low:
+		case intel.Med:
+			med++
+		default:
+			hi++
+		}
+	}
+	pulse := ""
+	if hi > 0 {
+		pulse += errSt.Render(fmt.Sprintf("%d high", hi))
+	}
+	if med > 0 {
+		if pulse != "" {
+			pulse += dimSt.Render(" · ")
+		}
+		pulse += lipgloss.NewStyle().Foreground(yellow).Render(fmt.Sprintf("%d medium", med))
+	}
+	if pulse != "" {
+		pulse += dimSt.Render("  ·  ")
 	}
 	when := "scanning…"
 	if !m.lastScan.IsZero() {
 		when = "updated " + m.lastScan.Format("15:04:05")
 	}
-	right := dimSt.Render(count + "  ·  " + when)
+	right := pulse + dimSt.Render(count+"  ·  "+when)
 	gap := m.w - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
@@ -542,6 +567,10 @@ func (m model) tableView() string {
 		return dimSt.Render("  no listeners match.")
 	}
 
+	// Every row leads with a 2-column risk gutter ("▎ ") — a color rail that
+	// makes a screenful scannable without reading the RISK column.
+	const gutterW = 2
+
 	// The DIR column appears only when the terminal is wide enough to fit it
 	// without starving WHAT/STOP — folders are the product's core "which
 	// project is this?" signal, but never at the cost of an unreadable table.
@@ -551,7 +580,8 @@ func (m model) tableView() string {
 	if showDir {
 		dirBudget = dirW + 1
 	}
-	wWhat := clampInt(m.w-8-1-7-1-7-1-9-1-3-dirBudget, 14, 40)
+	wWhat := clampInt(m.w-gutterW-8-1-7-1-7-1-9-1-3-dirBudget, 14, 40)
+	stopW := m.w - gutterW - wWhat - 36 - dirBudget
 	var header string
 	if showDir {
 		header = fmt.Sprintf("%-8s %-7s %-*s %-*s %-7s %-9s %s",
@@ -563,7 +593,7 @@ func (m model) tableView() string {
 			m.colLabel("RISK", sortRisk), m.colLabel("OWNER", sortOwner), "STOP")
 	}
 	var b strings.Builder
-	b.WriteString(headSt.Render(header) + "\n")
+	b.WriteString(strings.Repeat(" ", gutterW) + headSt.Render(header) + "\n")
 
 	rows := m.listHeight()
 	end := m.offset + rows
@@ -572,35 +602,56 @@ func (m model) tableView() string {
 	}
 	for i := m.offset; i < end; i++ {
 		r := m.view[i]
-		var line string
+		// Cells are padded to DISPLAY width (padRight), not fmt's rune
+		// count — %-*s under-pads CJK identities (8 cols in 4 runes) and
+		// shifts every column after WHAT. Same trap truncate() was fixed for.
+		port := padRight(portCell(r.L.Ports), 8)
+		pid := padRight(fmt.Sprintf("%d", r.L.PID), 7)
+		what := padRight(truncate(r.P.Identity, wWhat), wWhat)
+		dir := ""
 		if showDir {
-			line = fmt.Sprintf("%-8s %-7d %-*s %-*s %-7s %-9s %s",
-				portCell(r.L.Ports), r.L.PID, wWhat, truncate(r.P.Identity, wWhat),
-				dirW, dirCell(r.L.Cwd, homeDir, dirW),
-				string(r.P.Risk), truncate(string(r.P.Source), 9), truncate(stopShort(r.P), m.w-wWhat-36-dirBudget))
-		} else {
-			line = fmt.Sprintf("%-8s %-7d %-*s %-7s %-9s %s",
-				portCell(r.L.Ports), r.L.PID, wWhat, truncate(r.P.Identity, wWhat),
-				string(r.P.Risk), truncate(string(r.P.Source), 9), truncate(stopShort(r.P), m.w-wWhat-36))
+			dir = padRight(dirCell(r.L.Cwd, homeDir, dirW), dirW) + " "
 		}
+		risk := padRight(string(r.P.Risk), 7)
+		owner := padRight(truncate(string(r.P.Source), 9), 9)
+		stop := truncate(stopShort(r.P), stopW)
+
+		gutter := lipgloss.NewStyle().Foreground(riskColor(r.P.Risk)).Render("▎") + " "
 		if i == m.cursor {
-			b.WriteString(selSt.Width(m.w).Render(line))
+			line := port + " " + pid + " " + what + " " + dir + risk + " " + owner + " " + stop
+			b.WriteString(gutter + selSt.Width(m.w-gutterW).Render(line))
 		} else {
-			// %-8s is a MINIMUM width, not a cap — a listener with many ports
-			// (portCell -> "54321 +12") can render wider than 8, so the risk
-			// color must split at the port cell's real width, not a fixed 8.
-			portWidth := lipgloss.Width(portCell(r.L.Ports))
-			if portWidth < 8 {
-				portWidth = 8
+			// Hierarchy: identity and the stop command read at full weight;
+			// pid/dir/owner recede; risk carries its color (bold above low).
+			riskSt := lipgloss.NewStyle().Foreground(riskColor(r.P.Risk))
+			if r.P.Risk != intel.Low && r.P.Risk != intel.Med {
+				riskSt = riskSt.Bold(true)
 			}
-			b.WriteString(lipgloss.NewStyle().Foreground(riskColor(r.P.Risk)).Render(line[:portWidth]))
-			b.WriteString(line[portWidth:])
+			b.WriteString(gutter +
+				port + " " +
+				dimSt.Render(pid) + " " +
+				what + " " +
+				dimSt.Render(dir) +
+				riskSt.Render(risk) + " " +
+				dimSt.Render(owner) + " " +
+				stop)
 		}
 		if i < end-1 {
 			b.WriteString("\n")
 		}
 	}
 	return b.String()
+}
+
+// padRight pads s with spaces to display width n (no-op if already wider).
+// Padding by lipgloss.Width, not rune count: a 4-rune CJK identity occupies
+// 8 columns, and fmt's %-*s would under-pad it and shift every later column.
+func padRight(s string, n int) string {
+	w := lipgloss.Width(s)
+	if w >= n {
+		return s
+	}
+	return s + strings.Repeat(" ", n-w)
 }
 
 // colLabel appends a plain-ASCII direction marker to a column header when
@@ -642,7 +693,7 @@ func (m model) detailView() string {
 		dimSt.Render("ports  ") + strings.Join(r.L.Ports, ", ") + dimSt.Render("   pid ") + fmt.Sprintf("%d", r.L.PID) + dimSt.Render("   owner ") + string(r.P.Source),
 		dimSt.Render("cmd    ") + truncate(r.L.CommandLine, m.w-12),
 		dimSt.Render("dir    ") + truncate(orDash(r.L.Cwd), m.w-12),
-		dimSt.Render("stop   ") + lipgloss.NewStyle().Foreground(brand).Render(stopShort(r.P)),
+		dimSt.Render("stop   ") + lipgloss.NewStyle().Foreground(brand).Render(stopShort(r.P)) + dimSt.Render("   (c copies)"),
 		dimSt.Render("back   ") + orDash(r.P.Restart),
 	}
 	if r.P.Warning != "" {
@@ -660,7 +711,7 @@ func (m model) footerView() string {
 		// if the view shifted under the cursor while the dialog is open.
 		r := m.confirmed
 		q := lipgloss.NewStyle().Foreground(yellow).Render(
-			fmt.Sprintf("Stop %s?  → %s   ", r.P.Identity, stopShort(r.P)))
+			fmt.Sprintf("⚠ Stop %s?  → %s   ", r.P.Identity, stopShort(r.P)))
 		return q + keySt.Render("y") + dimSt.Render(" yes  ") + keySt.Render("n") + dimSt.Render(" no")
 	}
 	if m.filtering {
