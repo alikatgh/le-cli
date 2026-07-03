@@ -9,6 +9,7 @@ stopping it the right way. The terminal sibling of the
 [Localhost Explorer](https://localhostexplorer.com) menu bar app — same
 intelligence (it knows when `kill -9` won't stick), in a single static binary
 that also runs on Linux servers over SSH.
+Full tour: [localhostexplorer.com/cli](https://localhostexplorer.com/cli.html).
 
 ```
 PORT    PID     WHAT                DIR                 RISK    OWNER      STOP WITH
