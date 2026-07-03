@@ -97,3 +97,31 @@ func TestBrewFormulaSkipsBareHomebrewSegment(t *testing.T) {
 		t.Errorf("got %q, want empty (not a Cellar/opt path)", f)
 	}
 }
+
+func TestParseLaunchdList(t *testing.T) {
+	// Real `launchctl list` shape: tab-separated PID / Status / Label,
+	// with "-" PIDs for loaded-but-not-running jobs.
+	out := "PID\tStatus\tLabel\n" +
+		"4242\t0\tcom.example.devserver\n" +
+		"-\t0\tcom.example.idle\n" +
+		"7\t-9\tcom.example.crashy\n" +
+		"999999\t0\tcom.example.bigpid\n" +
+		"garbage line\n" +
+		"\n"
+	got := parseLaunchdList(out)
+	if got[4242] != "com.example.devserver" || got[7] != "com.example.crashy" || got[999999] != "com.example.bigpid" {
+		t.Errorf("running jobs missing: %v", got)
+	}
+	if len(got) != 3 {
+		t.Errorf("expected exactly 3 entries (no '-' PIDs, no garbage), got %v", got)
+	}
+}
+
+func TestParseLaunchdListSpacesFallback(t *testing.T) {
+	// Defensive: if the output ever arrives space-separated, the fallback
+	// split must still find pid and label.
+	got := parseLaunchdList("PID Status Label\n123 0 com.example.spacey\n")
+	if got[123] != "com.example.spacey" {
+		t.Errorf("space-separated fallback failed: %v", got)
+	}
+}

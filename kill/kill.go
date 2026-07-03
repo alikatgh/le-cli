@@ -76,6 +76,20 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 			return "", cmdErr("docker stop "+p.StopArg, out, err)
 		}
 		return "docker stop " + p.StopArg, nil
+	case intel.StopLaunchd:
+		// Same shape as the Docker guard: stillSame above only confirms the
+		// PID; it says nothing about whether the label still maps to this
+		// process. Labels can be bootout'd and re-bootstrapped onto a
+		// different program between scan and stop.
+		if pid, ok := intel.LaunchdLabelPID(p.StopArg); !launchdGuardOK(l.PID, pid, ok) {
+			return "", fmt.Errorf("launchd label %q no longer maps to pid %d — rescan and try again", p.StopArg, l.PID)
+		}
+		target := intel.LaunchdDomainTarget(p.StopArg)
+		out, err := runCombined("launchctl", "bootout", target)
+		if err != nil {
+			return "", cmdErr("launchctl bootout "+target, out, err)
+		}
+		return "launchctl bootout " + target, nil
 	case intel.StopAvoid:
 		return "", fmt.Errorf("no safe automatic stop — inspect this process first")
 	default:
@@ -84,6 +98,13 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 		}
 		return "sent SIGTERM to " + strconv.Itoa(l.PID), nil
 	}
+}
+
+// launchdGuardOK is the label-recycling comparison, pure for the same reason
+// as dockerGuardOK below: a refactor that inverts it silently defeats the
+// protection, so give the tests something to pin.
+func launchdGuardOK(scanPID, curPID int, lookupOK bool) bool {
+	return lookupOK && curPID == scanPID
 }
 
 // dockerGuardOK is the exact comparison the container-recycling guard rests

@@ -59,3 +59,20 @@ func TestNormalizeWS(t *testing.T) {
 		}
 	}
 }
+
+func TestLaunchdGuardOK(t *testing.T) {
+	cases := []struct {
+		name            string
+		scanPID, curPID int
+		lookupOK, want  bool
+	}{
+		{"same pid", 42, 42, true, true},
+		{"label re-bootstrapped to new pid", 42, 99, true, false},
+		{"label gone", 42, 0, false, false},
+	}
+	for _, c := range cases {
+		if got := launchdGuardOK(c.scanPID, c.curPID, c.lookupOK); got != c.want {
+			t.Errorf("%s: launchdGuardOK(%d, %d, %v) = %v, want %v", c.name, c.scanPID, c.curPID, c.lookupOK, got, c.want)
+		}
+	}
+}

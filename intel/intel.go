@@ -6,9 +6,11 @@
 package intel
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/alikatgh/le-cli/scan"
@@ -36,6 +38,7 @@ const (
 	SrcContainer Source = "container"
 	SrcFramework Source = "framework"
 	SrcIDE       Source = "ide"
+	SrcLaunchd   Source = "launchd"
 	SrcMacOS     Source = "macos"
 	SrcApp       Source = "app"
 	SrcUnknown   Source = "unknown"
@@ -49,10 +52,11 @@ const (
 
 // StopKind selects how kill.Stop executes the recommended action.
 const (
-	StopTerm   StopKind = "term"   // SIGTERM to the PID
-	StopBrew   StopKind = "brew"   // brew services stop <arg>
-	StopDocker StopKind = "docker" // docker stop <arg>
-	StopAvoid  StopKind = "avoid"  // no safe automatic action
+	StopTerm    StopKind = "term"    // SIGTERM to the PID
+	StopBrew    StopKind = "brew"    // brew services stop <arg>
+	StopDocker  StopKind = "docker"  // docker stop <arg>
+	StopLaunchd StopKind = "launchd" // launchctl bootout gui/<uid>/<arg>
+	StopAvoid   StopKind = "avoid"   // no safe automatic action
 )
 
 // Profile is everything the UI needs to render and act on a listener. Tagged
@@ -87,14 +91,16 @@ type dockerContainer struct {
 type Env struct {
 	BrewStarted  map[string]bool            // formula -> started via `brew services`
 	DockerByPort map[string]dockerContainer // port -> container identity
+	LaunchdByPID map[int]string             // pid -> user-domain launchd label
 }
 
-// Detect gathers brew + docker context once. Both are best-effort: missing
-// tools just mean those branches stay empty.
+// Detect gathers brew + docker + launchd context once. All are best-effort:
+// missing tools just mean those branches stay empty.
 func Detect() Env {
 	return Env{
 		BrewStarted:  brewStarted(),
 		DockerByPort: dockerByPort(),
+		LaunchdByPID: launchdByPID(),
 	}
 }
 
@@ -121,6 +127,75 @@ func parseBrewStarted(out string) map[string]bool {
 		}
 	}
 	return m
+}
+
+// launchdByPID maps running PIDs to their user-domain launchd labels via
+// `launchctl list` (no sudo; system-domain daemons are invisible here, which
+// is fine — those already classify as macOS services and stay StopAvoid).
+// Why this exists: a KeepAlive agent respawns the moment its PID dies, so a
+// plain TERM turns into a ghost-chase — the supervisor is the thing to stop.
+func launchdByPID() map[int]string {
+	out, err := exec.Command("launchctl", "list").Output()
+	if err != nil {
+		return map[int]string{} // not macOS, or launchctl unavailable
+	}
+	return parseLaunchdList(string(out))
+}
+
+// parseLaunchdList extracts pid -> label from `launchctl list` output
+// (columns: PID, Status, Label; PID is "-" for loaded-but-not-running jobs).
+// Tab-split first — labels are the last column and could in principle carry
+// odd characters — with a whitespace-split fallback for safety.
+func parseLaunchdList(out string) map[int]string {
+	m := map[int]string{}
+	for i, line := range strings.Split(out, "\n") {
+		if i == 0 || strings.TrimSpace(line) == "" {
+			continue // header / blank
+		}
+		f := strings.Split(line, "\t")
+		if len(f) < 3 {
+			f = strings.Fields(line)
+		}
+		if len(f) < 3 {
+			continue
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(f[0]))
+		if err != nil || pid <= 0 {
+			continue // "-" (not running) or malformed
+		}
+		label := strings.TrimSpace(strings.Join(f[2:], "\t"))
+		if label != "" {
+			m[pid] = label
+		}
+	}
+	return m
+}
+
+// LaunchdDomainTarget renders the launchctl domain target for a user-domain
+// label — the exact argument `launchctl bootout` needs.
+func LaunchdDomainTarget(label string) string {
+	return "gui/" + strconv.Itoa(os.Getuid()) + "/" + label
+}
+
+// LaunchdLabelPID returns the PID currently running under the given
+// user-domain label. kill.Stop calls this immediately before a bootout to
+// confirm the label still maps to the process we scanned — labels, unlike
+// PIDs, can be bootout'd and re-bootstrapped onto a different program
+// between scan and stop.
+//
+// A package var, not a plain func, so kill's tests can stub the re-verify
+// result without real launchd jobs.
+var LaunchdLabelPID = func(label string) (int, bool) {
+	out, err := exec.Command("launchctl", "list").Output()
+	if err != nil {
+		return 0, false
+	}
+	for pid, l := range parseLaunchdList(string(out)) {
+		if l == label {
+			return pid, true
+		}
+	}
+	return 0, false
 }
 
 var dockerPortRe = regexp.MustCompile(`(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]|::):(\d+)->`)
@@ -347,6 +422,31 @@ func Make(l scan.Listener, env Env) Profile {
 	}
 	if p.Source == "" {
 		p.Source = sourceFor(l, p, container.name != "", managedBrew, system, bgApp)
+	}
+
+	// launchd override: a KeepAlive agent respawns the moment its PID dies,
+	// so a plain TERM is a ghost-chase — route the stop through the
+	// supervisor instead. Only StopTerm rows convert: brew keeps precedence
+	// (brew services IS the launchd front-end for those jobs), docker stops
+	// the container not the PID, and StopAvoid rows stay refused.
+	if label, ok := env.LaunchdByPID[l.PID]; ok {
+		switch p.StopKind {
+		case StopTerm:
+			target := LaunchdDomainTarget(label)
+			p.Source = SrcLaunchd
+			p.StopKind, p.StopArg = StopLaunchd, label
+			p.StopLabel = "launchctl bootout " + target
+			p.Restart = "launchctl bootstrap gui/" + strconv.Itoa(os.Getuid()) + " <path-to-its-plist>"
+			p.Note = "launchd agent \"" + label + "\": killing the PID alone just respawns it if KeepAlive is set."
+			if p.Risk == Low {
+				p.Risk = Med // supervised implies something depends on it staying up
+			}
+		case StopAvoid:
+			// Refused rows stay refused, but name the supervisor — "avoid"
+			// without the launchd label leaves the user one clue short of
+			// acting deliberately.
+			p.Note = strings.TrimSpace(p.Note + " Managed by launchd as \"" + label + "\".")
+		}
 	}
 	return p
 }

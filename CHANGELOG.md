@@ -5,6 +5,17 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+- launchd awareness. A listener whose PID is a user-domain launchd job
+  (`launchctl list`) is now owned by `launchd` in the table, and its stop is
+  routed through the supervisor — `launchctl bootout gui/<uid>/<label>` —
+  instead of a TERM that a KeepAlive agent would immediately undo by
+  respawning. Brew-managed services keep the `brew services stop` route
+  (brew is the launchd front-end for those), refused system/app rows stay
+  refused but now NAME their launchd label, and `le stop` re-verifies the
+  label still maps to the scanned PID immediately before the bootout — the
+  same guard shape as Docker's container-ID re-check.
+
 ### Changed
 - TUI: visual hierarchy pass. Every row leads with a risk-colored gutter
   rail; the RISK cell carries its color (bold above low) instead of tinting

@@ -1,6 +1,7 @@
 package intel
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/alikatgh/le-cli/scan"
@@ -211,5 +212,78 @@ func TestMakeDockerBeatsCommandLine(t *testing.T) {
 	got := Make(l, env)
 	if got.Source != SrcContainer || got.StopKind != StopDocker || got.StopArg != "cache" {
 		t.Errorf("docker-vs-db: got source=%q stop=%q arg=%q, want container/docker/cache", got.Source, got.StopKind, got.StopArg)
+	}
+}
+
+func TestMakeLaunchdAgentRoutedThroughSupervisor(t *testing.T) {
+	// The commenter's test case: a KeepAlive user agent running a generic
+	// command. TERM would just make launchd respawn it — the stop must go
+	// through the supervisor, and the owner column must say so.
+	l := scan.Listener{PID: 4242, Ports: []string{"9997"}, CommandLine: "/usr/bin/python3 -m http.server 9997"}
+	env := Env{
+		BrewStarted:  map[string]bool{},
+		DockerByPort: map[string]dockerContainer{},
+		LaunchdByPID: map[int]string{4242: "com.example.devserver"},
+	}
+	got := Make(l, env)
+	if got.Source != SrcLaunchd {
+		t.Errorf("launchd agent: Source = %q, want %q", got.Source, SrcLaunchd)
+	}
+	if got.StopKind != StopLaunchd || got.StopArg != "com.example.devserver" {
+		t.Errorf("launchd agent: StopKind/Arg = %q/%q, want launchd/com.example.devserver", got.StopKind, got.StopArg)
+	}
+	if got.Risk != Med {
+		t.Errorf("launchd agent: Risk = %q, want %q (supervised implies depended-on)", got.Risk, Med)
+	}
+	if want := "launchctl bootout " + LaunchdDomainTarget("com.example.devserver"); got.StopLabel != want {
+		t.Errorf("launchd agent: StopLabel = %q, want %q", got.StopLabel, want)
+	}
+}
+
+func TestMakeBrewWinsOverLaunchdLabel(t *testing.T) {
+	// Brew services ARE launchd jobs, so a brew-managed listener will also
+	// appear in launchctl list. The brew route must keep precedence — it is
+	// the correct front-end for that job.
+	l := scan.Listener{PID: 77, Ports: []string{"6379"}, CommandLine: "/opt/homebrew/Cellar/redis/7.2.0/bin/redis-server"}
+	env := Env{
+		BrewStarted:  map[string]bool{"redis": true},
+		DockerByPort: map[string]dockerContainer{},
+		LaunchdByPID: map[int]string{77: "homebrew.mxcl.redis"},
+	}
+	got := Make(l, env)
+	check(t, "brew-over-launchd", got, want{identity: "Redis", source: SrcHomebrew, kind: Database, risk: High, stop: StopBrew, stopArg: "redis"})
+}
+
+func TestMakeAvoidStaysAvoidDespiteLaunchdLabel(t *testing.T) {
+	// System daemons are launchd-managed by definition; that must not turn
+	// a refused row into an auto-stoppable one.
+	l := scan.Listener{PID: 88, Ports: []string{"5000"}, CommandLine: "/usr/libexec/somethingd"}
+	env := Env{
+		BrewStarted:  map[string]bool{},
+		DockerByPort: map[string]dockerContainer{},
+		LaunchdByPID: map[int]string{88: "com.apple.somethingd"},
+	}
+	got := Make(l, env)
+	if got.StopKind != StopAvoid {
+		t.Errorf("system daemon with launchd label: StopKind = %q, must stay %q", got.StopKind, StopAvoid)
+	}
+}
+
+func TestMakeAvoidRowNamesItsLaunchdLabel(t *testing.T) {
+	// "Does it surface the supervisor so you know to disable that first?" —
+	// refused rows must still NAME the launchd label, even though the stop
+	// stays refused.
+	l := scan.Listener{PID: 88, Ports: []string{"5000"}, CommandLine: "/usr/libexec/somethingd"}
+	env := Env{
+		BrewStarted:  map[string]bool{},
+		DockerByPort: map[string]dockerContainer{},
+		LaunchdByPID: map[int]string{88: "com.apple.somethingd"},
+	}
+	got := Make(l, env)
+	if got.StopKind != StopAvoid {
+		t.Fatalf("StopKind = %q, must stay %q", got.StopKind, StopAvoid)
+	}
+	if !strings.Contains(got.Note, "com.apple.somethingd") {
+		t.Errorf("Note = %q, must name the launchd label", got.Note)
 	}
 }

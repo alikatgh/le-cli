@@ -31,7 +31,10 @@ identifies the owner and picks the stop strategy that actually works:
 - plain process → `SIGTERM`
 - Homebrew service → `brew services stop <formula>`
 - Docker container → `docker stop <name>`
-- system / app helpers → flagged, and it refuses to auto-kill them
+- launchd user agent → `launchctl bootout gui/<uid>/<label>` (a KeepAlive
+  agent respawns if you kill the PID — the supervisor is the thing to stop)
+- system / app helpers → flagged with their launchd label, and it refuses
+  to auto-kill them
 
 Every stop re-checks the PID's start time first, so a recycled PID is never the
 one that gets signalled.

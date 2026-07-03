@@ -154,6 +154,8 @@ func stopCommand(r Row) (string, bool) {
 		return "brew services stop " + r.P.StopArg, true
 	case intel.StopDocker:
 		return "docker stop " + r.P.StopArg, true
+	case intel.StopLaunchd:
+		return "launchctl bootout " + intel.LaunchdDomainTarget(r.P.StopArg), true
 	case intel.StopAvoid:
 		return "", false
 	default:
@@ -764,6 +766,8 @@ func stopShort(p intel.Profile) string {
 		return "brew services stop " + p.StopArg
 	case intel.StopDocker:
 		return "docker stop " + p.StopArg
+	case intel.StopLaunchd:
+		return "launchctl bootout " + p.StopArg
 	case intel.StopAvoid:
 		return "avoid — inspect first"
 	default:
