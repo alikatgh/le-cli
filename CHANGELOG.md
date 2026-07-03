@@ -5,6 +5,8 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-07-03
+
 ### Added
 - launchd awareness. A listener whose PID is a user-domain launchd job
   (`launchctl list`) is now owned by `launchd` in the table, and its stop is
