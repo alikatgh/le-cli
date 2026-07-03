@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Localhost Explorer — App Icon (v3 brutalist "127", safe-area corrected)
+
+  Source of truth: 1024×1024 SVG. All raster outputs are rendered from this file.
+  Designed in Claude Design; do not "improve" without the user's direction.
+
+  Layout follows Apple's macOS app-icon grid:
+    • Outer canvas: 1024×1024 (transparent)
+    • Visible squircle: 824×824, centered (100px margin on every side ≈ 9.8%)
+    • Corner radius: ~184 (228 × 824/1024 — preserves Apple's squircle curvature)
+    • This is the EXACT same proportion Claude.app and other Apple-template
+      icons use. Verified by alpha-bbox measurement of Claude's .icns
+      (824x824 1024x1024+100+100). Match Claude → match macOS Dock cadence.
+
+  Anatomy:
+    • Hot magenta squircle (#ee2873 top → #6e0e3c bottom)
+    • Hairline rim (#3a0620, scaled hairline) so the icon survives any wallpaper
+    • Three custom-drawn glyph paths spelling "127" in pure white
+        - "1": 80px stem + base + flag (in design coordinates)
+        - "2": stenciled — three horizontal bars + alternating verticals
+        - "7": top bar + diagonal sweep down-left
+    • Everything inside the squircle uses the original 1024-coordinate paths,
+      wrapped in a transform so the whole composition scales to 824×824
+      around the safe area. Touch master coords, not the transform.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- Background: 3-stop gradient with a brighter mid sheen for subtle 3D depth.
+         Going from a lifted hot pink at the top → main magenta → deep wine at the
+         bottom reads as soft cylindrical lighting, not a flat color. -->
+    <linearGradient id="bgGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0"   stop-color="#f8417e"/>
+      <stop offset="0.45" stop-color="#ee2873"/>
+      <stop offset="1"   stop-color="#5a0a31"/>
+    </linearGradient>
+
+    <!-- Soft top-down white highlight overlay — simulates light source from above
+         catching the upper third of the squircle. Subtle (max 18% opacity) so it
+         doesn't read as a glossy 2010-era app icon. -->
+    <linearGradient id="topHighlight" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0"   stop-color="#ffffff" stop-opacity="0.20"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="1"   stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Drop shadow on the "127" glyphs — raised-text feel. Dark wine color
+         matches the squircle's deep tones so the shadow reads "part of the
+         design," not stuck-on. -->
+    <filter id="glyphShadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="8" stdDeviation="6" flood-color="#3a0620" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <!-- Safe-area transform: place the 1024-coord composition inside an 824×824
+       region centered in the canvas (100px margin all around). Scale factor
+       824/1024 ≈ 0.8046875. Same numbers as Claude.app's icon — do not change
+       unless you've alpha-bbox-measured a newer reference and have data. -->
+  <g transform="translate(100, 100) scale(0.8046875)">
+
+    <!-- Squircle (1024-coord; renders at 824 after transform) -->
+    <rect width="1024" height="1024" rx="228" ry="228" fill="url(#bgGrad)"/>
+
+    <!-- Top highlight overlay sits inside the squircle (same shape, just lighting). -->
+    <rect width="1024" height="1024" rx="228" ry="228" fill="url(#topHighlight)"/>
+
+    <!-- Hairline rim — deep magenta so it survives any wallpaper. -->
+    <rect x="1.5" y="1.5" width="1021" height="1021" rx="226.5" ry="226.5"
+          fill="none" stroke="#3a0620" stroke-width="2"/>
+
+    <!-- "127" — three hand-drawn paths, pure white, lifted off the surface
+         via a soft drop shadow filter. -->
+    <g fill="#ffffff" filter="url(#glyphShadow)">
+
+      <!-- "1"  (glyph box: x=132..372, y=302..722) -->
+      <path d="
+        M 292 302
+        L 292 642
+        L 372 642
+        L 372 722
+        L 132 722
+        L 132 642
+        L 212 642
+        L 212 442
+        L 132 392
+        Z
+      "/>
+
+      <!-- "2"  (glyph box: x=392..632, y=302..722) -->
+      <path d="
+        M 392 302
+        L 632 302
+        L 632 552
+        L 472 552
+        L 472 642
+        L 632 642
+        L 632 722
+        L 392 722
+        L 392 472
+        L 552 472
+        L 552 382
+        L 392 382
+        Z
+      "/>
+
+      <!-- "7"  (glyph box: x=652..892, y=302..722) -->
+      <path d="
+        M 652 302
+        L 892 302
+        L 892 382
+        L 732 722
+        L 652 722
+        L 812 382
+        L 652 382
+        Z
+      "/>
+
+    </g>
+  </g>
+</svg>

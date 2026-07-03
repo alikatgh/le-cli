@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1078" height="532" viewBox="0 0 1078 532" font-family="Menlo, SF Mono, Consolas, monospace" font-size="14">
+<rect width="1078" height="532" rx="12" fill="#0a0b0c"/>
+<rect width="1078" height="40" rx="12" fill="#15171a"/>
+<rect y="28" width="1078" height="12" fill="#15171a"/>
+<circle cx="26" cy="20.0" r="6.5" fill="#ff5f57"/>
+<circle cx="48" cy="20.0" r="6.5" fill="#ffbd2e"/>
+<circle cx="70" cy="20.0" r="6.5" fill="#28c840"/>
+<text x="96" y="25.0" fill="#8a877f" font-size="12">~ · le</text>
+<rect x="34.8" y="134.0" width="1024.8" height="19" fill="#005f5f"/>
+<text x="18.0" y="72.0" fill="#d70087" font-weight="bold" xml:space="preserve" textLength="16.8">le</text>
+<text x="43.2" y="72.0" fill="#8787af" xml:space="preserve" textLength="168.0">· localhost explorer</text>
+<text x="597.6" y="72.0" fill="#ff5f5f" xml:space="preserve" textLength="50.4">9 high</text>
+<text x="656.4" y="72.0" fill="#8787af" xml:space="preserve" textLength="8.4">·</text>
+<text x="673.2" y="72.0" fill="#d78700" xml:space="preserve" textLength="67.2">4 medium</text>
+<text x="757.2" y="72.0" fill="#8787af" xml:space="preserve" textLength="302.4">·  24 listening  ·  updated 21:07:42</text>
+<text x="34.8" y="91.0" fill="#8787af" font-weight="bold" xml:space="preserve" textLength="882.0">PORT^    PID     WHAT                                     DIR                      RISK    OWNER     STOP</text>
+<text x="18.0" y="110.0" fill="#ff5f5f" xml:space="preserve" textLength="8.4">▎</text>
+<text x="34.8" y="110.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">3377</text>
+<text x="110.4" y="110.0" fill="#8787af" xml:space="preserve" textLength="42.0">82785</text>
+<text x="177.6" y="110.0" fill="#d9d6cc" xml:space="preserve" textLength="84.0">App helper</text>
+<text x="522.0" y="110.0" fill="#8787af" xml:space="preserve" textLength="8.4">/</text>
+<text x="732.0" y="110.0" fill="#ff5f5f" font-weight="bold" xml:space="preserve" textLength="33.6">high</text>
+<text x="799.2" y="110.0" fill="#8787af" xml:space="preserve" textLength="25.2">app</text>
+<text x="883.2" y="110.0" fill="#d9d6cc" xml:space="preserve" textLength="176.4">avoid — inspect first</text>
+<text x="18.0" y="129.0" fill="#ff5f5f" xml:space="preserve" textLength="8.4">▎</text>
+<text x="34.8" y="129.0" fill="#d9d6cc" xml:space="preserve" textLength="58.8">5000 +1</text>
+<text x="110.4" y="129.0" fill="#8787af" xml:space="preserve" textLength="25.2">684</text>
+<text x="177.6" y="129.0" fill="#d9d6cc" xml:space="preserve" textLength="109.2">macOS service</text>
+<text x="522.0" y="129.0" fill="#8787af" xml:space="preserve" textLength="8.4">/</text>
+<text x="732.0" y="129.0" fill="#ff5f5f" font-weight="bold" xml:space="preserve" textLength="33.6">high</text>
+<text x="799.2" y="129.0" fill="#8787af" xml:space="preserve" textLength="42.0">macos</text>
+<text x="883.2" y="129.0" fill="#d9d6cc" xml:space="preserve" textLength="176.4">avoid — inspect first</text>
+<text x="18.0" y="148.0" fill="#5faf5f" xml:space="preserve" textLength="8.4">▎</text>
+<text x="34.8" y="148.0" fill="#d7ffff" font-weight="bold" xml:space="preserve" textLength="882.0">5001     4715    Flask dev server                         …Documents/projects/todo low     framework TERM</text>
+<text x="18.0" y="167.0" fill="#5faf5f" xml:space="preserve" textLength="8.4">▎</text>
+<text x="34.8" y="167.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">5001</text>
+<text x="110.4" y="167.0" fill="#8787af" xml:space="preserve" textLength="42.0">84457</text>
+<text x="177.6" y="167.0" fill="#d9d6cc" xml:space="preserve" textLength="134.4">Flask dev server</text>
+<text x="522.0" y="167.0" fill="#8787af" xml:space="preserve" textLength="201.6">…Documents/projects/todo</text>
+<text x="732.0" y="167.0" fill="#5faf5f" xml:space="preserve" textLength="25.2">low</text>
+<text x="799.2" y="167.0" fill="#8787af" xml:space="preserve" textLength="75.6">framework</text>
+<text x="883.2" y="167.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">TERM</text>
+<text x="18.0" y="186.0" fill="#5faf5f" xml:space="preserve" textLength="8.4">▎</text>
+<text x="34.8" y="186.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">5037</text>
+<text x="110.4" y="186.0" fill="#8787af" xml:space="preserve" textLength="42.0">32243</text>
+<text x="177.6" y="186.0" fill="#d9d6cc" xml:space="preserve" textLength="25.2">adb</text>
+<text x="522.0" y="186.0" fill="#8787af" xml:space="preserve" textLength="201.6">…jects/mobileapp/android</text>
+<text x="732.0" y="186.0" fill="#5faf5f" xml:space="preserve" textLength="25.2">low</text>
+<text x="799.2" y="186.0" fill="#8787af" xml:space="preserve" textLength="67.2">terminal</text>
+<text x="883.2" y="186.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">TERM</text>
+<text x="18.0" y="205.0" fill="#5faf5f" xml:space="preserve" textLength="8.4">▎</text>
+<text x="34.8" y="205.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">8000</text>
+<text x="110.4" y="205.0" fill="#8787af" xml:space="preserve" textLength="42.0">51622</text>
+<text x="177.6" y="205.0" fill="#d9d6cc" xml:space="preserve" textLength="126.0">FastAPI/Uvicorn</text>
+<text x="522.0" y="205.0" fill="#8787af" xml:space="preserve" textLength="201.6">…ojects/shop-api/backend</text>
+<text x="732.0" y="205.0" fill="#5faf5f" xml:space="preserve" textLength="25.2">low</text>
+<text x="799.2" y="205.0" fill="#8787af" xml:space="preserve" textLength="75.6">framework</text>
+<text x="883.2" y="205.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">TERM</text>
+<text x="18.0" y="224.0" fill="#5faf5f" xml:space="preserve" textLength="8.4">▎</text>
+<text x="34.8" y="224.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">8001</text>
+<text x="110.4" y="224.0" fill="#8787af" xml:space="preserve" textLength="42.0">43138</text>
+<text x="177.6" y="224.0" fill="#d9d6cc" xml:space="preserve" textLength="142.8">Django dev server</text>
+<text x="522.0" y="224.0" fill="#8787af" xml:space="preserve" textLength="201.6">…cts/blog-server/backend</text>
+<text x="732.0" y="224.0" fill="#5faf5f" xml:space="preserve" textLength="25.2">low</text>
+<text x="799.2" y="224.0" fill="#8787af" xml:space="preserve" textLength="75.6">framework</text>
+<text x="883.2" y="224.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">TERM</text>
+<text x="18.0" y="243.0" fill="#5faf5f" xml:space="preserve" textLength="8.4">▎</text>
+<text x="34.8" y="243.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">8002</text>
+<text x="110.4" y="243.0" fill="#8787af" xml:space="preserve" textLength="42.0">96512</text>
+<text x="177.6" y="243.0" fill="#d9d6cc" xml:space="preserve" textLength="126.0">FastAPI/Uvicorn</text>
+<text x="522.0" y="243.0" fill="#8787af" xml:space="preserve" textLength="201.6">…ojects/shop-api/backend</text>
+<text x="732.0" y="243.0" fill="#5faf5f" xml:space="preserve" textLength="25.2">low</text>
+<text x="799.2" y="243.0" fill="#8787af" xml:space="preserve" textLength="75.6">framework</text>
+<text x="883.2" y="243.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">TERM</text>
+<text x="18.0" y="262.0" fill="#5faf5f" xml:space="preserve" textLength="8.4">▎</text>
+<text x="34.8" y="262.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">8080</text>
+<text x="110.4" y="262.0" fill="#8787af" xml:space="preserve" textLength="42.0">96387</text>
+<text x="177.6" y="262.0" fill="#d9d6cc" xml:space="preserve" textLength="25.2">ssh</text>
+<text x="522.0" y="262.0" fill="#8787af" xml:space="preserve" textLength="8.4">~</text>
+<text x="732.0" y="262.0" fill="#5faf5f" xml:space="preserve" textLength="25.2">low</text>
+<text x="799.2" y="262.0" fill="#8787af" xml:space="preserve" textLength="67.2">terminal</text>
+<text x="883.2" y="262.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">TERM</text>
+<text x="18.0" y="281.0" fill="#5faf5f" xml:space="preserve" textLength="8.4">▎</text>
+<text x="34.8" y="281.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">8082</text>
+<text x="110.4" y="281.0" fill="#8787af" xml:space="preserve" textLength="33.6">9031</text>
+<text x="177.6" y="281.0" fill="#d9d6cc" xml:space="preserve" textLength="100.8">Node service</text>
+<text x="522.0" y="281.0" fill="#8787af" xml:space="preserve" textLength="201.6">…jects/notes-sync/mobile</text>
+<text x="732.0" y="281.0" fill="#5faf5f" xml:space="preserve" textLength="25.2">low</text>
+<text x="799.2" y="281.0" fill="#8787af" xml:space="preserve" textLength="75.6">framework</text>
+<text x="883.2" y="281.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">TERM</text>
+<text x="18.0" y="300.0" fill="#5faf5f" xml:space="preserve" textLength="8.4">▎</text>
+<text x="34.8" y="300.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">8811</text>
+<text x="110.4" y="300.0" fill="#8787af" xml:space="preserve" textLength="42.0">88945</text>
+<text x="177.6" y="300.0" fill="#d9d6cc" xml:space="preserve" textLength="92.4">http.server</text>
+<text x="522.0" y="300.0" fill="#8787af" xml:space="preserve" textLength="201.6">…ojects/the-journal/site</text>
+<text x="732.0" y="300.0" fill="#5faf5f" xml:space="preserve" textLength="25.2">low</text>
+<text x="799.2" y="300.0" fill="#8787af" xml:space="preserve" textLength="67.2">terminal</text>
+<text x="883.2" y="300.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">TERM</text>
+<text x="18.0" y="319.0" fill="#ff5f5f" xml:space="preserve" textLength="8.4">▎</text>
+<text x="34.8" y="319.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">8888</text>
+<text x="110.4" y="319.0" fill="#8787af" xml:space="preserve" textLength="25.2">662</text>
+<text x="177.6" y="319.0" fill="#d9d6cc" xml:space="preserve" textLength="84.0">App helper</text>
+<text x="522.0" y="319.0" fill="#8787af" xml:space="preserve" textLength="8.4">/</text>
+<text x="732.0" y="319.0" fill="#ff5f5f" font-weight="bold" xml:space="preserve" textLength="33.6">high</text>
+<text x="799.2" y="319.0" fill="#8787af" xml:space="preserve" textLength="25.2">app</text>
+<text x="883.2" y="319.0" fill="#d9d6cc" xml:space="preserve" textLength="176.4">avoid — inspect first</text>
+<text x="18.0" y="338.0" fill="#ff5f5f" xml:space="preserve" textLength="8.4">▎</text>
+<text x="34.8" y="338.0" fill="#d9d6cc" xml:space="preserve" textLength="42.0">15292</text>
+<text x="110.4" y="338.0" fill="#8787af" xml:space="preserve" textLength="33.6">1778</text>
+<text x="177.6" y="338.0" fill="#d9d6cc" xml:space="preserve" textLength="84.0">App helper</text>
+<text x="522.0" y="338.0" fill="#8787af" xml:space="preserve" textLength="8.4">/</text>
+<text x="732.0" y="338.0" fill="#ff5f5f" font-weight="bold" xml:space="preserve" textLength="33.6">high</text>
+<text x="799.2" y="338.0" fill="#8787af" xml:space="preserve" textLength="25.2">app</text>
+<text x="883.2" y="338.0" fill="#d9d6cc" xml:space="preserve" textLength="176.4">avoid — inspect first</text>
+<text x="18.0" y="357.0" fill="#8787af" xml:space="preserve" textLength="1041.6">╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮</text>
+<text x="18.0" y="376.0" fill="#8787af" xml:space="preserve" textLength="8.4">│</text>
+<text x="34.8" y="376.0" fill="#d7ffff" font-weight="bold" xml:space="preserve" textLength="134.4">Flask dev server</text>
+<text x="186.0" y="376.0" fill="#8787af" xml:space="preserve" textLength="84.0">(88% sure)</text>
+<text x="286.8" y="376.0" fill="#5faf5f" font-weight="bold" xml:space="preserve" textLength="67.2">LOW risk</text>
+<text x="1051.2" y="376.0" fill="#8787af" xml:space="preserve" textLength="8.4">│</text>
+<text x="18.0" y="395.0" fill="#8787af" xml:space="preserve" textLength="8.4">│</text>
+<text x="34.8" y="395.0" fill="#8787af" xml:space="preserve" textLength="42.0">ports</text>
+<text x="93.6" y="395.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">5001</text>
+<text x="152.4" y="395.0" fill="#8787af" xml:space="preserve" textLength="25.2">pid</text>
+<text x="186.0" y="395.0" fill="#d9d6cc" xml:space="preserve" textLength="33.6">4715</text>
+<text x="244.8" y="395.0" fill="#8787af" xml:space="preserve" textLength="42.0">owner</text>
+<text x="295.2" y="395.0" fill="#d9d6cc" xml:space="preserve" textLength="75.6">framework</text>
+<text x="1051.2" y="395.0" fill="#8787af" xml:space="preserve" textLength="8.4">│</text>
+<text x="18.0" y="414.0" fill="#8787af" xml:space="preserve" textLength="8.4">│</text>
+<text x="34.8" y="414.0" fill="#8787af" xml:space="preserve" textLength="25.2">cmd</text>
+<text x="93.6" y="414.0" fill="#d9d6cc" xml:space="preserve" textLength="940.8">/opt/homebrew/Cellar/python@3.14/3.14.4_1/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Conten…</text>
+<text x="1051.2" y="414.0" fill="#8787af" xml:space="preserve" textLength="8.4">│</text>
+<text x="18.0" y="433.0" fill="#8787af" xml:space="preserve" textLength="8.4">│</text>
+<text x="34.8" y="433.0" fill="#8787af" xml:space="preserve" textLength="25.2">dir</text>
+<text x="93.6" y="433.0" fill="#d9d6cc" xml:space="preserve" textLength="336.0">/Users/developer/Documents/projects/todo</text>
+<text x="1051.2" y="433.0" fill="#8787af" xml:space="preserve" textLength="8.4">│</text>
+<text x="18.0" y="452.0" fill="#8787af" xml:space="preserve" textLength="8.4">│</text>
+<text x="34.8" y="452.0" fill="#8787af" xml:space="preserve" textLength="33.6">stop</text>
+<text x="93.6" y="452.0" fill="#d70087" xml:space="preserve" textLength="33.6">TERM</text>
+<text x="152.4" y="452.0" fill="#8787af" xml:space="preserve" textLength="84.0">(c copies)</text>
+<text x="1051.2" y="452.0" fill="#8787af" xml:space="preserve" textLength="8.4">│</text>
+<text x="18.0" y="471.0" fill="#8787af" xml:space="preserve" textLength="8.4">│</text>
+<text x="34.8" y="471.0" fill="#8787af" xml:space="preserve" textLength="33.6">back</text>
+<text x="93.6" y="471.0" fill="#d9d6cc" xml:space="preserve" textLength="168.0">Run flask run again.</text>
+<text x="1051.2" y="471.0" fill="#8787af" xml:space="preserve" textLength="8.4">│</text>
+<text x="18.0" y="490.0" fill="#8787af" xml:space="preserve" textLength="8.4">│</text>
+<text x="34.8" y="490.0" fill="#8787af" xml:space="preserve" textLength="562.8">Dev server: browser tabs and API calls may show connection refused.</text>
+<text x="1051.2" y="490.0" fill="#8787af" xml:space="preserve" textLength="8.4">│</text>
+<text x="18.0" y="509.0" fill="#8787af" xml:space="preserve" textLength="1041.6">╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</text>
+</svg>

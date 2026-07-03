@@ -1,22 +1,26 @@
+<div align="center">
+
+<img src="docs/assets/logo.svg" width="88" alt="le logo — 127, the loopback address">
+
 # le — Localhost Explorer for the terminal
+
+**See what's listening. Stop it the right way.**
 
 [![ci](https://github.com/alikatgh/le-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/alikatgh/le-cli/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/alikatgh/le-cli?sort=semver)](https://github.com/alikatgh/le-cli/releases/latest)
 [![license](https://img.shields.io/github/license/alikatgh/le-cli)](LICENSE)
+
+`brew install alikatgh/tap/le` · [full tour](https://localhostexplorer.com/cli.html)
+
+</div>
 
 A fast, keyboard-driven TUI for seeing what's listening on your machine and
 stopping it the right way. The terminal sibling of the
 [Localhost Explorer](https://localhostexplorer.com) menu bar app — same
 intelligence (it knows when `kill -9` won't stick), in a single static binary
 that also runs on Linux servers over SSH.
-Full tour: [localhostexplorer.com/cli](https://localhostexplorer.com/cli.html).
 
-```
-PORT    PID     WHAT                DIR                 RISK    OWNER      STOP WITH
-3000    38814   juice-shop          ~/code/juice-shop   medium  container  docker stop juice-shop
-8001    43138   Django dev server   ~/code/api          low     terminal   TERM
-27017   1183    MongoDB             /opt/homebrew/var   high    homebrew   brew services stop mongodb-community
-```
+<img src="docs/assets/le-tui.svg" width="100%" alt="le running in a terminal: a live table of listeners with port, process, directory, risk, owner, and the stop command that works; a detail pane explains the selected Flask dev server">
 
 ## Why
 
