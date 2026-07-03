@@ -123,6 +123,8 @@ filter   = node   # initial TUI filter (default none)
 | `/`       | filter by port, name, folder (`esc` clears) |
 | `1`-`6`   | sort by port / pid / what / risk / owner / dir (press again to reverse) |
 | `x`       | stop the selected listener (asks first)  |
+| `o`       | open `http://localhost:<port>/` in the browser |
+| `c`       | copy the stop command — OSC 52, so it works over SSH |
 | `r`       | refresh now                              |
 | `?`       | help                                     |
 | `q`       | quit                                     |

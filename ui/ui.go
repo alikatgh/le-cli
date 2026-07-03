@@ -5,11 +5,14 @@ package ui
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/aymanbagabas/go-osc52/v2"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -115,6 +118,46 @@ func stopCmd(r Row) tea.Cmd {
 	return func() tea.Msg {
 		ok, err := kill.Stop(r.L, r.P)
 		return stopResultMsg{ok: ok, err: err}
+	}
+}
+
+// openURL and copyToClipboard are package vars so tests can observe the
+// side effects without launching a browser or writing terminal escapes.
+var (
+	// openURL launches the default browser. `open` on macOS, `xdg-open`
+	// on Linux — resolved at call time so tests can stub it.
+	openURL = func(url string) error {
+		cmd := "open"
+		if runtime.GOOS != "darwin" {
+			cmd = "xdg-open"
+		}
+		return exec.Command(cmd, url).Start()
+	}
+	// copyToClipboard emits an OSC 52 sequence, which the terminal — local
+	// OR at the far end of an SSH session — translates into a clipboard
+	// write. That's the point: pbcopy would only work on the machine le
+	// runs on, and le explicitly supports being run on remote Linux boxes.
+	// Written to stderr because Bubble Tea owns stdout; the terminal
+	// consumes the escape either way and nothing is displayed.
+	copyToClipboard = func(s string) error {
+		_, err := osc52.New(s).WriteTo(os.Stderr)
+		return err
+	}
+)
+
+// stopCommand renders the selected row's stop action as a paste-able shell
+// command. StopAvoid rows return false: suggesting a kill command for a
+// process the app itself refuses to auto-stop would undercut the refusal.
+func stopCommand(r Row) (string, bool) {
+	switch r.P.StopKind {
+	case intel.StopBrew:
+		return "brew services stop " + r.P.StopArg, true
+	case intel.StopDocker:
+		return "docker stop " + r.P.StopArg, true
+	case intel.StopAvoid:
+		return "", false
+	default:
+		return "kill -TERM " + strconv.Itoa(r.L.PID), true
 	}
 }
 
@@ -246,6 +289,27 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.flash, m.flashErr = "won't auto-stop "+r.P.Identity+" — inspect it first", true
 			} else {
 				m.confirm, m.confirmed = true, r // pin the row now; see the y/enter handler
+			}
+		}
+	case "o":
+		if r, ok := m.selected(); ok {
+			if len(r.L.Ports) == 0 {
+				m.flash, m.flashErr = "no port to open for "+r.P.Identity, true
+			} else if err := openURL("http://localhost:" + r.L.Ports[0] + "/"); err != nil {
+				m.flash, m.flashErr = "couldn't open browser: "+err.Error(), true
+			} else {
+				m.flash, m.flashErr = "opened http://localhost:"+r.L.Ports[0]+"/", false
+			}
+		}
+	case "c":
+		if r, ok := m.selected(); ok {
+			cmd, can := stopCommand(r)
+			if !can {
+				m.flash, m.flashErr = "no safe stop command for "+r.P.Identity+" — nothing copied", true
+			} else if err := copyToClipboard(cmd); err != nil {
+				m.flash, m.flashErr = "copy failed: "+err.Error(), true
+			} else {
+				m.flash, m.flashErr = "copied: "+cmd, false
 			}
 		}
 	}
@@ -608,7 +672,7 @@ func (m model) footerView() string {
 		}
 		return okSt.Render(m.flash)
 	}
-	keys := []string{"j/k move", "/ filter", "1-6 sort", "x stop", "r refresh", "? help", "q quit"}
+	keys := []string{"j/k move", "/ filter", "1-6 sort", "x stop", "o open", "c copy", "? help", "q quit"}
 	var parts []string
 	for _, k := range keys {
 		sp := strings.SplitN(k, " ", 2)
@@ -625,6 +689,8 @@ func (m model) helpView() string {
 		{"/", "filter (esc clears)"},
 		{"1-6", "sort by port / pid / what / risk / owner / dir — press again to reverse"},
 		{"x or s", "stop the selected listener (with confirm)"},
+		{"o", "open http://localhost:<port>/ in the browser"},
+		{"c", "copy the stop command (OSC 52 — works over SSH)"},
 		{"r", "refresh now"},
 		{"?", "toggle this help"},
 		{"q", "quit"},

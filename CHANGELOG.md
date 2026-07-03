@@ -6,6 +6,9 @@ All notable changes to `le` are documented here. Format loosely follows
 ## [Unreleased]
 
 ### Added
+- TUI: `o` opens the selected listener's port in your browser, and `c`
+  copies its stop command to the clipboard via OSC 52 — which means the
+  copy works even when `le` is running on a remote box over SSH.
 - The TUI shows a DIR column too (on terminals at least 118 columns wide),
   sortable with `6` — folders at a glance in the live view, not just the
   detail pane.

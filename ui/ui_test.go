@@ -243,6 +243,79 @@ func TestMouseClickBelowVisibleRowsIsIgnored(t *testing.T) {
 	}
 }
 
+func TestStopCommand(t *testing.T) {
+	cases := []struct {
+		name string
+		row  Row
+		want string
+		ok   bool
+	}{
+		{"term", Row{L: scan.Listener{PID: 42}, P: intel.Profile{StopKind: intel.StopTerm}}, "kill -TERM 42", true},
+		{"brew", Row{P: intel.Profile{StopKind: intel.StopBrew, StopArg: "redis"}}, "brew services stop redis", true},
+		{"docker", Row{P: intel.Profile{StopKind: intel.StopDocker, StopArg: "web"}}, "docker stop web", true},
+		{"avoid refuses", Row{P: intel.Profile{StopKind: intel.StopAvoid}}, "", false},
+	}
+	for _, c := range cases {
+		got, ok := stopCommand(c.row)
+		if got != c.want || ok != c.ok {
+			t.Errorf("%s: stopCommand = (%q, %v), want (%q, %v)", c.name, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+func TestOpenKeyOpensFirstPort(t *testing.T) {
+	var opened string
+	orig := openURL
+	openURL = func(u string) error { opened = u; return nil }
+	defer func() { openURL = orig }()
+
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = m.Update(key("o"))
+
+	if opened != "http://localhost:3000/" {
+		t.Errorf("opened %q, want http://localhost:3000/", opened)
+	}
+	if mm := m.(model); mm.flashErr || !strings.Contains(mm.flash, "opened") {
+		t.Errorf("flash = %q (err=%v), want success flash", mm.flash, mm.flashErr)
+	}
+}
+
+func TestCopyKeyCopiesStopCommand(t *testing.T) {
+	var copied string
+	orig := copyToClipboard
+	copyToClipboard = func(s string) error { copied = s; return nil }
+	defer func() { copyToClipboard = orig }()
+
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = m.Update(key("c")) // cursor 0 = Node service, PID 101, StopTerm
+
+	if copied != "kill -TERM 101" {
+		t.Errorf("copied %q, want kill -TERM 101", copied)
+	}
+
+	// An avoid row must refuse and copy nothing.
+	copied = ""
+	mm := m.(model)
+	for i, r := range mm.view {
+		if r.P.StopKind == intel.StopAvoid {
+			mm.cursor = i
+			break
+		}
+	}
+	var mi tea.Model = mm
+	mi, _ = mi.Update(key("c"))
+	if copied != "" {
+		t.Errorf("avoid row copied %q, want nothing", copied)
+	}
+	if got := mi.(model); !got.flashErr {
+		t.Error("avoid row should flash an error")
+	}
+}
+
 func TestMouse(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
