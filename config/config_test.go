@@ -115,3 +115,21 @@ func writeConfig(t *testing.T, xdgDir, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestLoadTheme(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	if err := os.MkdirAll(filepath.Join(dir, "le"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "le", "config"), []byte("theme = \"nord\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, warn := Load()
+	if warn != "" {
+		t.Fatalf("unexpected warning: %s", warn)
+	}
+	if c.Theme != "nord" {
+		t.Errorf("Theme = %q, want nord (quotes stripped)", c.Theme)
+	}
+}

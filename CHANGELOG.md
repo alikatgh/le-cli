@@ -5,6 +5,14 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+- Themes: `default`, `light`, `nord`, `dracula`, `solarized`, and `mono`
+  (colorblind-friendly — no risk colors, bold still marks high). `t` cycles
+  them live in the TUI; `theme = <name>` in `~/.config/le/config` persists
+  one. Unknown names warn before the TUI takes the screen and fall back to
+  default. The `?` overlay gains a settings section: active theme, refresh
+  cadence, and the config path.
+
 ### Changed
 - README and `--help` now state the trust rule outright — no signal without
   proven identity; refusal over guessing — and the stop-strategy lists

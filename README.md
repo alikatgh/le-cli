@@ -129,7 +129,14 @@ Optional `~/.config/le/config` (or `$XDG_CONFIG_HOME/le/config`):
 ```
 interval = 2      # TUI refresh seconds (default 3)
 filter   = node   # initial TUI filter (default none)
+theme    = nord   # default / light / nord / dracula / solarized / mono
 ```
+
+Themes restyle the whole TUI — `light` for light-background terminals,
+`mono` for colorblind-friendly no-color output (bold still marks high
+risk). `t` cycles them live; the config line makes it stick. The current
+theme, refresh cadence, and config path live in the `?` overlay's
+settings section.
 
 ### Keys (TUI)
 
@@ -143,6 +150,7 @@ filter   = node   # initial TUI filter (default none)
 | `o`       | open `http://localhost:<port>/` in the browser |
 | `c`       | copy the stop command — OSC 52, so it works over SSH |
 | `r`       | refresh now                              |
+| `t`       | cycle theme (persist with `theme = <name>` in config) |
 | `?`       | help                                     |
 | `q`       | quit                                     |
 

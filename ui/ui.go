@@ -40,6 +40,7 @@ const defaultInterval = 3 * time.Second
 type Options struct {
 	Interval time.Duration // refresh cadence (0 = default)
 	Filter   string        // initial filter text
+	Theme    string        // theme name ("" = default; validated by the caller)
 }
 
 // Row pairs a listener with its computed profile.
@@ -88,6 +89,9 @@ func New(opts Options) model {
 	interval := opts.Interval
 	if interval <= 0 {
 		interval = defaultInterval
+	}
+	if opts.Theme != "" {
+		ApplyTheme(opts.Theme) // unknown names warned by the caller pre-alt-screen
 	}
 	m := model{filter: ti, loading: true, interval: interval, sortCol: sortPort, sortAsc: true}
 	m.applyFilter()
@@ -276,6 +280,9 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.flash, m.loading = "", true
 		return m, scanCmd()
+	case "t":
+		name := cycleTheme()
+		m.flash, m.flashErr = "theme: "+name+"   (persist: theme = "+name+" in "+configPathHint+")", false
 	case "1", "2", "3", "4", "5", "6":
 		col := int(msg.String()[0] - '1')
 		if m.sortCol == col {
@@ -487,25 +494,7 @@ func (m model) View() string {
 	return b.String()
 }
 
-// ---- styles ----
-
-var (
-	brand   = lipgloss.Color("#E0218A")
-	subtle  = lipgloss.Color("#8B949E")
-	green   = lipgloss.Color("#3FB950")
-	yellow  = lipgloss.Color("#D29922")
-	red     = lipgloss.Color("#F85149")
-	selBG   = lipgloss.Color("#23304A")
-	fg      = lipgloss.Color("#E6EDF3")
-	titleSt = lipgloss.NewStyle().Bold(true).Foreground(brand)
-	dimSt   = lipgloss.NewStyle().Foreground(subtle)
-	headSt  = lipgloss.NewStyle().Foreground(subtle).Bold(true)
-	selSt   = lipgloss.NewStyle().Background(selBG).Foreground(fg).Bold(true)
-	keySt   = lipgloss.NewStyle().Foreground(brand).Bold(true)
-	boxSt   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(subtle).Padding(0, 1)
-	okSt    = lipgloss.NewStyle().Foreground(green)
-	errSt   = lipgloss.NewStyle().Foreground(red)
-)
+// ---- styles: see theme.go ----
 
 func riskColor(r intel.Risk) lipgloss.Color {
 	switch r {
@@ -745,6 +734,7 @@ func (m model) helpView() string {
 		{"o", "open http://localhost:<port>/ in the browser"},
 		{"c", "copy the stop command (OSC 52 — works over SSH)"},
 		{"r", "refresh now"},
+		{"t", "cycle theme (persist via config: theme = <name>)"},
 		{"?", "toggle this help"},
 		{"q", "quit"},
 	}
@@ -754,6 +744,10 @@ func (m model) helpView() string {
 		b.WriteString("  " + keySt.Render(fmt.Sprintf("%-8s", r[0])) + dimSt.Render(r[1]) + "\n")
 	}
 	b.WriteString("\n" + dimSt.Render("  stop strategy is automatic: plain processes get TERM, Homebrew\n  services get `brew services stop`, containers get `docker stop`.\n  Every stop re-checks the PID first, so a recycled PID is never hit.\n"))
+	b.WriteString("\n" + headSt.Render("  settings") + "\n")
+	b.WriteString("  " + dimSt.Render(fmt.Sprintf("%-10s", "theme")) + currentTheme() + dimSt.Render("   (themes: "+strings.Join(ThemeNames(), " / ")+")") + "\n")
+	b.WriteString("  " + dimSt.Render(fmt.Sprintf("%-10s", "refresh")) + m.interval.String() + "\n")
+	b.WriteString("  " + dimSt.Render(fmt.Sprintf("%-10s", "config")) + configPathHint + dimSt.Render("   (interval / filter / theme)") + "\n")
 	b.WriteString("\n  " + keySt.Render("?") + dimSt.Render(" or ") + keySt.Render("q") + dimSt.Render(" to go back"))
 	return boxSt.Render(b.String())
 }

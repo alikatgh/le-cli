@@ -4,6 +4,7 @@
 //
 //	interval = 2     # TUI refresh seconds (default 3)
 //	filter   = node  # initial TUI filter (default none)
+//	theme    = nord  # TUI theme (default / light / nord / dracula / solarized / mono)
 package config
 
 import (
@@ -20,6 +21,7 @@ const defaultIntervalSeconds = 3
 type Config struct {
 	IntervalSeconds int
 	Filter          string
+	Theme           string
 }
 
 // Interval is the TUI refresh cadence, clamped to a sane minimum.
@@ -75,6 +77,8 @@ func Load() (Config, string) {
 			}
 		case "filter":
 			c.Filter = val
+		case "theme":
+			c.Theme = val
 		}
 	}
 	return c, ""
