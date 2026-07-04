@@ -76,15 +76,26 @@ tar -xzf "$tmp/$file" -C "$tmp"
 # Install dir: explicit override, else /usr/local/bin (sudo if needed and
 # possible), else ~/.local/bin.
 dir="${LE_INSTALL_DIR:-/usr/local/bin}"
-if [ -d "$dir" ] && [ -w "$dir" ]; then
+if mkdir -p "$dir" 2>/dev/null && [ -w "$dir" ]; then
   mv "$tmp/le" "$dir/le"
-elif [ -z "${LE_INSTALL_DIR:-}" ] && command -v sudo >/dev/null 2>&1; then
+  chmod 0755 "$dir/le"
+elif [ -n "${LE_INSTALL_DIR:-}" ]; then
+  fail "cannot write to $dir (set via LE_INSTALL_DIR) — pick a writable path"
+elif command -v sudo >/dev/null 2>&1; then
   echo "installing to $dir needs sudo…"
-  sudo mv "$tmp/le" "$dir/le"
+  sudo mkdir -p "$dir" || fail "could not create $dir"
+  # Stream the bytes through a fd the CURRENT user opened (< "$tmp/le"), so
+  # root never has to read the per-user $TMPDIR — a `sudo mv` straight out of
+  # /var/folders/…/T fails with ENOENT on some macOS setups. tee makes a fresh
+  # 0644 file, so chmod +x after. sudo's password still comes from /dev/tty
+  # (stdin here is the binary), so this stays safe under `curl … | sh`.
+  sudo tee "$dir/le" < "$tmp/le" >/dev/null || fail "could not write $dir/le"
+  sudo chmod 0755 "$dir/le"
 else
   dir="$HOME/.local/bin"
   mkdir -p "$dir"
   mv "$tmp/le" "$dir/le"
+  chmod 0755 "$dir/le"
 fi
 
 echo "installed: $dir/le"
