@@ -5,6 +5,8 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-07-04
+
 ### Added
 - Themes: `default`, `light`, `nord`, `dracula`, `solarized`, and `mono`
   (colorblind-friendly — no risk colors, bold still marks high). `t` cycles
