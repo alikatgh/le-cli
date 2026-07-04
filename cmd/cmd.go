@@ -47,7 +47,13 @@ func newRoot(version string) *cobra.Command {
 		Use:   "le",
 		Short: "See and stop what's listening on localhost",
 		Long: "le — a fast, keyboard-driven view of localhost listeners, with the\n" +
-			"smarts to stop each the right way (TERM, brew services, or docker).\n\n" +
+			"smarts to stop each the right way (TERM, brew services, docker, or\n" +
+			"launchctl bootout).\n\n" +
+			"The rule underneath every stop: identity must be proven, twice. le\n" +
+			"re-verifies the PID's start time immediately before signalling, so a\n" +
+			"recycled PID never gets a signal meant for something else — and when\n" +
+			"identity can't be proven, le refuses rather than guesses. That is\n" +
+			"the difference from `lsof | kill`.\n\n" +
 			"Run with no arguments to open the live TUI.",
 		Version:      version,
 		SilenceUsage: true,
@@ -124,8 +130,10 @@ func stopCmd() *cobra.Command {
 		Use:   "stop [port|pid]",
 		Short: "Stop a listener (by port/pid) or every listener under a directory",
 		Long: "Stop a listener on a port (or the process with a PID), each via its\n" +
-			"recommended strategy (TERM / brew services / docker). The PID is\n" +
-			"re-checked first, so a recycled PID is never the one that gets signalled.\n\n" +
+			"recommended strategy (TERM / brew services / docker / launchctl). The\n" +
+			"PID's start time is re-verified immediately before any signal, so a\n" +
+			"recycled PID is never the one that gets signalled — and when identity\n" +
+			"can't be proven, le refuses and asks you to rescan instead of guessing.\n\n" +
 			"With --dir, stop every listener whose working directory is that path or\n" +
 			"nested under it — the terminal equivalent of the app's folder-stop, for\n" +
 			"clearing out everything a project spun up.\n\n" +

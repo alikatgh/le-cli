@@ -36,6 +36,15 @@ identifies the owner and picks the stop strategy that actually works:
 - system / app helpers → flagged with their launchd label, and it refuses
   to auto-kill them
 
+**The rule underneath all of it: no signal without proven identity.** This is
+the difference from `lsof | kill` — the point isn't sending the signal, it's
+refusing to send one when the process behind a PID can no longer be proven to
+be the process you scanned. Every stop re-verifies the PID's start time
+immediately before acting (and a launchd bootout re-verifies the label→PID
+mapping, and a docker stop the name→ID mapping); anything unproven gets a
+refusal and a "rescan", never a guess. Fast-recycling PIDs are exactly the
+boring edge case where naive port-killers hit the wrong process.
+
 Every stop re-checks the PID's start time first, so a recycled PID is never the
 one that gets signalled.
 

@@ -5,6 +5,13 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Changed
+- README and `--help` now state the trust rule outright — no signal without
+  proven identity; refusal over guessing — and the stop-strategy lists
+  include the launchctl route. Prompted by a reviewer pointing out that
+  people comparing le to `lsof | kill` will miss exactly this.
+
+
 ## [0.1.13] - 2026-07-03
 
 ### Added
