@@ -50,11 +50,20 @@ one that gets signalled.
 
 ## Install
 
-Prebuilt binaries (macOS + Linux, amd64 + arm64) are attached to each
-[release](https://github.com/alikatgh/le-cli/releases):
+No Go toolchain needed — every path below ships a prebuilt binary
+(macOS + Linux, amd64 + arm64).
+
+One line, no package manager — downloads the latest release, verifies its
+checksum, installs it ([read the script](install.sh) first if you sensibly
+distrust `curl | sh`):
 
 ```sh
-# download the tarball for your platform, then:
+curl -fsSL https://localhostexplorer.com/install.sh | sh
+```
+
+Or by hand from the [Releases page](https://github.com/alikatgh/le-cli/releases):
+
+```sh
 tar -xzf le_*.tar.gz && sudo mv le /usr/local/bin/
 ```
 
