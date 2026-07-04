@@ -68,7 +68,7 @@ func newRoot(version string) *cobra.Command {
 				time.Sleep(configWarningPause)
 			}
 			if cfg.Theme != "" && !ui.ApplyTheme(cfg.Theme) {
-				fmt.Fprintf(cmd.ErrOrStderr(), "le: unknown theme %q in config (themes: %s) — using default\n", cfg.Theme, strings.Join(ui.ThemeNames(), " / "))
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "le: unknown theme %q in config (themes: %s) — using default\n", cfg.Theme, strings.Join(ui.ThemeNames(), " / "))
 			}
 			return ui.Run(ui.Options{Interval: cfg.Interval(), Filter: cfg.Filter})
 		},

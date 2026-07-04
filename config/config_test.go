@@ -119,10 +119,10 @@ func writeConfig(t *testing.T, xdgDir, content string) {
 func TestLoadTheme(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	if err := os.MkdirAll(filepath.Join(dir, "le"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "le"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "le", "config"), []byte("theme = \"nord\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "le", "config"), []byte("theme = \"nord\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	c, warn := Load()
