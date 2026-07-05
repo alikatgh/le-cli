@@ -25,7 +25,9 @@ import (
 // report a recycled PID.
 var (
 	runCombined = func(name string, args ...string) (string, error) {
-		out, err := exec.Command(name, args...).CombinedOutput()
+		cmd := exec.Command(name, args...)
+		cmd.Env = append(os.Environ(), "LC_ALL=C") // stable English errors, like runOutput (LE-394)
+		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
 	runOutput = func(name string, args ...string) (string, error) {

@@ -304,6 +304,11 @@ var BrewServiceKnown = func(formula string) bool {
 // Make is the port of ProcessProfile.make + ProcessSource.make.
 func Make(l scan.Listener, env Env) Profile {
 	text := strings.ToLower(strings.Join([]string{l.Command, l.CommandLine, l.Cwd}, " "))
+	// Database identity comes from the BINARY, not the project folder: a listener
+	// living in ~/postgres-migration is not Postgres. Match DB names against the
+	// command only. Word boundaries alone don't help — "postgres" is a whole word
+	// in "postgres-migration". Mirrors the mac app's commandText. (LE-314/316/328)
+	commandText := strings.ToLower(l.Command + " " + l.CommandLine)
 	kind := classifyKind(l)
 	formula := brewFormula(l.CommandLine)
 	managedBrew := formula != "" && env.BrewStarted[formula]
@@ -324,22 +329,18 @@ func Make(l scan.Listener, env Env) Profile {
 		p.Explain = "Published by a Docker-compatible container."
 		p.Warning = "Stopping the container is safer than killing the Docker helper process."
 
-	case strings.Contains(text, "redis-server") || formula == "redis":
+	case strings.Contains(commandText, "redis-server") || formula == "redis":
 		database(&p, "Redis", pick(formula == "redis", 96, 90), "In-memory database/cache used by local apps, queues, and sessions.", l, formula, managedBrew)
 
-	// word(), not Contains(): `text` includes the cwd (see top of Make), so a
-	// plain substring match tags any project living in ~/mongodb-dashboard as a
-	// database. Require "mongod" as a bounded word — the real daemon is literally
-	// `mongod`, so it still matches. Mirrors the mac app. (LE-CLI-001)
-	case word("mongod") || strings.Contains(formula, "mongodb"):
+	case wordMatch(commandText, "mongod") || strings.Contains(formula, "mongodb"):
 		database(&p, "MongoDB", pick(formula != "", 95, 88), "Document database local projects may depend on for app data.", l, formula, managedBrew)
 
-	case strings.Contains(text, "postgres") || strings.Contains(text, "postmaster") || formula == "postgresql":
+	case strings.Contains(commandText, "postgres") || strings.Contains(commandText, "postmaster") || formula == "postgresql":
 		database(&p, "Postgres", pick(formula != "", 94, 86), "Relational database. Stopping it drops local connections.", l, formula, managedBrew)
 
-	case strings.Contains(text, "mysql") || strings.Contains(text, "mariadb") || formula == "mysql" || formula == "mariadb":
+	case strings.Contains(commandText, "mysql") || strings.Contains(commandText, "mariadb") || formula == "mysql" || formula == "mariadb":
 		name := "MySQL"
-		if strings.Contains(text, "mariadb") || formula == "mariadb" {
+		if strings.Contains(commandText, "mariadb") || formula == "mariadb" {
 			name = "MariaDB"
 		}
 		database(&p, name, pick(formula != "", 94, 86), name+" relational database. Local projects may lose connections.", l, formula, managedBrew)
