@@ -327,7 +327,11 @@ func Make(l scan.Listener, env Env) Profile {
 	case strings.Contains(text, "redis-server") || formula == "redis":
 		database(&p, "Redis", pick(formula == "redis", 96, 90), "In-memory database/cache used by local apps, queues, and sessions.", l, formula, managedBrew)
 
-	case strings.Contains(text, "mongod") || strings.Contains(formula, "mongodb"):
+	// word(), not Contains(): `text` includes the cwd (see top of Make), so a
+	// plain substring match tags any project living in ~/mongodb-dashboard as a
+	// database. Require "mongod" as a bounded word — the real daemon is literally
+	// `mongod`, so it still matches. Mirrors the mac app. (LE-CLI-001)
+	case word("mongod") || strings.Contains(formula, "mongodb"):
 		database(&p, "MongoDB", pick(formula != "", 95, 88), "Document database local projects may depend on for app data.", l, formula, managedBrew)
 
 	case strings.Contains(text, "postgres") || strings.Contains(text, "postmaster") || formula == "postgresql":
