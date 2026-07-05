@@ -71,7 +71,17 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 		if !dockerGuardOK(p.StopArgID, curID, lookupOK) {
 			return "", fmt.Errorf("container %q changed since scan — rescan and try again", p.StopArg)
 		}
-		out, err := runCombined("docker", "stop", p.StopArg)
+		// Stop by the immutable container ID, not the reassignable name. The
+		// guard above confirmed name->ID at check time, but stopping by name
+		// still leaves a TOCTOU window where a freed name could be grabbed by a
+		// different container before this call lands. Fall back to the name only
+		// when no ID was captured at scan time. Report the friendly name — it's
+		// the container the user recognizes. Mirrors the mac app. (LE-060)
+		target := p.StopArgID
+		if target == "" {
+			target = p.StopArg
+		}
+		out, err := runCombined("docker", "stop", target)
 		if err != nil {
 			return "", cmdErr("docker stop "+p.StopArg, out, err)
 		}

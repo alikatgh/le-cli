@@ -5,6 +5,8 @@
 package scan
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"sort"
@@ -46,7 +48,21 @@ var runCmd = func(name string, args ...string) (string, error) {
 // Scan returns every TCP listener visible to the current user.
 func Scan() ([]Listener, error) {
 	// -FpcnPT: field output keyed by p(pid) c(command) n(name/addr) plus protocol/state.
-	out, _ := runCmd("lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-FpcnPT")
+	out, err := runCmd("lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-FpcnPT")
+	if err != nil {
+		// lsof exits non-zero when nothing is listening, so a non-zero *exit*
+		// is the normal empty case — not a failure. But if lsof couldn't run at
+		// all (missing binary, unexecutable), that's a real error we must
+		// surface: otherwise a broken environment is indistinguishable from
+		// "nothing is listening", and `le stop` reports "nothing listening"
+		// when the scan actually failed (LE-CLI-002 / LE-CLI-014). An
+		// *exec.ExitError means lsof ran and exited non-zero; anything else
+		// (e.g. *exec.Error wrapping ErrNotFound) means it never ran.
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			return nil, fmt.Errorf("lsof: %w", err)
+		}
+	}
 	if strings.TrimSpace(out) == "" {
 		return nil, nil // no listeners (lsof exits non-zero on empty match)
 	}
