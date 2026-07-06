@@ -349,6 +349,12 @@ func runStopDir(dir string, dryRun, asJSON bool) error {
 // and so both the port/pid and --dir paths render it identically.
 func previewMatched(w io.Writer, matched []row) {
 	for _, r := range matched {
+		// A real stop refuses StopAvoid rows (macOS/system helpers), so the
+		// dry-run must not promise "would stop" for them. (LE-411)
+		if r.Profile.StopKind == intel.StopAvoid {
+			_, _ = fmt.Fprintf(w, "would SKIP %s (pid %d) — no safe automatic stop, inspect first\n", r.Profile.Identity, r.PID)
+			continue
+		}
 		_, _ = fmt.Fprintf(w, "would stop %s (pid %d) — %s\n", r.Profile.Identity, r.PID, r.Profile.StopLabel)
 	}
 }
@@ -427,13 +433,19 @@ type stopResult struct {
 }
 
 // previewMatchedJSON is --dry-run --json: every row is previewable, nothing
-// is executed, so ok is always true and action is the recommended strategy.
+// is executed, so nothing runs — but a StopAvoid row cannot be stopped, so it
+// reports ok:false to match what a live stop would do. (LE-412)
 func previewMatchedJSON(w io.Writer, matched []row) error {
 	results := make([]stopResult, 0, len(matched))
 	for _, r := range matched {
+		avoid := r.Profile.StopKind == intel.StopAvoid
+		action := r.Profile.StopLabel
+		if avoid {
+			action = "no safe automatic stop — inspect first"
+		}
 		results = append(results, stopResult{
 			PID: r.PID, Identity: r.Profile.Identity, Ports: r.Ports,
-			Action: r.Profile.StopLabel, DryRun: true, OK: true,
+			Action: action, DryRun: true, OK: !avoid,
 		})
 	}
 	return printJSON(w, results)
