@@ -165,7 +165,7 @@ func stopCmd() *cobra.Command {
 
 func holdCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "hold <port>",
+		Use:   "hold PORT",
 		Short: "Hold a port so nothing else can grab it (Ctrl-C frees it)",
 		Args:  cobra.ExactArgs(1),
 		RunE:  func(cmd *cobra.Command, args []string) error { return tools.Hold(args[0]) },
@@ -175,9 +175,9 @@ func holdCmd() *cobra.Command {
 func waitCmd() *cobra.Command {
 	var timeout time.Duration
 	c := &cobra.Command{
-		Use:   "wait <port>",
+		Use:   "wait PORT",
 		Short: "Block until a port frees up",
-		Long:  "Block until <port> is free. With --timeout, give up after that long and\nexit non-zero — so a script can bound the wait instead of hanging.",
+		Long:  "Block until PORT is free. With --timeout, give up after that long and\nexit non-zero — so a script can bound the wait instead of hanging.",
 		Args:  cobra.ExactArgs(1),
 		RunE:  func(cmd *cobra.Command, args []string) error { return tools.WaitFree(args[0], timeout) },
 	}
@@ -188,9 +188,9 @@ func waitCmd() *cobra.Command {
 func readyCmd() *cobra.Command {
 	var timeout time.Duration
 	c := &cobra.Command{
-		Use:   "ready <port>",
+		Use:   "ready PORT",
 		Short: "Block until something starts listening (open-when-ready)",
-		Long:  "Block until something is listening on <port>. With --timeout, give up\nafter that long and exit non-zero.",
+		Long:  "Block until something is listening on PORT. With --timeout, give up\nafter that long and exit non-zero.",
 		Args:  cobra.ExactArgs(1),
 		RunE:  func(cmd *cobra.Command, args []string) error { return tools.WaitListening(args[0], timeout) },
 	}
@@ -349,6 +349,12 @@ func runStopDir(dir string, dryRun, asJSON bool) error {
 // and so both the port/pid and --dir paths render it identically.
 func previewMatched(w io.Writer, matched []row) {
 	for _, r := range matched {
+		// A real stop refuses StopAvoid rows (macOS/system helpers), so the
+		// dry-run must not promise "would stop" for them. (LE-411)
+		if r.Profile.StopKind == intel.StopAvoid {
+			_, _ = fmt.Fprintf(w, "would SKIP %s (pid %d) — no safe automatic stop, inspect first\n", r.Profile.Identity, r.PID)
+			continue
+		}
 		_, _ = fmt.Fprintf(w, "would stop %s (pid %d) — %s\n", r.Profile.Identity, r.PID, r.Profile.StopLabel)
 	}
 }
@@ -427,13 +433,19 @@ type stopResult struct {
 }
 
 // previewMatchedJSON is --dry-run --json: every row is previewable, nothing
-// is executed, so ok is always true and action is the recommended strategy.
+// is executed, so nothing runs — but a StopAvoid row cannot be stopped, so it
+// reports ok:false to match what a live stop would do. (LE-412)
 func previewMatchedJSON(w io.Writer, matched []row) error {
 	results := make([]stopResult, 0, len(matched))
 	for _, r := range matched {
+		avoid := r.Profile.StopKind == intel.StopAvoid
+		action := r.Profile.StopLabel
+		if avoid {
+			action = "no safe automatic stop — inspect first"
+		}
 		results = append(results, stopResult{
 			PID: r.PID, Identity: r.Profile.Identity, Ports: r.Ports,
-			Action: r.Profile.StopLabel, DryRun: true, OK: true,
+			Action: action, DryRun: true, OK: !avoid,
 		})
 	}
 	return printJSON(w, results)

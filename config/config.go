@@ -72,7 +72,10 @@ func Load() (Config, string) {
 		key, val = strings.TrimSpace(key), unquote(strings.TrimSpace(val))
 		switch key {
 		case "interval":
-			if n, err := strconv.Atoi(val); err == nil {
+			// Bound it: a typo'd `interval = 999999999` would otherwise be
+			// accepted and produce a ~31-year refresh (Interval() only clamps
+			// the low end). Out-of-range values keep the default. (LE-434)
+			if n, err := strconv.Atoi(val); err == nil && n >= 1 && n <= 3600 {
 				c.IntervalSeconds = n
 			}
 		case "filter":

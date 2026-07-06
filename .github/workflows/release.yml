@@ -18,7 +18,24 @@ permissions:
   attestations: write
 
 jobs:
+  # Gate the release on tests passing on BOTH platforms with -race. le's
+  # ps/lsof parsing is macOS-first, so a macOS-only regression must not reach a
+  # tagged binary — the ubuntu-only, no-race release test missed both. (LE-562/563)
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.24'
+      - name: Test
+        run: go test -race ./...
+
   release:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -28,9 +45,6 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.24'
-
-      - name: Test
-        run: go test ./...
 
       # Pinned goreleaser version so releases are reproducible run-over-run;
       # bump deliberately. (`brews` is deprecated upstream — see the note in
