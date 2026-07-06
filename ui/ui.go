@@ -157,7 +157,13 @@ func stopCommand(r Row) (string, bool) {
 	case intel.StopBrew:
 		return "brew services stop " + r.P.StopArg, true
 	case intel.StopDocker:
-		return "docker stop " + r.P.StopArg, true
+		// Copy the immutable container ID, not the reassignable name — a pasted
+		// `docker stop <name>` can hit the wrong container after name reuse. (LE-420)
+		id := r.P.StopArgID
+		if id == "" {
+			id = r.P.StopArg
+		}
+		return "docker stop " + id, true
 	case intel.StopLaunchd:
 		return "launchctl bootout " + intel.LaunchdDomainTarget(r.P.StopArg), true
 	case intel.StopAvoid:
@@ -761,7 +767,9 @@ func stopShort(p intel.Profile) string {
 	case intel.StopDocker:
 		return "docker stop " + p.StopArg
 	case intel.StopLaunchd:
-		return "launchctl bootout " + p.StopArg
+		// Show the full domain target the stop actually uses, not the bare
+		// label — the detail pane must match the copied command. (LE-419/427)
+		return "launchctl bootout " + intel.LaunchdDomainTarget(p.StopArg)
 	case intel.StopAvoid:
 		return "avoid — inspect first"
 	default:
