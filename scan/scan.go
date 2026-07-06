@@ -96,7 +96,10 @@ func Scan() ([]Listener, error) {
 				a.command = val
 			}
 		case 'n':
-			if a := byPID[cur]; a != nil && val != "" {
+			// Only keep localhost-reachable binds (loopback + wildcards). A bind
+			// to a specific LAN IP is not a localhost listener — parity with the
+			// mac app's isLocalEndpoint, which filters the same way. (LE-796/LE-779)
+			if a := byPID[cur]; a != nil && val != "" && isLocalEndpoint(val) {
 				a.addrs = append(a.addrs, val)
 			}
 		}
@@ -125,6 +128,11 @@ func Scan() ([]Listener, error) {
 	listeners := make([]Listener, 0, len(order))
 	for _, pid := range order {
 		a := byPID[pid]
+		// A PID whose only binds were non-localhost drops out entirely rather
+		// than becoming a row with no address/port. (LE-796)
+		if len(a.addrs) == 0 {
+			continue
+		}
 		l := Listener{
 			PID:       pid,
 			Command:   a.command,
@@ -149,6 +157,20 @@ func Scan() ([]Listener, error) {
 		return listeners[i].PID < listeners[j].PID
 	})
 	return listeners, nil
+}
+
+// isLocalEndpoint reports whether an lsof address is reachable from localhost:
+// loopback (127.x, [::1]) or a wildcard bind (*, 0.0.0.0, [::]) — the latter
+// covers loopback too. A bind to a specific non-loopback IP (a LAN address) is
+// not a localhost listener and is filtered out. Mirrors the mac app's
+// LocalhostScanner.isLocalEndpoint prefix-for-prefix. (LE-796/LE-779)
+func isLocalEndpoint(addr string) bool {
+	return strings.HasPrefix(addr, "127.") ||
+		strings.HasPrefix(addr, "[::1]") ||
+		strings.HasPrefix(addr, "localhost:") ||
+		strings.HasPrefix(addr, "*:") ||
+		strings.HasPrefix(addr, "0.0.0.0:") ||
+		strings.HasPrefix(addr, "[::]:")
 }
 
 type psRow struct {
