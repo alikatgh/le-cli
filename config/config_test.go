@@ -76,6 +76,18 @@ func TestLoadIgnoresMalformedLinesFallsBackToDefault(t *testing.T) {
 	}
 }
 
+func TestLoadBoundsOutOfRangeInterval(t *testing.T) {
+	// A typo'd, absurdly large interval must not be accepted (a ~31-year
+	// refresh); it falls back to the default. (LE-434)
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeConfig(t, dir, "interval = 999999999\n")
+	c, _ := Load()
+	if c.IntervalSeconds != defaultIntervalSeconds {
+		t.Errorf("out-of-range interval should fall back to default, got %d", c.IntervalSeconds)
+	}
+}
+
 func TestLoadDoesNotPanicOnUnreadableExistingPath(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
