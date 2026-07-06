@@ -52,6 +52,7 @@ type Row struct {
 type scannedMsg struct {
 	rows []Row
 	at   time.Time
+	err  error
 }
 type tickMsg time.Time
 type stopResultMsg struct {
@@ -104,13 +105,13 @@ func (m model) Init() tea.Cmd {
 
 func scanCmd() tea.Cmd {
 	return func() tea.Msg {
-		listeners, _ := scan.Scan()
+		listeners, err := scan.Scan()
 		env := intel.Detect()
 		rows := make([]Row, len(listeners))
 		for i, l := range listeners {
 			rows[i] = Row{L: l, P: intel.Make(l, env)}
 		}
-		return scannedMsg{rows: rows, at: time.Now()}
+		return scannedMsg{rows: rows, at: time.Now(), err: err}
 	}
 }
 
@@ -191,6 +192,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// stale data, so drop anything not at least as recent as what's
 		// currently displayed.
 		if msg.at.Before(m.lastScan) {
+			return m, nil
+		}
+		if msg.err != nil {
+			// A genuine scan failure (scan.Scan already distinguishes lsof's
+			// non-zero "empty match" exit from a real exec failure — LE-CLI-002),
+			// so surface it instead of silently rendering an empty table as
+			// "no listeners". Keep the last-good rows rather than blanking them,
+			// and don't advance lastScan so a later success still applies. (R69)
+			m.flash, m.flashErr = "scan failed: "+msg.err.Error(), true
+			m.loading = false
 			return m, nil
 		}
 		m.all = msg.rows
