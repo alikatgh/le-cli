@@ -198,7 +198,12 @@ var LaunchdLabelPID = func(label string) (int, bool) {
 	return 0, false
 }
 
-var dockerPortRe = regexp.MustCompile(`(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]|::):(\d+)->`)
+// The host side may be a single port (`0.0.0.0:8080->`) or a RANGE
+// (`0.0.0.0:8000-8010->`); capture the optional upper bound so ranged
+// publications aren't dropped (which left the docker-proxy listener
+// unattributed → a raw TERM instead of `docker stop`). Mirrors Swift
+// publishedPorts. (R69 parity)
+var dockerPortRe = regexp.MustCompile(`(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]|::):(\d+)(?:-(\d+))?->`)
 
 func dockerByPort() map[string]dockerContainer {
 	out, err := exec.Command("docker", "ps", "--format", "{{.ID}}\t{{.Names}}\t{{.Ports}}").Output()
@@ -224,12 +229,30 @@ func parseDockerPorts(out string) map[string]dockerContainer {
 		}
 		id, name, ports := parts[0], parts[1], parts[2]
 		for _, match := range dockerPortRe.FindAllStringSubmatch(ports, -1) {
-			port := match[1]
-			if existing, ok := m[port]; ok && existing.name != name {
-				ambiguous[port] = true
+			lo, err := strconv.Atoi(match[1])
+			if err != nil {
 				continue
 			}
-			m[port] = dockerContainer{name: name, id: id}
+			hi := lo
+			if match[2] != "" {
+				// Ranged publication (8000-8010->…): expand the host-side range,
+				// bounded so a giant/malformed range can't balloon the map — a
+				// range failing the guard is dropped entirely, mirroring Swift's
+				// `upper - lower <= 1024`. (R69 parity)
+				u, err := strconv.Atoi(match[2])
+				if err != nil || u < lo || u-lo > 1024 {
+					continue
+				}
+				hi = u
+			}
+			for p := lo; p <= hi; p++ {
+				port := strconv.Itoa(p)
+				if existing, ok := m[port]; ok && existing.name != name {
+					ambiguous[port] = true
+					continue
+				}
+				m[port] = dockerContainer{name: name, id: id}
+			}
 		}
 	}
 	for port := range ambiguous {
