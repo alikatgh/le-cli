@@ -165,7 +165,7 @@ func stopCmd() *cobra.Command {
 
 func holdCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "hold <port>",
+		Use:   "hold PORT",
 		Short: "Hold a port so nothing else can grab it (Ctrl-C frees it)",
 		Args:  cobra.ExactArgs(1),
 		RunE:  func(cmd *cobra.Command, args []string) error { return tools.Hold(args[0]) },
@@ -175,9 +175,9 @@ func holdCmd() *cobra.Command {
 func waitCmd() *cobra.Command {
 	var timeout time.Duration
 	c := &cobra.Command{
-		Use:   "wait <port>",
+		Use:   "wait PORT",
 		Short: "Block until a port frees up",
-		Long:  "Block until <port> is free. With --timeout, give up after that long and\nexit non-zero — so a script can bound the wait instead of hanging.",
+		Long:  "Block until PORT is free. With --timeout, give up after that long and\nexit non-zero — so a script can bound the wait instead of hanging.",
 		Args:  cobra.ExactArgs(1),
 		RunE:  func(cmd *cobra.Command, args []string) error { return tools.WaitFree(args[0], timeout) },
 	}
@@ -188,9 +188,9 @@ func waitCmd() *cobra.Command {
 func readyCmd() *cobra.Command {
 	var timeout time.Duration
 	c := &cobra.Command{
-		Use:   "ready <port>",
+		Use:   "ready PORT",
 		Short: "Block until something starts listening (open-when-ready)",
-		Long:  "Block until something is listening on <port>. With --timeout, give up\nafter that long and exit non-zero.",
+		Long:  "Block until something is listening on PORT. With --timeout, give up\nafter that long and exit non-zero.",
 		Args:  cobra.ExactArgs(1),
 		RunE:  func(cmd *cobra.Command, args []string) error { return tools.WaitListening(args[0], timeout) },
 	}
