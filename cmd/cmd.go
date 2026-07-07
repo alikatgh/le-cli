@@ -73,7 +73,9 @@ func newRoot(version string) *cobra.Command {
 			return ui.Run(ui.Options{Interval: cfg.Interval(), Filter: cfg.Filter})
 		},
 	}
-	root.AddCommand(listCmd(), stopCmd(), holdCmd(), waitCmd(), readyCmd(), versionCmd(version))
+	root.AddCommand(listCmd(), stopCmd(), holdCmd(), waitCmd(), readyCmd(), versionCmd(version),
+		flushDNSCmd(), restartDockCmd(), restartFinderCmd(), sleepDisplayCmd(), keepAwakeCmd(),
+		restartCmd(), watchCmd(), openCmd())
 	return root
 }
 
@@ -205,6 +207,111 @@ func versionCmd(version string) *cobra.Command {
 		Args:  cobra.NoArgs,
 		Run:   func(cmd *cobra.Command, args []string) { fmt.Println("le", version) },
 	}
+}
+
+// --- system utilities (1:1 with the app's action tools) ---
+
+func flushDNSCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "flush-dns",
+		Short: "Flush the macOS DNS cache",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return tools.FlushDNS() },
+	}
+}
+
+func restartDockCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "restart-dock",
+		Short: "Relaunch the Dock",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return tools.RestartDock() },
+	}
+}
+
+func restartFinderCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "restart-finder",
+		Short: "Relaunch Finder",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return tools.RestartFinder() },
+	}
+}
+
+func sleepDisplayCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "sleep-display",
+		Short: "Put the display to sleep now",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return tools.SleepDisplay() },
+	}
+}
+
+func keepAwakeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "keep-awake [duration]",
+		Short: "Stop your Mac sleeping (caffeinate); no arg = until Ctrl-C",
+		Long: "Run caffeinate -d -i so the Mac won't sleep. Give a duration like 15m,\n" +
+			"1h, or 90s; with no argument it stays awake until you press Ctrl-C.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var d time.Duration
+			if len(args) == 1 {
+				parsed, err := time.ParseDuration(args[0])
+				if err != nil || parsed < 0 {
+					return fmt.Errorf("invalid duration %q: use e.g. 15m, 1h, 90s", args[0])
+				}
+				d = parsed
+			}
+			return tools.KeepAwake(d)
+		},
+	}
+}
+
+func restartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "restart [port|pid]",
+		Short: "Restart a listener via its owner (brew services / docker)",
+		Long: "Bounce a brew-managed or Dockerised listener through its real owner —\n" +
+			"no kill -9 surprises. Only managed listeners can be restarted; anything\n" +
+			"else has no supervisor to bounce it through.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error { return runRestart(args[0]) },
+	}
+}
+
+func watchCmd() *cobra.Command {
+	var timeout time.Duration
+	c := &cobra.Command{
+		Use:   "watch [port|pid]",
+		Short: "Notify when a listener's process exits",
+		Long: "Poll until the process behind a port (or a PID) exits, then report it —\n" +
+			"the notify-on-exit workflow. With --timeout, give up after that long.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error { return runWatch(args[0], timeout) },
+	}
+	c.Flags().DurationVarP(&timeout, "timeout", "t", 0, "give up after this long (e.g. 30s); 0 waits forever")
+	return c
+}
+
+func openCmd() *cobra.Command {
+	var timeout time.Duration
+	c := &cobra.Command{
+		Use:   "open PORT [path]",
+		Short: "Wait until a port is listening, then open it in the browser",
+		Long: "Block until something is listening on PORT, then open\n" +
+			"http://localhost:PORT/<path> — the open-when-ready workflow.",
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := ""
+			if len(args) == 2 {
+				path = args[1]
+			}
+			return tools.OpenWhenReady(args[0], path, timeout)
+		},
+	}
+	c.Flags().DurationVarP(&timeout, "timeout", "t", 0, "give up after this long (e.g. 30s); 0 waits forever")
+	return c
 }
 
 // --- shared helpers ---
@@ -342,6 +449,40 @@ func runStopDir(dir string, dryRun, asJSON bool) error {
 		return fmt.Errorf("no listeners have a working directory under %s", dir)
 	}
 	return dispatchStop(matched, dryRun, asJSON)
+}
+
+// runRestart bounces every listener matching the port/pid through its service
+// owner (brew/docker). Mirrors runStop's resolve-then-act shape.
+func runRestart(target string) error {
+	rows := gather()
+	matched := matchRows(rows, target)
+	if len(matched) == 0 {
+		return fmt.Errorf("nothing listening on %s", target)
+	}
+	failures := 0
+	for _, r := range matched {
+		msg, err := kill.Restart(r.Listener, r.Profile)
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "✗ %s (pid %d): %v\n", r.Profile.Identity, r.PID, err)
+			failures++
+			continue
+		}
+		fmt.Println("✓ " + msg)
+	}
+	if failures > 0 {
+		return fmt.Errorf("%d of %d listener(s) did not restart", failures, len(matched))
+	}
+	return nil
+}
+
+// runWatch resolves a port/pid to its owning process and blocks until it exits.
+func runWatch(target string, timeout time.Duration) error {
+	rows := gather()
+	matched := matchRows(rows, target)
+	if len(matched) == 0 {
+		return fmt.Errorf("nothing listening on %s", target)
+	}
+	return tools.WatchPID(matched[0].PID, timeout)
 }
 
 // previewMatched lists what a stop WOULD act on, without touching anything —
