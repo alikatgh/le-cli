@@ -73,7 +73,8 @@ func newRoot(version string) *cobra.Command {
 			return ui.Run(ui.Options{Interval: cfg.Interval(), Filter: cfg.Filter})
 		},
 	}
-	root.AddCommand(listCmd(), stopCmd(), holdCmd(), waitCmd(), readyCmd(), versionCmd(version))
+	root.AddCommand(listCmd(), stopCmd(), holdCmd(), waitCmd(), readyCmd(), versionCmd(version),
+		flushDNSCmd(), restartDockCmd(), restartFinderCmd(), sleepDisplayCmd())
 	return root
 }
 
@@ -204,6 +205,44 @@ func versionCmd(version string) *cobra.Command {
 		Short: "Print the le version",
 		Args:  cobra.NoArgs,
 		Run:   func(cmd *cobra.Command, args []string) { fmt.Println("le", version) },
+	}
+}
+
+// --- system utilities (1:1 with the app's action tools) ---
+
+func flushDNSCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "flush-dns",
+		Short: "Flush the macOS DNS cache",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return tools.FlushDNS() },
+	}
+}
+
+func restartDockCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "restart-dock",
+		Short: "Relaunch the Dock",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return tools.RestartDock() },
+	}
+}
+
+func restartFinderCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "restart-finder",
+		Short: "Relaunch Finder",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return tools.RestartFinder() },
+	}
+}
+
+func sleepDisplayCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "sleep-display",
+		Short: "Put the display to sleep now",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return tools.SleepDisplay() },
 	}
 }
 
