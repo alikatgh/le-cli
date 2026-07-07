@@ -51,6 +51,8 @@ func OpenWhenReady(port, path string, timeout time.Duration) error {
 		return err
 	}
 	url := "http://localhost:" + port + "/" + strings.TrimPrefix(path, "/")
+	// #nosec G204 -- /usr/bin/open is a fixed path and url is passed as a
+	// discrete exec argument (no shell), so there's no command injection.
 	if err := exec.Command("/usr/bin/open", url).Run(); err != nil {
 		return fmt.Errorf("port is ready but couldn't open %s: %w", url, err)
 	}
