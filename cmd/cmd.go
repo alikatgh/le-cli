@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -75,7 +77,7 @@ func newRoot(version string) *cobra.Command {
 	}
 	root.AddCommand(listCmd(), stopCmd(), holdCmd(), waitCmd(), readyCmd(), versionCmd(version),
 		flushDNSCmd(), restartDockCmd(), restartFinderCmd(), sleepDisplayCmd(), keepAwakeCmd(),
-		restartCmd(), watchCmd(), openCmd(), checkCmd())
+		restartCmd(), watchCmd(), openCmd(), checkCmd(), watchAllCmd())
 	return root
 }
 
@@ -311,6 +313,20 @@ func watchCmd() *cobra.Command {
 	return c
 }
 
+func watchAllCmd() *cobra.Command {
+	var interval time.Duration
+	c := &cobra.Command{
+		Use:   "watch-all",
+		Short: "Live feed of listeners appearing (+) and disappearing (-)",
+		Long: "Poll the listener set and print every appearance and disappearance as\n" +
+			"it happens — a 'what just started/stopped' feed. Ctrl-C to stop.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error { return runWatchAll(interval) },
+	}
+	c.Flags().DurationVarP(&interval, "interval", "i", 2*time.Second, "how often to poll (e.g. 5s)")
+	return c
+}
+
 func openCmd() *cobra.Command {
 	var timeout time.Duration
 	c := &cobra.Command{
@@ -514,6 +530,50 @@ func runWatch(target string, timeout time.Duration) error {
 		return fmt.Errorf("nothing listening on %s", target)
 	}
 	return tools.WatchPID(matched[0].PID, timeout)
+}
+
+// runWatchAll polls the listener set and streams every appearance (+) and
+// disappearance (-) — a live "what just started/stopped" feed. Loops until Ctrl-C.
+func runWatchAll(interval time.Duration) error {
+	prev := snapshotKeys(gather())
+	fmt.Printf("watching for listener changes every %s — Ctrl-C to stop\n", interval)
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-sig:
+			fmt.Println("\nstopped")
+			return nil
+		case <-ticker.C:
+			cur := snapshotKeys(gather())
+			for k, label := range cur {
+				if _, ok := prev[k]; !ok {
+					fmt.Println("+ " + label)
+				}
+			}
+			for k, label := range prev {
+				if _, ok := cur[k]; !ok {
+					fmt.Println("- " + label)
+				}
+			}
+			prev = cur
+		}
+	}
+}
+
+// snapshotKeys maps a stable per-listener key (pid + ports) to a human label,
+// so diffing two scans is a plain map comparison.
+func snapshotKeys(rows []row) map[string]string {
+	m := make(map[string]string, len(rows))
+	for _, r := range rows {
+		key := strconv.Itoa(r.PID) + "|" + strings.Join(r.Ports, ",")
+		m[key] = fmt.Sprintf("%s (pid %d) on %s", r.Profile.Identity, r.PID, strings.Join(r.Ports, ", "))
+	}
+	return m
 }
 
 // previewMatched lists what a stop WOULD act on, without touching anything —
