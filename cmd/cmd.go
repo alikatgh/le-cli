@@ -75,7 +75,7 @@ func newRoot(version string) *cobra.Command {
 	}
 	root.AddCommand(listCmd(), stopCmd(), holdCmd(), waitCmd(), readyCmd(), versionCmd(version),
 		flushDNSCmd(), restartDockCmd(), restartFinderCmd(), sleepDisplayCmd(), keepAwakeCmd(),
-		restartCmd(), watchCmd(), openCmd())
+		restartCmd(), watchCmd(), openCmd(), checkCmd())
 	return root
 }
 
@@ -265,6 +265,18 @@ func keepAwakeCmd() *cobra.Command {
 			}
 			return tools.KeepAwake(d)
 		},
+	}
+}
+
+func checkCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "check PORT",
+		Short: "HTTP health-check a listener (status + latency + curl)",
+		Long: "GET http://127.0.0.1:PORT/ and report the status code and round-trip\n" +
+			"time, plus a ready-to-run curl command. A non-HTTP listener surfaces as\n" +
+			"a clear error rather than hanging.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error { return tools.Check(args[0]) },
 	}
 }
 
