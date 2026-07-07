@@ -78,6 +78,9 @@ func newRoot(version string) *cobra.Command {
 	root.AddCommand(listCmd(), stopCmd(), holdCmd(), waitCmd(), readyCmd(), versionCmd(version),
 		flushDNSCmd(), restartDockCmd(), restartFinderCmd(), sleepDisplayCmd(), keepAwakeCmd(),
 		restartCmd(), watchCmd(), openCmd(), checkCmd(), watchAllCmd())
+	// Separate call (not appended above) so this line merges cleanly alongside
+	// other in-flight command additions.
+	root.AddCommand(qrCmd())
 	return root
 }
 
@@ -272,6 +275,18 @@ func keepAwakeCmd() *cobra.Command {
 			}
 			return tools.KeepAwake(d)
 		},
+	}
+}
+
+func qrCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "qr PORT",
+		Short: "Show a LAN URL / QR to open a local port on your phone",
+		Long: "Print this Mac's LAN URL for PORT — what to open on a phone on the same\n" +
+			"network — and render a scannable QR when `qrencode` is installed. Uses the\n" +
+			"LAN IP, because `localhost` on the phone points at the phone, not this Mac.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error { return tools.QR(args[0]) },
 	}
 }
 
