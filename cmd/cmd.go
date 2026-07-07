@@ -168,9 +168,14 @@ func stopCmd() *cobra.Command {
 func holdCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "hold PORT",
-		Short: "Hold a port so nothing else can grab it (Ctrl-C frees it)",
+		Short: "Hold a port — or a range PORT-PORT — so nothing else can grab it (Ctrl-C frees it)",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return tools.Hold(args[0]) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if lo, hi, ok := tools.ParsePortRange(args[0]); ok {
+				return tools.HoldRange(lo, hi)
+			}
+			return tools.Hold(args[0])
+		},
 	}
 }
 
@@ -408,6 +413,20 @@ func portCell(ports []string) string {
 // priority so a target that happens to look like both a live port and
 // someone else's PID resolves the way a human would expect it to.
 func matchRows(rows []row, target string) []row {
+	// A port range like "3000-3010" — match every listener with a port in it.
+	// (Single ports and PIDs have no dash and fall through to the logic below.)
+	if lo, hi, ok := tools.ParsePortRange(target); ok {
+		var matched []row
+		for _, r := range rows {
+			for _, p := range r.Ports {
+				if n, err := strconv.Atoi(p); err == nil && n >= lo && n <= hi {
+					matched = append(matched, r)
+					break
+				}
+			}
+		}
+		return matched
+	}
 	var matched []row
 	for _, r := range rows { // port match first
 		for _, p := range r.Ports {
