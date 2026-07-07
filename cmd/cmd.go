@@ -74,7 +74,8 @@ func newRoot(version string) *cobra.Command {
 		},
 	}
 	root.AddCommand(listCmd(), stopCmd(), holdCmd(), waitCmd(), readyCmd(), versionCmd(version),
-		flushDNSCmd(), restartDockCmd(), restartFinderCmd(), sleepDisplayCmd())
+		flushDNSCmd(), restartDockCmd(), restartFinderCmd(), sleepDisplayCmd(), keepAwakeCmd(),
+		restartCmd())
 	return root
 }
 
@@ -246,6 +247,39 @@ func sleepDisplayCmd() *cobra.Command {
 	}
 }
 
+func keepAwakeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "keep-awake [duration]",
+		Short: "Stop your Mac sleeping (caffeinate); no arg = until Ctrl-C",
+		Long: "Run caffeinate -d -i so the Mac won't sleep. Give a duration like 15m,\n" +
+			"1h, or 90s; with no argument it stays awake until you press Ctrl-C.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var d time.Duration
+			if len(args) == 1 {
+				parsed, err := time.ParseDuration(args[0])
+				if err != nil || parsed < 0 {
+					return fmt.Errorf("invalid duration %q: use e.g. 15m, 1h, 90s", args[0])
+				}
+				d = parsed
+			}
+			return tools.KeepAwake(d)
+		},
+	}
+}
+
+func restartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "restart [port|pid]",
+		Short: "Restart a listener via its owner (brew services / docker)",
+		Long: "Bounce a brew-managed or Dockerised listener through its real owner —\n" +
+			"no kill -9 surprises. Only managed listeners can be restarted; anything\n" +
+			"else has no supervisor to bounce it through.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error { return runRestart(args[0]) },
+	}
+}
+
 // --- shared helpers ---
 
 type row struct {
@@ -381,6 +415,30 @@ func runStopDir(dir string, dryRun, asJSON bool) error {
 		return fmt.Errorf("no listeners have a working directory under %s", dir)
 	}
 	return dispatchStop(matched, dryRun, asJSON)
+}
+
+// runRestart bounces every listener matching the port/pid through its service
+// owner (brew/docker). Mirrors runStop's resolve-then-act shape.
+func runRestart(target string) error {
+	rows := gather()
+	matched := matchRows(rows, target)
+	if len(matched) == 0 {
+		return fmt.Errorf("nothing listening on %s", target)
+	}
+	failures := 0
+	for _, r := range matched {
+		msg, err := kill.Restart(r.Listener, r.Profile)
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "✗ %s (pid %d): %v\n", r.Profile.Identity, r.PID, err)
+			failures++
+			continue
+		}
+		fmt.Println("✓ " + msg)
+	}
+	if failures > 0 {
+		return fmt.Errorf("%d of %d listener(s) did not restart", failures, len(matched))
+	}
+	return nil
 }
 
 // previewMatched lists what a stop WOULD act on, without touching anything —

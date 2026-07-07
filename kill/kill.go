@@ -112,6 +112,48 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 	}
 }
 
+// Restart bounces a managed listener through its real owner — the CLI half of
+// the app's Restart-listener tool. Only brew-managed and Docker listeners can
+// be restarted (they have a supervisor to bounce them through); anything else
+// has no clean restart, so we refuse rather than guess. Mirrors Stop's identity
+// re-verification (recycled PID, changed container) before acting.
+func Restart(l scan.Listener, p intel.Profile) (string, error) {
+	if !stillSame(l) {
+		return "", fmt.Errorf("pid %d is gone or was recycled to a different process — rescan", l.PID)
+	}
+	switch p.StopKind {
+	case intel.StopBrew:
+		if !intel.BrewServiceKnown(p.StopArg) {
+			return "", fmt.Errorf("brew formula %q is no longer known to brew services — rescan and try again", p.StopArg)
+		}
+		out, err := runCombined("brew", "services", "restart", p.StopArg)
+		if err != nil {
+			return "", cmdErr("brew services restart "+p.StopArg, out, err)
+		}
+		return "brew services restart " + p.StopArg, nil
+	case intel.StopDocker:
+		var curID string
+		var lookupOK bool
+		if p.StopArgID != "" {
+			curID, lookupOK = intel.DockerContainerID(p.StopArg)
+		}
+		if !dockerGuardOK(p.StopArgID, curID, lookupOK) {
+			return "", fmt.Errorf("container %q changed since scan — rescan and try again", p.StopArg)
+		}
+		target := p.StopArgID
+		if target == "" {
+			target = p.StopArg
+		}
+		out, err := runCombined("docker", "restart", target)
+		if err != nil {
+			return "", cmdErr("docker restart "+p.StopArg, out, err)
+		}
+		return "docker restart " + p.StopArg, nil
+	default:
+		return "", fmt.Errorf("no safe restart for %s — only brew-managed or Docker listeners can be bounced through their owner", p.Identity)
+	}
+}
+
 // launchdGuardOK is the label-recycling comparison, pure for the same reason
 // as dockerGuardOK below: a refactor that inverts it silently defeats the
 // protection, so give the tests something to pin.
