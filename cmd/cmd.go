@@ -75,7 +75,7 @@ func newRoot(version string) *cobra.Command {
 	}
 	root.AddCommand(listCmd(), stopCmd(), holdCmd(), waitCmd(), readyCmd(), versionCmd(version),
 		flushDNSCmd(), restartDockCmd(), restartFinderCmd(), sleepDisplayCmd(), keepAwakeCmd(),
-		restartCmd())
+		restartCmd(), watchCmd(), openCmd())
 	return root
 }
 
@@ -280,6 +280,40 @@ func restartCmd() *cobra.Command {
 	}
 }
 
+func watchCmd() *cobra.Command {
+	var timeout time.Duration
+	c := &cobra.Command{
+		Use:   "watch [port|pid]",
+		Short: "Notify when a listener's process exits",
+		Long: "Poll until the process behind a port (or a PID) exits, then report it —\n" +
+			"the notify-on-exit workflow. With --timeout, give up after that long.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error { return runWatch(args[0], timeout) },
+	}
+	c.Flags().DurationVarP(&timeout, "timeout", "t", 0, "give up after this long (e.g. 30s); 0 waits forever")
+	return c
+}
+
+func openCmd() *cobra.Command {
+	var timeout time.Duration
+	c := &cobra.Command{
+		Use:   "open PORT [path]",
+		Short: "Wait until a port is listening, then open it in the browser",
+		Long: "Block until something is listening on PORT, then open\n" +
+			"http://localhost:PORT/<path> — the open-when-ready workflow.",
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := ""
+			if len(args) == 2 {
+				path = args[1]
+			}
+			return tools.OpenWhenReady(args[0], path, timeout)
+		},
+	}
+	c.Flags().DurationVarP(&timeout, "timeout", "t", 0, "give up after this long (e.g. 30s); 0 waits forever")
+	return c
+}
+
 // --- shared helpers ---
 
 type row struct {
@@ -439,6 +473,16 @@ func runRestart(target string) error {
 		return fmt.Errorf("%d of %d listener(s) did not restart", failures, len(matched))
 	}
 	return nil
+}
+
+// runWatch resolves a port/pid to its owning process and blocks until it exits.
+func runWatch(target string, timeout time.Duration) error {
+	rows := gather()
+	matched := matchRows(rows, target)
+	if len(matched) == 0 {
+		return fmt.Errorf("nothing listening on %s", target)
+	}
+	return tools.WatchPID(matched[0].PID, timeout)
 }
 
 // previewMatched lists what a stop WOULD act on, without touching anything —
