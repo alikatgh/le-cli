@@ -671,7 +671,13 @@ func (m model) tableView() string {
 		// Cells are padded to DISPLAY width (padRight), not fmt's rune
 		// count — %-*s under-pads CJK identities (8 cols in 4 runes) and
 		// shifts every column after WHAT. Same trap truncate() was fixed for.
-		port := padRight(portCell(r.L.Ports), 8)
+		// Make the port a ⌘-clickable link to its localhost URL. osc8 is
+		// zero-width, so padRight still aligns the column to 8 display cells.
+		portText := portCell(r.L.Ports)
+		if url, ok := urlFor(r); ok {
+			portText = osc8(portText, url)
+		}
+		port := padRight(portText, 8)
 		pid := padRight(fmt.Sprintf("%d", r.L.PID), 7)
 		what := padRight(truncate(r.P.Identity, wWhat), wWhat)
 		dir := ""
@@ -744,6 +750,15 @@ func portCell(ports []string) string {
 	default:
 		return fmt.Sprintf("%s +%d", ports[0], len(ports)-1)
 	}
+}
+
+// osc8 wraps text in an OSC 8 terminal hyperlink so terminals that support it
+// (Ghostty, iTerm2, WezTerm, kitty…) let you ⌘-click the port to open url in a
+// browser. Terminals that don't understand OSC 8 ignore the escape and show the
+// text plainly. The escape carries ZERO display width, so column alignment is
+// unaffected — TestOSC8LinkHasZeroDisplayWidth guards that invariant.
+func osc8(text, url string) string {
+	return "\x1b]8;;" + url + "\x1b\\" + text + "\x1b]8;;\x1b\\"
 }
 
 func (m model) detailView() string {

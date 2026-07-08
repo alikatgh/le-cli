@@ -369,6 +369,20 @@ func TestCopyPickerURLCurlLsof(t *testing.T) {
 	}
 }
 
+func TestOSC8LinkHasZeroDisplayWidth(t *testing.T) {
+	// The clickable-port link MUST measure the same as its plain text, or the
+	// escape shifts every column after the port. If this fails, OSC 8 is not
+	// zero-width in this lipgloss/x-ansi version — back the hyperlink out.
+	plain := "3000"
+	linked := osc8(plain, "http://localhost:3000/")
+	if got, want := lipgloss.Width(linked), lipgloss.Width(plain); got != want {
+		t.Fatalf("osc8 link width = %d, want %d (same as plain) — OSC 8 not zero-width, breaks alignment", got, want)
+	}
+	if got := lipgloss.Width(padRight(linked, 8)); got != 8 {
+		t.Fatalf("padRight(link, 8) width = %d, want 8", got)
+	}
+}
+
 func TestMouse(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
