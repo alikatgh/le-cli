@@ -282,7 +282,7 @@ func TestOpenKeyOpensFirstPort(t *testing.T) {
 	}
 }
 
-func TestCopyKeyCopiesStopCommand(t *testing.T) {
+func TestCopyPickerStopCommand(t *testing.T) {
 	var copied string
 	orig := copyToClipboard
 	copyToClipboard = func(s string) error { copied = s; return nil }
@@ -291,10 +291,17 @@ func TestCopyKeyCopiesStopCommand(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
-	m, _ = m.Update(key("c")) // cursor 0 = Node service, PID 101, StopTerm
 
+	m, _ = m.Update(key("c")) // open the copy picker (cursor 0 = Node, PID 101, StopTerm)
+	if !m.(model).copyMenu {
+		t.Fatal("pressing c should open the copy picker")
+	}
+	m, _ = m.Update(key("s")) // pick: stop command
 	if copied != "kill -TERM 101" {
 		t.Errorf("copied %q, want kill -TERM 101", copied)
+	}
+	if m.(model).copyMenu {
+		t.Error("picker should close after a selection")
 	}
 
 	// An avoid row must refuse and copy nothing.
@@ -308,11 +315,57 @@ func TestCopyKeyCopiesStopCommand(t *testing.T) {
 	}
 	var mi tea.Model = mm
 	mi, _ = mi.Update(key("c"))
+	mi, _ = mi.Update(key("s"))
 	if copied != "" {
 		t.Errorf("avoid row copied %q, want nothing", copied)
 	}
 	if got := mi.(model); !got.flashErr {
 		t.Error("avoid row should flash an error")
+	}
+}
+
+func TestCopyPickerURLCurlLsof(t *testing.T) {
+	var copied string
+	orig := copyToClipboard
+	copyToClipboard = func(s string) error { copied = s; return nil }
+	defer func() { copyToClipboard = orig }()
+
+	base := func() tea.Model {
+		var m tea.Model = New(Options{})
+		m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+		m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+		return m
+	}
+
+	// cursor 0 = Node on port 3000. Each picker key yanks the matching value.
+	cases := []struct{ pick, want string }{
+		{"u", "http://localhost:3000/"},
+		{"r", "curl 'http://localhost:3000/'"},
+		{"l", "lsof -nP -iTCP:3000 -sTCP:LISTEN"},
+	}
+	for _, c := range cases {
+		copied = ""
+		m := base()
+		m, _ = m.Update(key("c"))
+		m, _ = m.Update(key(c.pick))
+		if copied != c.want {
+			t.Errorf("pick %q copied %q, want %q", c.pick, copied, c.want)
+		}
+		if m.(model).copyMenu {
+			t.Errorf("pick %q left the picker open", c.pick)
+		}
+	}
+
+	// esc cancels the picker without copying.
+	copied = ""
+	m := base()
+	m, _ = m.Update(key("c"))
+	m, _ = m.Update(key("esc"))
+	if copied != "" {
+		t.Errorf("esc copied %q, want nothing", copied)
+	}
+	if m.(model).copyMenu {
+		t.Error("esc should close the picker")
 	}
 }
 

@@ -70,6 +70,8 @@ type model struct {
 	filter    textinput.Model
 	confirm   bool
 	confirmed Row // the row pinned when the confirm dialog opened
+	copyMenu  bool
+	copyRow   Row // the row pinned when the copy picker opened
 	flash     string
 	flashErr  bool
 	help      bool
@@ -255,6 +257,45 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Copy picker captures keys next: pick which value of the pinned row to
+	// yank. Mirrors the app's Copy URL / Copy curl / Copy lsof / Copy stop.
+	if m.copyMenu {
+		r := m.copyRow
+		switch msg.String() {
+		case "u":
+			if url, ok := urlFor(r); ok {
+				m.copyResult(url)
+			} else {
+				m.flash, m.flashErr = "no port to copy a URL for "+r.P.Identity, true
+			}
+			m.copyMenu = false
+		case "r":
+			if url, ok := urlFor(r); ok {
+				m.copyResult("curl " + shellSingleQuote(url))
+			} else {
+				m.flash, m.flashErr = "no port to copy a curl for "+r.P.Identity, true
+			}
+			m.copyMenu = false
+		case "l":
+			if len(r.L.Ports) > 0 {
+				m.copyResult("lsof -nP -iTCP:" + r.L.Ports[0] + " -sTCP:LISTEN")
+			} else {
+				m.flash, m.flashErr = "no port to copy an lsof for "+r.P.Identity, true
+			}
+			m.copyMenu = false
+		case "s":
+			if cmd, can := stopCommand(r); can {
+				m.copyResult(cmd)
+			} else {
+				m.flash, m.flashErr = "no safe stop command for "+r.P.Identity+" — nothing copied", true
+			}
+			m.copyMenu = false
+		case "esc", "q":
+			m.copyMenu = false
+		}
+		return m, nil
+	}
+
 	// Filter input captures keys while active.
 	if m.filtering {
 		switch msg.String() {
@@ -329,17 +370,34 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "c":
 		if r, ok := m.selected(); ok {
-			cmd, can := stopCommand(r)
-			if !can {
-				m.flash, m.flashErr = "no safe stop command for "+r.P.Identity+" — nothing copied", true
-			} else if err := copyToClipboard(cmd); err != nil {
-				m.flash, m.flashErr = "copy failed: "+err.Error(), true
-			} else {
-				m.flash, m.flashErr = "copied: "+cmd, false
-			}
+			m.copyMenu, m.copyRow, m.flash = true, r, ""
 		}
 	}
 	return m, nil
+}
+
+// copyResult writes s to the clipboard (OSC 52) and reports the outcome in the
+// flash line.
+func (m *model) copyResult(s string) {
+	if err := copyToClipboard(s); err != nil {
+		m.flash, m.flashErr = "copy failed: "+err.Error(), true
+	} else {
+		m.flash, m.flashErr = "copied: "+s, false
+	}
+}
+
+// urlFor is the browser URL for a row's first port, or false when it has none.
+func urlFor(r Row) (string, bool) {
+	if len(r.L.Ports) == 0 {
+		return "", false
+	}
+	return "http://localhost:" + r.L.Ports[0] + "/", true
+}
+
+// shellSingleQuote wraps s so it survives as one argument in a pasted shell
+// command (so `curl <url>` is safe even if a URL ever contains a shell char).
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // onMouse handles wheel scrolling and click-to-select. The table's first data
@@ -722,6 +780,12 @@ func (m model) footerView() string {
 			fmt.Sprintf("⚠ Stop %s?  → %s   ", r.P.Identity, stopShort(r.P)))
 		return q + keySt.Render("y") + dimSt.Render(" yes  ") + keySt.Render("n") + dimSt.Render(" no")
 	}
+	if m.copyMenu {
+		label := lipgloss.NewStyle().Foreground(yellow).Render("copy " + m.copyRow.P.Identity + ":  ")
+		opt := func(k, desc string) string { return keySt.Render(k) + dimSt.Render(" "+desc+"  ") }
+		return label + opt("u", "url") + opt("r", "curl") + opt("l", "lsof") + opt("s", "stop") +
+			keySt.Render("esc") + dimSt.Render(" cancel")
+	}
 	if m.filtering {
 		return m.filter.View()
 	}
@@ -749,7 +813,7 @@ func (m model) helpView() string {
 		{"1-6", "sort by port / pid / what / risk / owner / dir — press again to reverse"},
 		{"x or s", "stop the selected listener (with confirm)"},
 		{"o", "open http://localhost:<port>/ in the browser"},
-		{"c", "copy the stop command (OSC 52 — works over SSH)"},
+		{"c", "copy… → u url · r curl · l lsof · s stop (OSC 52 — works over SSH)"},
 		{"r", "refresh now"},
 		{"t", "cycle theme (persist via config: theme = <name>)"},
 		{"?", "toggle this help"},
