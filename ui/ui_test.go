@@ -575,3 +575,33 @@ func TestSortHeaderShowsDirection(t *testing.T) {
 		t.Errorf("expected RISKv after pressing 4 twice, got:\n%s", v)
 	}
 }
+
+func TestCPUCellAndColor(t *testing.T) {
+	if cpuCell(0.2) != "·" {
+		t.Errorf("sub-1%% should render ·, got %q", cpuCell(0.2))
+	}
+	if cpuCell(818.8) != "819%" {
+		t.Errorf("cpuCell(818.8) = %q, want 819%%", cpuCell(818.8))
+	}
+	if cpuColor(250) != red {
+		t.Error(">= CPUHotPct must be red")
+	}
+	if cpuColor(60) != yellow {
+		t.Error(">= CPUWarmPct must be yellow")
+	}
+	if cpuColor(5) != subtle {
+		t.Error("idle must be subtle")
+	}
+}
+
+func TestFmtMem(t *testing.T) {
+	if got := fmtMem(0); got != "—" {
+		t.Errorf("fmtMem(0) = %q, want —", got)
+	}
+	if got := fmtMem(204800); got != "200 MB" {
+		t.Errorf("fmtMem(204800 KB) = %q, want 200 MB", got)
+	}
+	if got := fmtMem(2 * 1024 * 1024); got != "2.0 GB" {
+		t.Errorf("fmtMem(2GB) = %q, want 2.0 GB", got)
+	}
+}

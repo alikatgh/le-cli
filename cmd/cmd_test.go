@@ -479,3 +479,23 @@ func TestListCmdHasJSONFlagAndAlias(t *testing.T) {
 		t.Error(`list command missing "ls" alias`)
 	}
 }
+
+func TestCPUListCell(t *testing.T) {
+	cases := []struct {
+		cpu  float64
+		want string
+	}{
+		{818.8, "819% ●"}, // runaway → hot glyph (>= CPUHotPct 200)
+		{200.0, "200% ●"}, // exactly hot
+		{100.0, "100% ▲"}, // one core → warm glyph (>= CPUWarmPct 50)
+		{50.0, "50% ▲"},   // exactly warm
+		{12.0, "12%"},     // busy but not notable
+		{0.2, "·"},        // rounds to 0 → dot, not "0%"
+		{0.0, "·"},        // idle
+	}
+	for _, c := range cases {
+		if got := cpuListCell(c.cpu); got != c.want {
+			t.Errorf("cpuListCell(%v) = %q, want %q", c.cpu, got, c.want)
+		}
+	}
+}

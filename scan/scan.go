@@ -22,6 +22,15 @@ import (
 // downstream, the PID-recycle guard.
 var cLocaleEnv = append(os.Environ(), "LC_ALL=C")
 
+// CPU% thresholds for the "hot" resource signal, shared by the TUI, `le list`,
+// and (kept numerically in sync) the macOS app. ps %cpu is a sustained average
+// where 100% = one full core, so these are genuine "this has been eating the
+// machine" levels — an 818% emulator lands deep in Hot.
+const (
+	CPUWarmPct = 50.0  // amber — half a core
+	CPUHotPct  = 200.0 // red   — two cores sustained
+)
+
 // Listener is one process holding one or more localhost ports.
 type Listener struct {
 	PID         int      `json:"pid"`
@@ -30,6 +39,8 @@ type Listener struct {
 	User        string   `json:"user"`
 	StartTime   string   `json:"startTime"` // ps lstart — authoritative recycle key
 	Cwd         string   `json:"cwd"`
+	CPU         float64  `json:"cpu"`   // ps %cpu — sustained average, may exceed 100 on multicore
+	RSS         int      `json:"rss"`   // resident set size in KB (ps rss)
 	Addrs       []string `json:"addrs"` // 127.0.0.1:3000, *:5000, [::1]:8080
 	Ports       []string `json:"ports"`
 }
@@ -141,6 +152,8 @@ func Scan() ([]Listener, error) {
 			Cwd:       cwds[pid],
 			StartTime: psInfo[pid].start,
 			User:      psInfo[pid].user,
+			CPU:       psInfo[pid].cpu,
+			RSS:       psInfo[pid].rss,
 		}
 		l.CommandLine = psInfo[pid].command
 		if l.CommandLine == "" {
@@ -177,6 +190,8 @@ type psRow struct {
 	start   string
 	user    string
 	command string
+	cpu     float64
+	rss     int
 }
 
 // readPS pulls start time, user, and full command line for a set of PIDs.
@@ -188,20 +203,30 @@ type psRow struct {
 // field after it. Putting each variable field last in its own call makes it
 // unambiguously "everything remaining on the line," however many words long.
 func readPS(csv string) map[int]psRow {
-	// The two ps calls are independent subprocess invocations — run them
+	// The ps calls are independent subprocess invocations — run them
 	// concurrently. Each writes only to its own local `out` string during the
-	// concurrent phase; the two parse passes below run after wg.Wait(), so
-	// both write to the shared `rows` map only sequentially, never at once.
-	var out1, out2 string
+	// concurrent phase; the parse passes below run after wg.Wait(), so they
+	// write to the shared `rows` map only sequentially, never at once.
+	//
+	// out3 (%cpu, rss) is deliberately its OWN call rather than folded into
+	// out1: out1's lstart feeds kill.Stop's PID-recycle guard — the safety-
+	// critical path — and its parse depends on exact field offsets around the
+	// 5-token lstart. Keeping cpu/rss (two fixed single-token numerics) in a
+	// separate call leaves that parse byte-for-byte untouched. cpu/rss are
+	// decorative, so a PID this call misses just gets 0 — it is NOT part of
+	// dropPartialRows' all-or-nothing guarantee (unlike start time).
+	var out1, out2, out3 string
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	go func() { defer wg.Done(); out1, _ = runCmd("ps", "-ww", "-p", csv, "-o", "pid=,lstart=,user=") }()
 	go func() { defer wg.Done(); out2, _ = runCmd("ps", "-ww", "-p", csv, "-o", "pid=,command=") }()
+	go func() { defer wg.Done(); out3, _ = runCmd("ps", "-ww", "-p", csv, "-o", "pid=,%cpu=,rss=") }()
 	wg.Wait()
 
 	rows := map[int]psRow{}
 	seenUser := parsePSUserLines(out1, rows)
 	seenCommand := parsePSCommandLines(out2, rows)
+	parsePSResourceLines(out3, rows) // best-effort; not gated by dropPartialRows
 	dropPartialRows(rows, seenUser, seenCommand)
 	return rows
 }
@@ -270,6 +295,30 @@ func parsePSCommandLines(out string, rows map[int]psRow) map[int]bool {
 		seen[pid] = true
 	}
 	return seen
+}
+
+// parsePSResourceLines fills cpu (%) and rss (KB) from
+// `ps -o pid=,%cpu=,rss=`. Both are fixed single-token numerics, so a plain
+// field split is unambiguous — no lstart-style spacing hazard. Best-effort:
+// a malformed or missing value leaves the row's cpu/rss at zero rather than
+// dropping the row. Resource stats are decorative; unlike the start time
+// (the recycle guard's authoritative key) they are NOT part of
+// dropPartialRows' all-or-nothing guarantee, so this returns no seen-set.
+func parsePSResourceLines(out string, rows map[int]psRow) {
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		pid, err := strconv.Atoi(fields[0])
+		if err != nil {
+			continue
+		}
+		r := rows[pid]
+		r.cpu, _ = strconv.ParseFloat(fields[1], 64)
+		r.rss, _ = strconv.Atoi(fields[2])
+		rows[pid] = r
+	}
 }
 
 // readCwd maps PID -> working directory via lsof's cwd file descriptor.

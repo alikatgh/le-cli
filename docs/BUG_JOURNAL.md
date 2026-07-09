@@ -38,6 +38,10 @@ Generalized bug shapes. Grep here before reproducing anything.
 ---
 
 ## Chronological log
+### 2026-07-05 — adding ps columns near the recycle-guard parse (CPU/mem feature)
+- **Where:** `scan/scan.go` readPS.
+- **Lesson:** when adding non-safety-critical fields (%cpu, rss) to ps output, use a SEPARATE ps call, not a reorder of the `pid,lstart,user` call — lstart feeds the PID-recycle guard and its parse depends on exact field offsets around the 5-token date. A separate call for two fixed single-token numerics keeps that parse byte-for-byte untouched and lets the new fields degrade to 0 (decorative) instead of joining the row's all-or-nothing drop rule.
+
 
 Newest first. 5 lines max each. File:line, symptom, cause, fix, lesson.
 
