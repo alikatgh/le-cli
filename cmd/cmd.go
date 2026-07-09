@@ -398,12 +398,30 @@ func printTable(w io.Writer, rows []row) {
 		return
 	}
 	home, _ := os.UserHomeDir()
-	_, _ = fmt.Fprintf(w, "%-7s  %-7s  %-22s  %-26s  %-7s  %-8s  %s\n", "PORT", "PID", "WHAT", "DIR", "RISK", "OWNER", "STOP WITH")
+	_, _ = fmt.Fprintf(w, "%-7s  %-7s  %-8s  %-22s  %-26s  %-7s  %-8s  %s\n", "PORT", "PID", "CPU", "WHAT", "DIR", "RISK", "OWNER", "STOP WITH")
 	for _, r := range rows {
-		_, _ = fmt.Fprintf(w, "%-7s  %-7d  %-22s  %-26s  %-7s  %-8s  %s\n",
-			portCell(r.Ports), r.PID, truncate(r.Profile.Identity, 22),
+		_, _ = fmt.Fprintf(w, "%-7s  %-7d  %-8s  %-22s  %-26s  %-7s  %-8s  %s\n",
+			portCell(r.Ports), r.PID, cpuListCell(r.CPU), truncate(r.Profile.Identity, 22),
 			dirCell(r.Cwd, home, 26), string(r.Profile.Risk),
 			string(r.Profile.Source), truncate(r.Profile.StopLabel, 40))
+	}
+}
+
+// cpuListCell renders CPU% for the no-colour `le list` table. Since there's no
+// colour to carry the "hot" signal (piped / NO_COLOR-friendly), append a glyph:
+// ● for a runaway (>= CPUHotPct), ▲ for notable (>= CPUWarmPct). Both are
+// single display cells, so the fixed-width column stays aligned, and they're
+// greppable — `le list | grep ●` finds what's cooking the machine.
+func cpuListCell(cpu float64) string {
+	switch {
+	case cpu >= scan.CPUHotPct:
+		return fmt.Sprintf("%.0f%% ●", cpu)
+	case cpu >= scan.CPUWarmPct:
+		return fmt.Sprintf("%.0f%% ▲", cpu)
+	case cpu >= 0.5:
+		return fmt.Sprintf("%.0f%%", cpu)
+	default:
+		return "·"
 	}
 }
 

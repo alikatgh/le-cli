@@ -5,6 +5,16 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+- CPU% and memory for every listener. The table and `le list` gain a CPU
+  column that escalates dim → amber → **red/bold** as a process heats up
+  (thresholds: 50% = half a core, 200% = a runaway); `le list` also appends
+  a `▲`/`●` glyph so the signal survives pipes and `NO_COLOR`. Sort by CPU
+  with `7`. The detail pane shows exact CPU% + resident memory, and `--json`
+  carries `cpu`/`rss`. Sourced from a separate `ps -o pid=,%cpu=,rss=` call
+  so the PID-recycle guard's start-time parse stays byte-for-byte untouched;
+  a missed reading degrades to 0 rather than dropping the row.
+
 ## [0.1.14] - 2026-07-04
 
 ### Added

@@ -138,3 +138,35 @@ func TestPortOfHandlesIPv6AndWildcards(t *testing.T) {
 		}
 	}
 }
+
+func TestParsePSResourceLines(t *testing.T) {
+	rows := map[int]psRow{}
+	// `ps -o pid=,%cpu=,rss=` — pid, %cpu (may exceed 100 on multicore), rss KB.
+	parsePSResourceLines("1234 818.8 204800\n5678 0.0 1936", rows)
+	if rows[1234].cpu != 818.8 {
+		t.Errorf("cpu = %v, want 818.8 (multicore, never clamped)", rows[1234].cpu)
+	}
+	if rows[1234].rss != 204800 {
+		t.Errorf("rss = %d, want 204800", rows[1234].rss)
+	}
+	if rows[5678].cpu != 0.0 || rows[5678].rss != 1936 {
+		t.Errorf("second row = %v/%d, want 0.0/1936", rows[5678].cpu, rows[5678].rss)
+	}
+}
+
+func TestParsePSResourceLinesBestEffort(t *testing.T) {
+	// A short or malformed line must be skipped / degrade to zero, never panic
+	// and never drop the row — resource stats are decorative, not the recycle
+	// guard's authoritative start time.
+	rows := map[int]psRow{7: {start: "Mon Jun 23 14:00:00 2026", command: "node"}}
+	parsePSResourceLines("7 notanum 4096\ngarbage\n42 1.0", rows)
+	if rows[7].cpu != 0 { // ParseFloat("notanum") fails → left at zero
+		t.Errorf("malformed cpu should stay 0, got %v", rows[7].cpu)
+	}
+	if rows[7].rss != 4096 {
+		t.Errorf("rss should still parse, got %d", rows[7].rss)
+	}
+	if rows[7].start != "Mon Jun 23 14:00:00 2026" || rows[7].command != "node" {
+		t.Error("resource parse must not disturb start/command (recycle-guard inputs)")
+	}
+}

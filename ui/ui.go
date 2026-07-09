@@ -32,6 +32,15 @@ const (
 	sortRisk
 	sortOwner
 	sortDir
+	sortCPU // appended last so keys 1-6 keep their meaning; 7 sorts by CPU
+)
+
+// CPU% "hot" thresholds live in the scan package (single source, shared with
+// le list). Hot rows render bold as well as red so the mono theme — which has
+// no red hue — still flags them.
+const (
+	cpuWarmPct = scan.CPUWarmPct
+	cpuHotPct  = scan.CPUHotPct
 )
 
 const defaultInterval = 3 * time.Second
@@ -341,7 +350,7 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "t":
 		name := cycleTheme()
 		m.flash, m.flashErr = "theme: "+name+"   (persist: theme = "+name+" in "+configPathHint+")", false
-	case "1", "2", "3", "4", "5", "6":
+	case "1", "2", "3", "4", "5", "6", "7":
 		col := int(msg.String()[0] - '1')
 		if m.sortCol == col {
 			m.sortAsc = !m.sortAsc
@@ -508,9 +517,44 @@ func (m model) less(a, b Row) bool {
 		return a.P.Source < b.P.Source
 	case sortDir:
 		return strings.ToLower(a.L.Cwd) < strings.ToLower(b.L.Cwd)
+	case sortCPU:
+		return a.L.CPU < b.L.CPU // 7 → ascending (idle first); press again for hottest-first
 	default: // sortPort
 		return firstPortNum(a.L.Ports) < firstPortNum(b.L.Ports)
 	}
+}
+
+// cpuColor and cpuCell drive the TUI's CPU column. cpuCell renders the
+// percent compactly ("818%"); cpuColor escalates dim → amber → red so a
+// runaway is impossible to miss.
+func cpuColor(pct float64) lipgloss.Color {
+	switch {
+	case pct >= cpuHotPct:
+		return red
+	case pct >= cpuWarmPct:
+		return yellow
+	default:
+		return subtle
+	}
+}
+
+func cpuCell(pct float64) string {
+	if pct < 0.5 {
+		return "·"
+	}
+	return fmt.Sprintf("%.0f%%", pct)
+}
+
+// fmtMem renders a resident-set size in KB as a human MB/GB string.
+func fmtMem(rssKB int) string {
+	if rssKB <= 0 {
+		return "—"
+	}
+	mb := float64(rssKB) / 1024.0
+	if mb >= 1024 {
+		return fmt.Sprintf("%.1f GB", mb/1024.0)
+	}
+	return fmt.Sprintf("%.0f MB", mb)
 }
 
 func riskRank(r intel.Risk) int {
@@ -641,21 +685,24 @@ func (m model) tableView() string {
 	// without starving WHAT/STOP — folders are the product's core "which
 	// project is this?" signal, but never at the cost of an unreadable table.
 	const dirW = 24
-	showDir := m.w >= 118
+	const cpuW = 5        // fits "2400%" and the "CPU^" sort header
+	showDir := m.w >= 124 // +6 vs the pre-CPU 118 to keep DIR from starving
 	dirBudget := 0
 	if showDir {
 		dirBudget = dirW + 1
 	}
-	wWhat := clampInt(m.w-gutterW-8-1-7-1-7-1-9-1-3-dirBudget, 14, 40)
-	stopW := m.w - gutterW - wWhat - 36 - dirBudget
+	wWhat := clampInt(m.w-gutterW-8-1-7-1-cpuW-1-7-1-9-1-3-dirBudget, 14, 40)
+	stopW := m.w - gutterW - wWhat - 36 - (cpuW + 1) - dirBudget
 	var header string
 	if showDir {
-		header = fmt.Sprintf("%-8s %-7s %-*s %-*s %-7s %-9s %s",
-			m.colLabel("PORT", sortPort), m.colLabel("PID", sortPID), wWhat, m.colLabel("WHAT", sortWhat),
+		header = fmt.Sprintf("%-8s %-7s %-*s %-*s %-*s %-7s %-9s %s",
+			m.colLabel("PORT", sortPort), m.colLabel("PID", sortPID), cpuW, m.colLabel("CPU", sortCPU),
+			wWhat, m.colLabel("WHAT", sortWhat),
 			dirW, m.colLabel("DIR", sortDir), m.colLabel("RISK", sortRisk), m.colLabel("OWNER", sortOwner), "STOP")
 	} else {
-		header = fmt.Sprintf("%-8s %-7s %-*s %-7s %-9s %s",
-			m.colLabel("PORT", sortPort), m.colLabel("PID", sortPID), wWhat, m.colLabel("WHAT", sortWhat),
+		header = fmt.Sprintf("%-8s %-7s %-*s %-*s %-7s %-9s %s",
+			m.colLabel("PORT", sortPort), m.colLabel("PID", sortPID), cpuW, m.colLabel("CPU", sortCPU),
+			wWhat, m.colLabel("WHAT", sortWhat),
 			m.colLabel("RISK", sortRisk), m.colLabel("OWNER", sortOwner), "STOP")
 	}
 	var b strings.Builder
@@ -679,6 +726,7 @@ func (m model) tableView() string {
 		}
 		port := padRight(portText, 8)
 		pid := padRight(fmt.Sprintf("%d", r.L.PID), 7)
+		cpu := padRight(cpuCell(r.L.CPU), cpuW)
 		what := padRight(truncate(r.P.Identity, wWhat), wWhat)
 		dir := ""
 		if showDir {
@@ -690,18 +738,24 @@ func (m model) tableView() string {
 
 		gutter := lipgloss.NewStyle().Foreground(riskColor(r.P.Risk)).Render("▎") + " "
 		if i == m.cursor {
-			line := port + " " + pid + " " + what + " " + dir + risk + " " + owner + " " + stop
+			line := port + " " + pid + " " + cpu + " " + what + " " + dir + risk + " " + owner + " " + stop
 			b.WriteString(gutter + selSt.Width(m.w-gutterW).Render(line))
 		} else {
 			// Hierarchy: identity and the stop command read at full weight;
-			// pid/dir/owner recede; risk carries its color (bold above low).
+			// pid/dir/owner recede; risk and CPU carry their color (bold when
+			// severe, so the mono theme — which has no red hue — still flags them).
 			riskSt := lipgloss.NewStyle().Foreground(riskColor(r.P.Risk))
 			if r.P.Risk != intel.Low && r.P.Risk != intel.Med {
 				riskSt = riskSt.Bold(true)
 			}
+			cpuSt := lipgloss.NewStyle().Foreground(cpuColor(r.L.CPU))
+			if r.L.CPU >= cpuHotPct {
+				cpuSt = cpuSt.Bold(true)
+			}
 			b.WriteString(gutter +
 				port + " " +
 				dimSt.Render(pid) + " " +
+				cpuSt.Render(cpu) + " " +
 				what + " " +
 				dimSt.Render(dir) +
 				riskSt.Render(risk) + " " +
@@ -769,9 +823,14 @@ func (m model) detailView() string {
 	risk := lipgloss.NewStyle().Foreground(riskColor(r.P.Risk)).Bold(true).Render(strings.ToUpper(string(r.P.Risk)) + " risk")
 	title := lipgloss.NewStyle().Bold(true).Foreground(fg).Render(r.P.Identity) +
 		dimSt.Render(fmt.Sprintf("  (%d%% sure)  ", r.P.Confidence)) + risk
+	cpuStr := lipgloss.NewStyle().Foreground(cpuColor(r.L.CPU)).Render(fmt.Sprintf("%.1f%%", r.L.CPU))
+	if r.L.CPU >= cpuHotPct {
+		cpuStr = lipgloss.NewStyle().Foreground(cpuColor(r.L.CPU)).Bold(true).Render(fmt.Sprintf("%.1f%%", r.L.CPU))
+	}
 	lines := []string{
 		title,
 		dimSt.Render("ports  ") + strings.Join(r.L.Ports, ", ") + dimSt.Render("   pid ") + fmt.Sprintf("%d", r.L.PID) + dimSt.Render("   owner ") + string(r.P.Source),
+		dimSt.Render("usage  ") + cpuStr + dimSt.Render(" cpu   ") + fmtMem(r.L.RSS) + dimSt.Render(" mem"),
 		dimSt.Render("cmd    ") + truncate(r.L.CommandLine, m.w-12),
 		dimSt.Render("dir    ") + truncate(orDash(r.L.Cwd), m.w-12),
 		dimSt.Render("stop   ") + lipgloss.NewStyle().Foreground(brand).Render(stopShort(r.P)) + dimSt.Render("   (c copies)"),
@@ -825,7 +884,7 @@ func (m model) helpView() string {
 		{"k / ↑", "move up"},
 		{"g / G", "jump to top / bottom"},
 		{"/", "filter (esc clears)"},
-		{"1-6", "sort by port / pid / what / risk / owner / dir — press again to reverse"},
+		{"1-7", "sort by port / pid / what / risk / owner / dir / cpu — press again to reverse"},
 		{"x or s", "stop the selected listener (with confirm)"},
 		{"o", "open http://localhost:<port>/ in the browser"},
 		{"c", "copy… → u url · r curl · l lsof · s stop (OSC 52 — works over SSH)"},
