@@ -5,6 +5,8 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-07-10
+
 ### Added
 - Eight retro themes ported from the Localhost Explorer mac app, so one
   identity travels between the desktop and the terminal: `msdos` (CGA on
@@ -254,7 +256,10 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.12...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.15...HEAD
+[0.1.15]: https://github.com/alikatgh/le-cli/compare/v0.1.14...v0.1.15
+[0.1.14]: https://github.com/alikatgh/le-cli/compare/v0.1.13...v0.1.14
+[0.1.13]: https://github.com/alikatgh/le-cli/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/alikatgh/le-cli/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/alikatgh/le-cli/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/alikatgh/le-cli/compare/v0.1.9...v0.1.10
