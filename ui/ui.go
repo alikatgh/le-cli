@@ -299,6 +299,10 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.flash, m.flashErr = "no safe stop command for "+r.P.Identity+" — nothing copied", true
 			}
 			m.copyMenu = false
+		case "p":
+			// Parity with the app's "Copy ps": inspect the process behind the row.
+			m.copyResult(fmt.Sprintf("ps -p %d -o pid,pcpu,pmem,lstart,command", r.L.PID))
+			m.copyMenu = false
 		case "esc", "q":
 			m.copyMenu = false
 		}
@@ -857,7 +861,7 @@ func (m model) footerView() string {
 	if m.copyMenu {
 		label := lipgloss.NewStyle().Foreground(yellow).Render("copy " + m.copyRow.P.Identity + ":  ")
 		opt := func(k, desc string) string { return keySt.Render(k) + dimSt.Render(" "+desc+"  ") }
-		return label + opt("u", "url") + opt("r", "curl") + opt("l", "lsof") + opt("s", "stop") +
+		return label + opt("u", "url") + opt("r", "curl") + opt("l", "lsof") + opt("s", "stop") + opt("p", "ps") +
 			keySt.Render("esc") + dimSt.Render(" cancel")
 	}
 	if m.filtering {
@@ -887,7 +891,7 @@ func (m model) helpView() string {
 		{"1-7", "sort by port / pid / what / risk / owner / dir / cpu — press again to reverse"},
 		{"x or s", "stop the selected listener (with confirm)"},
 		{"o", "open http://localhost:<port>/ in the browser"},
-		{"c", "copy… → u url · r curl · l lsof · s stop (OSC 52 — works over SSH)"},
+		{"c", "copy… → u url · r curl · l lsof · s stop · p ps (OSC 52 — works over SSH)"},
 		{"r", "refresh now"},
 		{"t", "cycle theme (persist via config: theme = <name>)"},
 		{"?", "toggle this help"},
