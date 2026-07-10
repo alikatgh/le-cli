@@ -6,6 +6,14 @@ All notable changes to `le` are documented here. Format loosely follows
 ## [Unreleased]
 
 ### Added
+- Eight retro themes ported from the Localhost Explorer mac app, so one
+  identity travels between the desktop and the terminal: `msdos` (CGA on
+  Norton Commander blue — the cursor bar is the authentic cyan), `system7`
+  (one-bit Macintosh), `gameboy` (four shades of DMG olive), `phosphor` and
+  `amber` (CRT glow), `paper` (e-ink), `blueprint` (cyanotype), and
+  `vaporwave`. `system7`, `gameboy`, and `paper` are dark-on-light — pair
+  them with a light-background terminal. The canvas colour and the app's
+  bundled raster fonts don't port: your terminal owns those.
 - CPU% and memory for every listener. The table and `le list` gain a CPU
   column that escalates dim → amber → **red/bold** as a process heats up
   (thresholds: 50% = half a core, 200% = a runaway); `le list` also appends

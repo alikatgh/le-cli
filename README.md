@@ -138,12 +138,20 @@ Optional `~/.config/le/config` (or `$XDG_CONFIG_HOME/le/config`):
 ```
 interval = 2      # TUI refresh seconds (default 3)
 filter   = node   # initial TUI filter (default none)
-theme    = nord   # default / light / nord / dracula / solarized / mono
+theme    = nord   # default / light / nord / dracula / solarized / mono /
+                  # msdos / system7 / gameboy / phosphor / amber / paper /
+                  # blueprint / vaporwave
 ```
 
 Themes restyle the whole TUI — `light` for light-background terminals,
 `mono` for colorblind-friendly no-color output (bold still marks high
-risk). `t` cycles them live; the config line makes it stick. The current
+risk). The retro block ports the mac app's native themes, so the same
+identity travels between surfaces: `msdos` is CGA-on-Norton-Commander,
+`system7` one-bit Macintosh, `gameboy` four shades of DMG olive,
+`phosphor`/`amber` CRT glow, `paper` e-ink, `blueprint` cyanotype,
+`vaporwave` Miami neon. (`system7`, `gameboy`, and `paper` are
+dark-on-light — pair them with a light terminal.) `t` cycles them live;
+the config line makes it stick. The current
 theme, refresh cadence, and config path live in the `?` overlay's
 settings section.
 

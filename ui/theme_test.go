@@ -56,3 +56,18 @@ func TestCycleThemeVisitsAllAndWraps(t *testing.T) {
 		t.Errorf("cycle after full lap = %q, want wrap to %q", got, themes[0].name)
 	}
 }
+
+// The retro themes are ports of the mac app's NativeTheme set — app/CLI
+// parity is a promise ("the same table, over SSH"), so a rename or removal
+// on either side must fail loudly here.
+func TestAppPortedThemesPresent(t *testing.T) {
+	for _, name := range []string{
+		"msdos", "system7", "gameboy", "phosphor",
+		"amber", "paper", "blueprint", "vaporwave",
+	} {
+		if !ApplyTheme(name) {
+			t.Errorf("app-ported theme %q missing", name)
+		}
+	}
+	applyThemeIdx(0)
+}

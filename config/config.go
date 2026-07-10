@@ -4,7 +4,7 @@
 //
 //	interval = 2     # TUI refresh seconds (default 3)
 //	filter   = node  # initial TUI filter (default none)
-//	theme    = nord  # TUI theme (default / light / nord / dracula / solarized / mono)
+//	theme    = nord  # TUI theme — `le --help` or the ? overlay lists all fourteen
 package config
 
 import (
