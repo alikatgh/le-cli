@@ -42,9 +42,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      # goreleaser v2.16.0's go.mod demands go >= 1.26.3, and setup-go@v6
+      # exports GOTOOLCHAIN=local, which forbids the automatic toolchain
+      # download that used to paper over the gap — so the release job needs
+      # the newer Go explicitly. The test matrix stays on 1.24 to match
+      # go.mod, proving the module still builds at its declared floor.
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.26'
 
       # Pinned goreleaser version so releases are reproducible run-over-run;
       # bump deliberately. (`brews` is deprecated upstream — see the note in
