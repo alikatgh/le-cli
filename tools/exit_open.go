@@ -7,6 +7,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/alikatgh/le-cli/scan"
 )
 
 // WatchPID blocks until process pid exits, polling kill(pid,0) once a second —
@@ -45,12 +47,14 @@ func WatchPID(pid int, timeout time.Duration) error {
 }
 
 // OpenWhenReady blocks until something is listening on port, then opens
-// http://localhost:port/<path> in the browser — the app's Open-when-ready tool.
+// localhost:port/<path> in the browser (http or https auto-detected via a TLS
+// probe, so vite --https / caddy links open correctly) — the app's
+// Open-when-ready tool.
 func OpenWhenReady(port, path string, timeout time.Duration) error {
 	if err := WaitListening(port, timeout); err != nil {
 		return err
 	}
-	url := "http://localhost:" + port + "/" + strings.TrimPrefix(path, "/")
+	url := scan.Scheme(port) + "://localhost:" + port + "/" + strings.TrimPrefix(path, "/")
 	// #nosec G204 -- /usr/bin/open is a fixed path and url is passed as a
 	// discrete exec argument (no shell), so there's no command injection.
 	if err := exec.Command("/usr/bin/open", url).Run(); err != nil {
