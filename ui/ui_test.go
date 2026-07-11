@@ -264,6 +264,8 @@ func TestStopCommand(t *testing.T) {
 }
 
 func TestOpenKeyOpensFirstPort(t *testing.T) {
+	restore := scan.SetTLSProbeForTesting(func(string) bool { return false })
+	defer restore()
 	var opened string
 	orig := openURL
 	openURL = func(u string) error { opened = u; return nil }
@@ -279,6 +281,25 @@ func TestOpenKeyOpensFirstPort(t *testing.T) {
 	}
 	if mm := m.(model); mm.flashErr || !strings.Contains(mm.flash, "opened") {
 		t.Errorf("flash = %q (err=%v), want success flash", mm.flash, mm.flashErr)
+	}
+}
+
+func TestOpenKeyDetectsHTTPS(t *testing.T) {
+	// A TLS-speaking dev server (vite --https, caddy) must open as https://.
+	restore := scan.SetTLSProbeForTesting(func(string) bool { return true })
+	defer restore()
+	var opened string
+	orig := openURL
+	openURL = func(u string) error { opened = u; return nil }
+	defer func() { openURL = orig }()
+
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	_, _ = m.Update(key("o"))
+
+	if opened != "https://localhost:3000/" {
+		t.Errorf("opened %q, want https://localhost:3000/", opened)
 	}
 }
 
@@ -325,6 +346,8 @@ func TestCopyPickerStopCommand(t *testing.T) {
 }
 
 func TestCopyPickerURLCurlLsof(t *testing.T) {
+	restore := scan.SetTLSProbeForTesting(func(string) bool { return false })
+	defer restore()
 	var copied string
 	orig := copyToClipboard
 	copyToClipboard = func(s string) error { copied = s; return nil }

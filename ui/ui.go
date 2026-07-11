@@ -272,14 +272,16 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		r := m.copyRow
 		switch msg.String() {
 		case "u":
-			if url, ok := urlFor(r); ok {
+			// Blocking scheme probe: a copied URL must be correct NOW, not
+			// after the next repaint like the rendered links.
+			if url, ok := blockingURLFor(r); ok {
 				m.copyResult(url)
 			} else {
 				m.flash, m.flashErr = "no port to copy a URL for "+r.P.Identity, true
 			}
 			m.copyMenu = false
 		case "r":
-			if url, ok := urlFor(r); ok {
+			if url, ok := blockingURLFor(r); ok {
 				m.copyResult("curl " + shellSingleQuote(url))
 			} else {
 				m.flash, m.flashErr = "no port to copy a curl for "+r.P.Identity, true
@@ -373,12 +375,14 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "o":
 		if r, ok := m.selected(); ok {
-			if len(r.L.Ports) == 0 {
+			// Blocking probe is fine on a keypress (≤350ms, then cached):
+			// vite --https / caddy need https:// or the page won't load.
+			if url, ok := blockingURLFor(r); !ok {
 				m.flash, m.flashErr = "no port to open for "+r.P.Identity, true
-			} else if err := openURL("http://localhost:" + r.L.Ports[0] + "/"); err != nil {
+			} else if err := openURL(url); err != nil {
 				m.flash, m.flashErr = "couldn't open browser: "+err.Error(), true
 			} else {
-				m.flash, m.flashErr = "opened http://localhost:"+r.L.Ports[0]+"/", false
+				m.flash, m.flashErr = "opened "+url, false
 			}
 		}
 	case "c":
@@ -400,11 +404,23 @@ func (m *model) copyResult(s string) {
 }
 
 // urlFor is the browser URL for a row's first port, or false when it has none.
+// Called from the render path (OSC 8 links) every frame, so it uses the
+// non-blocking cached scheme — the first frame may say http for an https dev
+// server, and the next repaint corrects it once the background probe lands.
 func urlFor(r Row) (string, bool) {
 	if len(r.L.Ports) == 0 {
 		return "", false
 	}
-	return "http://localhost:" + r.L.Ports[0] + "/", true
+	return scan.CachedScheme(r.L.Ports[0]) + "://localhost:" + r.L.Ports[0] + "/", true
+}
+
+// blockingURLFor probes the scheme synchronously (≤350ms, then cached) — for
+// actions where the URL leaves the app (copy, open) and must be right now.
+func blockingURLFor(r Row) (string, bool) {
+	if len(r.L.Ports) == 0 {
+		return "", false
+	}
+	return scan.Scheme(r.L.Ports[0]) + "://localhost:" + r.L.Ports[0] + "/", true
 }
 
 // shellSingleQuote wraps s so it survives as one argument in a pasted shell
@@ -890,7 +906,7 @@ func (m model) helpView() string {
 		{"/", "filter (esc clears)"},
 		{"1-7", "sort by port / pid / what / risk / owner / dir / cpu — press again to reverse"},
 		{"x or s", "stop the selected listener (with confirm)"},
-		{"o", "open http://localhost:<port>/ in the browser"},
+		{"o", "open localhost:<port> in the browser (http/https auto-detected)"},
 		{"c", "copy… → u url · r curl · l lsof · s stop · p ps (OSC 52 — works over SSH)"},
 		{"r", "refresh now"},
 		{"t", "cycle theme (persist via config: theme = <name>)"},
