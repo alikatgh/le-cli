@@ -5,6 +5,35 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-07-11
+
+### Added
+- `le forward` — `kubectl port-forward` with a supervisor: when the forward
+  drops (pod restart, rollout, idle timeout) it reconnects with backoff and
+  logs a timestamped line for every reconnect. Ctrl-C stops the supervisor
+  and the forward both; no orphan `kubectl` left holding the port. The
+  underlying command is printed, never hidden.
+- Tunnels say what they are. `kubectl port-forward` and `cloudflared` rows
+  stop hiding behind their binary name — the WHAT column names the service,
+  the local→remote ports, and the kube context (`svc/payments 8080→80 (prod)`).
+  Unparseable command lines fall back to the plain process view rather than
+  guessing: a tunnel label is a safety feature only while it's never wrong.
+- Pinned ports. Press `f` in the table to pin a listener's port to the top —
+  keyed by port, not PID, so the pin survives every restart of whatever
+  serves it. Marked with `*`, persisted one-per-line in
+  `~/.config/le/favorites`. Pins float above every sort; an active `/` filter
+  still orders by relevance.
+- HTTPS-aware links. Every URL `le` emits — the `o` key, copy-URL, `le open`,
+  `le qr` — probes whether the listener speaks TLS first (a handshake attempt,
+  nothing transmitted or trusted) and writes `https://` when it does. IPv6
+  hosts are bracketed correctly.
+
+### Release note
+- Published from a maintainer machine while GitHub Actions is unavailable for
+  this account; this release has no CI build-provenance attestation.
+  Checksums are published as always; attestation resumes with the next
+  CI-built release.
+
 ## [0.1.15] - 2026-07-10
 
 ### Added
