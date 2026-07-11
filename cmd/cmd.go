@@ -78,10 +78,31 @@ func newRoot(version string) *cobra.Command {
 	root.AddCommand(listCmd(), stopCmd(), holdCmd(), waitCmd(), readyCmd(), versionCmd(version),
 		flushDNSCmd(), restartDockCmd(), restartFinderCmd(), sleepDisplayCmd(), keepAwakeCmd(),
 		restartCmd(), watchCmd(), openCmd(), checkCmd(), watchAllCmd())
-	// Separate call (not appended above) so this line merges cleanly alongside
-	// other in-flight command additions.
+	// Separate calls (not appended above) so these lines merge cleanly
+	// alongside other in-flight command additions.
 	root.AddCommand(qrCmd())
+	root.AddCommand(forwardCmd())
 	return root
+}
+
+func forwardCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "forward TARGET [PORT:PORT ...] [kubectl flags]",
+		Short: "kubectl port-forward with auto-reconnect",
+		Long: "Supervise a `kubectl port-forward` session: raw kubectl dies silently\n" +
+			"when the cluster connection drops — this restarts it with backoff until\n" +
+			"you press Ctrl-C, timestamping every connect and drop.\n\n" +
+			"Everything after `forward` passes to kubectl verbatim:\n" +
+			"  le forward svc/frontend 8080:80 -n prod --context minikube",
+		// Args pass through untouched — kubectl owns -n/--context/etc.
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 1 && (args[0] == "-h" || args[0] == "--help") {
+				return cmd.Help()
+			}
+			return tools.Forward(args)
+		},
+	}
 }
 
 func listCmd() *cobra.Command {
