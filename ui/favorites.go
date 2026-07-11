@@ -46,7 +46,7 @@ func saveFavorites(favs map[string]bool) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
 	ports := make([]string, 0, len(favs))
