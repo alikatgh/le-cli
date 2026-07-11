@@ -29,6 +29,7 @@ const (
 	Editor   Kind = "editor"
 	System   Kind = "macos"
 	App      Kind = "app"
+	Tunnel   Kind = "tunnel"
 	Other    Kind = "other"
 )
 
@@ -351,6 +352,28 @@ func Make(l scan.Listener, env Env) Profile {
 		p.Restart = "docker start " + container.name
 		p.Explain = "Published by a Docker-compatible container."
 		p.Warning = "Stopping the container is safer than killing the Docker helper process."
+
+	case wordMatch(commandText, "kubectl") && strings.Contains(commandText, "port-forward"):
+		identity, target := kubectlForwardIdentity(l.CommandLine)
+		p.Identity, p.Kind, p.Source, p.Confidence, p.Risk = identity, Tunnel, SrcTerminal, 95, Med
+		p.Explain = "A kubectl port-forward session — a local tunnel into your Kubernetes cluster."
+		p.Note = "Killing it severs the tunnel; anything using this local port loses its cluster connection."
+		p.Warning = "Stopping drops the forwarded connection to " + pickStr(target != "", target, "the cluster") + "."
+		p.Restart = "Re-run the kubectl port-forward command from your terminal."
+
+	case wordMatch(commandText, "cloudflared"):
+		p.Identity, p.Kind, p.Confidence, p.Risk = cloudflaredIdentity(l.CommandLine), Tunnel, 93, Med
+		p.Source = SrcTerminal
+		p.Explain = "Cloudflare Tunnel connector — exposes a local service through Cloudflare's network."
+		p.Note = "Killing it takes the public tunnel URL offline."
+		p.Warning = "Anyone using the tunnel's public URL loses access when this stops."
+		if formula == "cloudflared" && managedBrew {
+			p.Source = SrcHomebrew
+			p.StopKind, p.StopArg, p.StopLabel = StopBrew, formula, "brew services stop cloudflared"
+			p.Restart = "brew services start cloudflared"
+		} else {
+			p.Restart = "Re-run the cloudflared command (or brew services start cloudflared)."
+		}
 
 	case strings.Contains(commandText, "redis-server") || formula == "redis":
 		database(&p, "Redis", pick(formula == "redis", 96, 90), "In-memory database/cache used by local apps, queues, and sessions.", l, formula, managedBrew)
