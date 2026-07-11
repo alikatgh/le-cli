@@ -89,6 +89,7 @@ type model struct {
 	interval  time.Duration
 	sortCol   int
 	sortAsc   bool
+	favs      map[string]bool // pinned ports — sort to the top, render a *
 }
 
 // New builds the initial model from launch options.
@@ -105,7 +106,7 @@ func New(opts Options) model {
 	if opts.Theme != "" {
 		ApplyTheme(opts.Theme) // unknown names warned by the caller pre-alt-screen
 	}
-	m := model{filter: ti, loading: true, interval: interval, sortCol: sortPort, sortAsc: true}
+	m := model{filter: ti, loading: true, interval: interval, sortCol: sortPort, sortAsc: true, favs: loadFavorites()}
 	m.applyFilter()
 	return m
 }
@@ -389,6 +390,40 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if r, ok := m.selected(); ok {
 			m.copyMenu, m.copyRow, m.flash = true, r, ""
 		}
+	case "f":
+		if r, ok := m.selected(); ok {
+			if len(r.L.Ports) == 0 {
+				m.flash, m.flashErr = "no port to pin for "+r.P.Identity, true
+				break
+			}
+			port := r.L.Ports[0]
+			if m.favs == nil {
+				m.favs = map[string]bool{}
+			}
+			pinned := !m.favs[port]
+			if pinned {
+				m.favs[port] = true
+			} else {
+				delete(m.favs, port)
+			}
+			if err := saveFavorites(m.favs); err != nil {
+				m.flash, m.flashErr = "couldn't save favorites: "+err.Error(), true
+			} else if pinned {
+				m.flash, m.flashErr = "pinned :"+port+" to the top (f again to unpin)", false
+			} else {
+				m.flash, m.flashErr = "unpinned :"+port, false
+			}
+			// Re-partition and keep the cursor on the row that was toggled —
+			// it just moved.
+			m.sortView()
+			for i, row := range m.view {
+				if row.L.PID == r.L.PID {
+					m.cursor = i
+					break
+				}
+			}
+			m.clamp()
+		}
 	}
 	return m, nil
 }
@@ -523,6 +558,23 @@ func (m *model) sortView() {
 		}
 		return m.less(m.view[j], m.view[i])
 	})
+	// Pinned ports float above everything regardless of the sort column —
+	// that's the point of pinning. Stable partition keeps each group in the
+	// order the sort just established.
+	if len(m.favs) > 0 {
+		pinned := make([]Row, 0, len(m.view))
+		rest := make([]Row, 0, len(m.view))
+		for _, r := range m.view {
+			if m.isFavorite(r) {
+				pinned = append(pinned, r)
+			} else {
+				rest = append(rest, r)
+			}
+		}
+		if len(pinned) > 0 {
+			m.view = append(pinned, rest...)
+		}
+	}
 }
 
 func (m model) less(a, b Row) bool {
@@ -741,6 +793,11 @@ func (m model) tableView() string {
 		// Make the port a ⌘-clickable link to its localhost URL. osc8 is
 		// zero-width, so padRight still aligns the column to 8 display cells.
 		portText := portCell(r.L.Ports)
+		if m.isFavorite(r) {
+			// ASCII star on purpose: "★" is East-Asian-ambiguous width and
+			// would shift the column in some terminals.
+			portText = "*" + portText
+		}
 		if url, ok := urlFor(r); ok {
 			portText = osc8(portText, url)
 		}
@@ -889,7 +946,7 @@ func (m model) footerView() string {
 		}
 		return okSt.Render(m.flash)
 	}
-	keys := []string{"j/k move", "/ filter", "1-6 sort", "x stop", "o open", "c copy", "? help", "q quit"}
+	keys := []string{"j/k move", "/ filter", "1-6 sort", "x stop", "o open", "c copy", "f pin", "? help", "q quit"}
 	var parts []string
 	for _, k := range keys {
 		sp := strings.SplitN(k, " ", 2)
@@ -908,6 +965,7 @@ func (m model) helpView() string {
 		{"x or s", "stop the selected listener (with confirm)"},
 		{"o", "open localhost:<port> in the browser (http/https auto-detected)"},
 		{"c", "copy… → u url · r curl · l lsof · s stop · p ps (OSC 52 — works over SSH)"},
+		{"f", "pin/unpin the port — pinned ports (*) stay at the top, saved in ~/.config/le/favorites"},
 		{"r", "refresh now"},
 		{"t", "cycle theme (persist via config: theme = <name>)"},
 		{"?", "toggle this help"},
