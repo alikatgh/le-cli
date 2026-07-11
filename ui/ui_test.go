@@ -296,7 +296,7 @@ func TestOpenKeyDetectsHTTPS(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
-	m, _ = m.Update(key("o"))
+	_, _ = m.Update(key("o"))
 
 	if opened != "https://localhost:3000/" {
 		t.Errorf("opened %q, want https://localhost:3000/", opened)

@@ -382,7 +382,7 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else if err := openURL(url); err != nil {
 				m.flash, m.flashErr = "couldn't open browser: "+err.Error(), true
 			} else {
-				m.flash, m.flashErr = "opened " + url, false
+				m.flash, m.flashErr = "opened "+url, false
 			}
 		}
 	case "c":
