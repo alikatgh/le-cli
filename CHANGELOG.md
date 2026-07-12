@@ -28,12 +28,6 @@ All notable changes to `le` are documented here. Format loosely follows
   nothing transmitted or trusted) and writes `https://` when it does. IPv6
   hosts are bracketed correctly.
 
-### Release note
-- Published from a maintainer machine while GitHub Actions is unavailable for
-  this account; this release has no CI build-provenance attestation.
-  Checksums are published as always; attestation resumes with the next
-  CI-built release.
-
 ## [0.1.15] - 2026-07-10
 
 ### Added
