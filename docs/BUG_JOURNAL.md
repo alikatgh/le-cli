@@ -14,6 +14,12 @@ both when a fix lands on shared behavior.
 
 Generalized bug shapes. Grep here before reproducing anything.
 
+- **Making names human introduces collisions; uniqueness is a property of the
+  LIST, not the row.** Naming processes after their bundle turned three rows
+  into three identical "Antigravity IDE"s. Disambiguate across the whole
+  filtered set — never the visible window, or a label changes as you scroll —
+  and only where there IS a collision, so a unique name stays clean.
+  (LE-CLI-014)
 - **When the cursor indexes a DERIVED list, every index you stored is now
   wrong.** Adding group headers made screen lines ≠ rows, and the pin handler
   still did `for i, row := range m.view { m.cursor = i }` — putting the cursor
@@ -136,6 +142,13 @@ Generalized bug shapes. Grep here before reproducing anything.
 ---
 
 ## Chronological log
+### 2026-08-09 — three rows named "Antigravity IDE" (LE-CLI-014)
+- **Where:** `internal/label` (new), `ui/group.go` (`rowLabels`, `listItem.viewIdx`), `ui/ui.go` (table + header), `cmd/cmd.go` (printTable).
+- **Symptom:** the app-naming work (LE-CLI-012) replaced "Editor language service" ×3 with "Antigravity IDE" ×3 — more meaningful, equally indistinguishable.
+- **Fix:** append the helper binary only when a listing actually collides AND the helpers differ; two rows running the same binary stay clean because the port column already separates them. Platform noise (`_macos_arm`) is trimmed so the suffix fits the column.
+- **Plumbing note:** grouping had already made line index ≠ row index, so labels computed across `m.view` must be looked up via `listItem.viewIdx`, not the line number. Second time that distinction has bitten in one day.
+- **Also:** the header now counts stoppable listeners alongside the risk pulse — and omits the count when everything is stoppable, since restating `len(view)` is not information.
+
 ### 2026-08-09 — group the list by owner (LE-CLI-013)
 - **Where:** `ui/group.go` (new), `ui/ui.go` (the cursor now indexes `m.items`, not `m.view`), `config/config.go` (`group` key). Tests: `ui/group_test.go`, `config/config_test.go`.
 - **Why:** 15 listeners, 12 of them background helpers the user is told not to touch. Grouped, the same machine reads as 9 lines with all three stoppable processes visible.
