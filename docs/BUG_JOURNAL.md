@@ -14,6 +14,14 @@ both when a fix lands on shared behavior.
 
 Generalized bug shapes. Grep here before reproducing anything.
 
+- **A UI test that presses keys presses the ones with SIDE EFFECTS too.** A
+  randomised key-sequence test included `f` (pin a port), which persists — so
+  it wrote six synthetic ports into the developer's real
+  `~/Library/Application Support/le/favorites`. The damage surfaced as three
+  unrelated sort tests failing locally while CI stayed green, because a pinned
+  row floats to the top of every sort. Stub every persistence path before
+  driving keys, and when local tests fail but CI passes, suspect state on the
+  machine rather than the code. (LE-CLI-015)
 - **Making names human introduces collisions; uniqueness is a property of the
   LIST, not the row.** Naming processes after their bundle turned three rows
   into three identical "Antigravity IDE"s. Disambiguate across the whole
@@ -142,6 +150,13 @@ Generalized bug shapes. Grep here before reproducing anything.
 ---
 
 ## Chronological log
+### 2026-08-09 — randomised TUI invariant test, and the config it trashed (LE-CLI-015)
+- **Where:** `ui/invariants_test.go` (new).
+- **Why:** three cursor mechanics landed in one day (pane focus, grouping with folded headers, content-sized columns) and they all mutate the same state. Unit tests cover each alone; this drives them together with random key sequences, background scans, and resizes, asserting cursor range, `selected()`/`items[cursor]` agreement, `viewIdx` range, pane focus only on rows, and a non-empty render.
+- **Proved non-vacuous** by planting two regressions: deleting the pane-focus normalisation in `clamp()` and making `selected()` ignore headers. Both were caught, with the exact key trail printed.
+- **Self-inflicted:** the key list includes `f`, which persists a pin. Unstubbed, the test wrote six synthetic ports into the real favorites file; pinned rows float to the top of every sort, so three long-standing sort tests started failing locally while CI stayed green. Deleted the file, added `stubFavoritesDir(t)`.
+- **Lesson:** "passes here, passes in CI" and "fails here, passes in CI" are both signals about the MACHINE. Before blaming a diff, ask what the test wrote outside its temp dir.
+
 ### 2026-08-09 — three rows named "Antigravity IDE" (LE-CLI-014)
 - **Where:** `internal/label` (new), `ui/group.go` (`rowLabels`, `listItem.viewIdx`), `ui/ui.go` (table + header), `cmd/cmd.go` (printTable).
 - **Symptom:** the app-naming work (LE-CLI-012) replaced "Editor language service" ×3 with "Antigravity IDE" ×3 — more meaningful, equally indistinguishable.
