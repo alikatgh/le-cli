@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -15,6 +16,20 @@ import (
 
 const pollEvery = 400 * time.Millisecond
 
+// ErrTimeout marks "the deadline from --timeout elapsed" as distinct from any
+// other failure, so cmd can map it to its own exit code (124, the timeout(1)
+// convention) instead of collapsing it into the generic failure code. A script
+// running `le wait 3000 -t 30s` has to be able to tell "still busy" from
+// "le couldn't run" — same code for both makes the wait unscriptable.
+//
+// Wrapped as the FIRST verb of each message ("%w after 30s waiting for …") so
+// the human-facing text reads exactly as it did before the sentinel existed.
+var ErrTimeout = errors.New("timed out")
+
+// ErrInvalidPort marks a malformed port argument — a usage error (exit 2),
+// not a runtime failure.
+var ErrInvalidPort = errors.New("invalid port")
+
 // validPort rejects a port net.Listen would fail on for reasons OTHER than
 // "occupied" — non-numeric or out of range. Without this, Free() collapses
 // such a failure into the same false it returns for a busy port, so
@@ -23,7 +38,7 @@ const pollEvery = 400 * time.Millisecond
 func validPort(port string) error {
 	n, err := strconv.Atoi(port)
 	if err != nil || n < 1 || n > 65535 {
-		return fmt.Errorf("invalid port %q: expected a number 1-65535", port)
+		return fmt.Errorf("%w %q: expected a number 1-65535", ErrInvalidPort, port)
 	}
 	return nil
 }
@@ -80,7 +95,7 @@ func WaitFree(port string, timeout time.Duration) error {
 	}
 	fmt.Printf("waiting for port %s to free up… (%s)\n", port, waitHint(timeout))
 	if !waitUntil(func() bool { return Free(port) }, timeout) {
-		return fmt.Errorf("timed out after %s waiting for port %s to free", timeout, port)
+		return fmt.Errorf("%w after %s waiting for port %s to free", ErrTimeout, timeout, port)
 	}
 	fmt.Printf("✓ port %s is free\n", port)
 	return nil
@@ -98,7 +113,7 @@ func WaitListening(port string, timeout time.Duration) error {
 	}
 	fmt.Printf("waiting for something to listen on %s… (%s)\n", port, waitHint(timeout))
 	if !waitUntil(func() bool { return !Free(port) }, timeout) {
-		return fmt.Errorf("timed out after %s waiting for a listener on port %s", timeout, port)
+		return fmt.Errorf("%w after %s waiting for a listener on port %s", ErrTimeout, timeout, port)
 	}
 	fmt.Printf("✓ port %s is now listening — http://localhost:%s/\n", port, port)
 	return nil

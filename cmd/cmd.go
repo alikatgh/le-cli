@@ -30,10 +30,12 @@ import (
 // enough not to feel like a hang.
 const configWarningPause = 1500 * time.Millisecond
 
-// Execute runs the root command. version is injected by main.
+// Execute runs the root command. version is injected by main. The exit code
+// is derived from the error (see exit.go) rather than being a flat 1, because
+// scripts have to distinguish a timed-out wait from a misuse from a failure.
 func Execute(version string) {
 	if err := newRoot(version).Execute(); err != nil {
-		os.Exit(1)
+		os.Exit(exitCodeFor(err))
 	}
 }
 
@@ -56,10 +58,11 @@ func newRoot(version string) *cobra.Command {
 			"recycled PID never gets a signal meant for something else — and when\n" +
 			"identity can't be proven, le refuses rather than guesses. That is\n" +
 			"the difference from `lsof | kill`.\n\n" +
-			"Run with no arguments to open the live TUI.",
+			"Run with no arguments to open the live TUI.\n\n" +
+			exitCodeHelp,
 		Version:      version,
 		SilenceUsage: true,
-		Args:         cobra.NoArgs,
+		Args:         usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, warning := config.Load()
 			if warning != "" {
@@ -75,15 +78,41 @@ func newRoot(version string) *cobra.Command {
 			return ui.Run(ui.Options{Interval: cfg.Interval(), Filter: cfg.Filter})
 		},
 	}
-	root.AddCommand(listCmd(), stopCmd(), holdCmd(), waitCmd(), readyCmd(), versionCmd(version),
-		flushDNSCmd(), restartDockCmd(), restartFinderCmd(), sleepDisplayCmd(), keepAwakeCmd(),
-		restartCmd(), watchCmd(), openCmd(), checkCmd(), watchAllCmd())
-	// Separate calls (not appended above) so these lines merge cleanly
-	// alongside other in-flight command additions.
-	root.AddCommand(qrCmd())
-	root.AddCommand(forwardCmd())
+	// A bad flag is misuse, not a runtime failure — exit 2. Set on root;
+	// cobra propagates the func to every subcommand.
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usage(err) })
+	// A flat list of 19 commands read as a grab bag and buried the four that
+	// carry le's actual thesis. Grouping restores the conceptual model in
+	// `le --help`: see / stop / choreograph ports, with the macOS
+	// housekeeping tools (1:1 with the app's action menu) fenced off last so
+	// they can't be mistaken for the core.
+	group(root, "inspect", "See what's listening:",
+		listCmd(), checkCmd(), watchCmd(), watchAllCmd(), qrCmd())
+	group(root, "stop", "Stop it the right way:",
+		stopCmd(), restartCmd())
+	group(root, "ports", "Hold, wait on, or forward a port (for scripts):",
+		holdCmd(), waitCmd(), readyCmd(), openCmd(), forwardCmd())
+	group(root, "macos", "macOS housekeeping:",
+		flushDNSCmd(), restartDockCmd(), restartFinderCmd(), sleepDisplayCmd(), keepAwakeCmd())
+	// Ungrouped on purpose — cobra files it under "Additional Commands"
+	// alongside help/completion, which is where a version command belongs.
+	root.AddCommand(versionCmd(version))
 	return root
 }
+
+// group registers a titled help group on root and files cmds under it.
+func group(root *cobra.Command, id, title string, cmds ...*cobra.Command) {
+	root.AddGroup(&cobra.Group{ID: id, Title: title})
+	for _, c := range cmds {
+		c.GroupID = id
+		root.AddCommand(c)
+	}
+}
+
+// exitCodeHelp documents the script-facing exit codes. It hangs off the root
+// Long (and each waiting command's Long), so it lands in `le --help` AND in
+// the generated man pages — the only two places a script author looks.
+const exitCodeHelp = "Exit codes: 0 success · 1 failure · 2 usage error · 124 --timeout elapsed."
 
 func forwardCmd() *cobra.Command {
 	return &cobra.Command{
@@ -114,7 +143,7 @@ func listCmd() *cobra.Command {
 		Long: "Print every localhost listener as a table (or JSON). An optional\n" +
 			"filter narrows it to rows matching that text in the port, name,\n" +
 			"command, folder, or owner — the same match the TUI's / filter uses.",
-		Args: cobra.MaximumNArgs(1),
+		Args: usageArgs(cobra.MaximumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rows := gather()
 			if len(args) == 1 {
@@ -171,16 +200,16 @@ func stopCmd() *cobra.Command {
 			"Use --dry-run to see exactly what would be stopped without touching\n" +
 			"anything — worth doing before a --dir sweep. --json emits the per-\n" +
 			"listener outcomes (or the dry-run preview) as an array for scripts.",
-		Args: cobra.MaximumNArgs(1),
+		Args: usageArgs(cobra.MaximumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dir != "" {
 				if len(args) > 0 {
-					return fmt.Errorf("pass either a port/pid or --dir, not both")
+					return usage(fmt.Errorf("pass either a port/pid or --dir, not both"))
 				}
 				return runStopDir(dir, dryRun, asJSON)
 			}
 			if len(args) != 1 {
-				return fmt.Errorf("give a port, a pid, or --dir <path>")
+				return usage(fmt.Errorf("give a port, a pid, or --dir <path>"))
 			}
 			return runStop(args[0], dryRun, asJSON)
 		},
@@ -195,7 +224,7 @@ func holdCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "hold PORT",
 		Short: "Hold a port — or a range PORT-PORT — so nothing else can grab it (Ctrl-C frees it)",
-		Args:  cobra.ExactArgs(1),
+		Args:  usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if lo, hi, ok := tools.ParsePortRange(args[0]); ok {
 				return tools.HoldRange(lo, hi)
@@ -210,9 +239,11 @@ func waitCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "wait PORT",
 		Short: "Block until a port frees up",
-		Long:  "Block until PORT is free. With --timeout, give up after that long and\nexit non-zero — so a script can bound the wait instead of hanging.",
-		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return tools.WaitFree(args[0], timeout) },
+		Long: "Block until PORT is free. With --timeout, give up after that long and\n" +
+			"exit 124 — so a script can bound the wait instead of hanging, and can\n" +
+			"tell a still-busy port from a le that couldn't run.\n\n" + exitCodeHelp,
+		Args: usageArgs(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, args []string) error { return tools.WaitFree(args[0], timeout) },
 	}
 	c.Flags().DurationVarP(&timeout, "timeout", "t", 0, "give up after this long (e.g. 30s); 0 waits forever")
 	return c
@@ -223,9 +254,10 @@ func readyCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "ready PORT",
 		Short: "Block until something starts listening (open-when-ready)",
-		Long:  "Block until something is listening on PORT. With --timeout, give up\nafter that long and exit non-zero.",
-		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return tools.WaitListening(args[0], timeout) },
+		Long: "Block until something is listening on PORT. With --timeout, give up\n" +
+			"after that long and exit 124.\n\n" + exitCodeHelp,
+		Args: usageArgs(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, args []string) error { return tools.WaitListening(args[0], timeout) },
 	}
 	c.Flags().DurationVarP(&timeout, "timeout", "t", 0, "give up after this long (e.g. 30s); 0 waits forever")
 	return c
@@ -235,7 +267,7 @@ func versionCmd(version string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print the le version",
-		Args:  cobra.NoArgs,
+		Args:  usageArgs(cobra.NoArgs),
 		Run:   func(cmd *cobra.Command, args []string) { fmt.Println("le", version) },
 	}
 }
@@ -246,7 +278,7 @@ func flushDNSCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "flush-dns",
 		Short: "Flush the macOS DNS cache",
-		Args:  cobra.NoArgs,
+		Args:  usageArgs(cobra.NoArgs),
 		RunE:  func(cmd *cobra.Command, args []string) error { return tools.FlushDNS() },
 	}
 }
@@ -255,7 +287,7 @@ func restartDockCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "restart-dock",
 		Short: "Relaunch the Dock",
-		Args:  cobra.NoArgs,
+		Args:  usageArgs(cobra.NoArgs),
 		RunE:  func(cmd *cobra.Command, args []string) error { return tools.RestartDock() },
 	}
 }
@@ -264,7 +296,7 @@ func restartFinderCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "restart-finder",
 		Short: "Relaunch Finder",
-		Args:  cobra.NoArgs,
+		Args:  usageArgs(cobra.NoArgs),
 		RunE:  func(cmd *cobra.Command, args []string) error { return tools.RestartFinder() },
 	}
 }
@@ -273,7 +305,7 @@ func sleepDisplayCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "sleep-display",
 		Short: "Put the display to sleep now",
-		Args:  cobra.NoArgs,
+		Args:  usageArgs(cobra.NoArgs),
 		RunE:  func(cmd *cobra.Command, args []string) error { return tools.SleepDisplay() },
 	}
 }
@@ -284,13 +316,13 @@ func keepAwakeCmd() *cobra.Command {
 		Short: "Stop your Mac sleeping (caffeinate); no arg = until Ctrl-C",
 		Long: "Run caffeinate -d -i so the Mac won't sleep. Give a duration like 15m,\n" +
 			"1h, or 90s; with no argument it stays awake until you press Ctrl-C.",
-		Args: cobra.MaximumNArgs(1),
+		Args: usageArgs(cobra.MaximumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var d time.Duration
 			if len(args) == 1 {
 				parsed, err := time.ParseDuration(args[0])
 				if err != nil || parsed < 0 {
-					return fmt.Errorf("invalid duration %q: use e.g. 15m, 1h, 90s", args[0])
+					return usage(fmt.Errorf("invalid duration %q: use e.g. 15m, 1h, 90s", args[0]))
 				}
 				d = parsed
 			}
@@ -306,7 +338,7 @@ func qrCmd() *cobra.Command {
 		Long: "Print this Mac's LAN URL for PORT — what to open on a phone on the same\n" +
 			"network — and render a scannable QR when `qrencode` is installed. Uses the\n" +
 			"LAN IP, because `localhost` on the phone points at the phone, not this Mac.",
-		Args: cobra.ExactArgs(1),
+		Args: usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error { return tools.QR(args[0]) },
 	}
 }
@@ -318,7 +350,7 @@ func checkCmd() *cobra.Command {
 		Long: "GET http://127.0.0.1:PORT/ and report the status code and round-trip\n" +
 			"time, plus a ready-to-run curl command. A non-HTTP listener surfaces as\n" +
 			"a clear error rather than hanging.",
-		Args: cobra.ExactArgs(1),
+		Args: usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error { return tools.Check(args[0]) },
 	}
 }
@@ -330,7 +362,7 @@ func restartCmd() *cobra.Command {
 		Long: "Bounce a brew-managed or Dockerised listener through its real owner —\n" +
 			"no kill -9 surprises. Only managed listeners can be restarted; anything\n" +
 			"else has no supervisor to bounce it through.",
-		Args: cobra.ExactArgs(1),
+		Args: usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error { return runRestart(args[0]) },
 	}
 }
@@ -341,8 +373,9 @@ func watchCmd() *cobra.Command {
 		Use:   "watch [port|pid]",
 		Short: "Notify when a listener's process exits",
 		Long: "Poll until the process behind a port (or a PID) exits, then report it —\n" +
-			"the notify-on-exit workflow. With --timeout, give up after that long.",
-		Args: cobra.ExactArgs(1),
+			"the notify-on-exit workflow. With --timeout, give up after that long\n" +
+			"and exit 124 (the process is still running).\n\n" + exitCodeHelp,
+		Args: usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error { return runWatch(args[0], timeout) },
 	}
 	c.Flags().DurationVarP(&timeout, "timeout", "t", 0, "give up after this long (e.g. 30s); 0 waits forever")
@@ -356,7 +389,7 @@ func watchAllCmd() *cobra.Command {
 		Short: "Live feed of listeners appearing (+) and disappearing (-)",
 		Long: "Poll the listener set and print every appearance and disappearance as\n" +
 			"it happens — a 'what just started/stopped' feed. Ctrl-C to stop.",
-		Args: cobra.NoArgs,
+		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error { return runWatchAll(interval) },
 	}
 	c.Flags().DurationVarP(&interval, "interval", "i", 2*time.Second, "how often to poll (e.g. 5s)")
@@ -369,8 +402,8 @@ func openCmd() *cobra.Command {
 		Use:   "open PORT [path]",
 		Short: "Wait until a port is listening, then open it in the browser",
 		Long: "Block until something is listening on PORT, then open\n" +
-			"http://localhost:PORT/<path> — the open-when-ready workflow.",
-		Args: cobra.RangeArgs(1, 2),
+			"http://localhost:PORT/<path> — the open-when-ready workflow.\n\n" + exitCodeHelp,
+		Args: usageArgs(cobra.RangeArgs(1, 2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := ""
 			if len(args) == 2 {

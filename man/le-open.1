@@ -2,16 +2,16 @@
 .TH "LE" "1" "Aug 2026" "le" ""
 
 .SH NAME
-le-ready - Block until something starts listening (open-when-ready)
+le-open - Wait until a port is listening, then open it in the browser
 
 
 .SH SYNOPSIS
-\fBle ready PORT [flags]\fP
+\fBle open PORT [path] [flags]\fP
 
 
 .SH DESCRIPTION
-Block until something is listening on PORT. With --timeout, give up
-after that long and exit 124.
+Block until something is listening on PORT, then open
+http://localhost:PORT/ — the open-when-ready workflow.
 
 .PP
 Exit codes: 0 success · 1 failure · 2 usage error · 124 --timeout elapsed.
@@ -19,7 +19,7 @@ Exit codes: 0 success · 1 failure · 2 usage error · 124 --timeout elapsed.
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
-	help for ready
+	help for open
 
 .PP
 \fB-t\fP, \fB--timeout\fP=0s

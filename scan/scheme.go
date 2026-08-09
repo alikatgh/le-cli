@@ -25,6 +25,12 @@ const (
 var (
 	schemeMu    sync.Mutex
 	schemeCache = map[string]schemeEntry{}
+	// schemeGen invalidates in-flight probes. CachedScheme probes in a
+	// BACKGROUND goroutine, so a probe started under one prober/cache can
+	// still be running when the cache is cleared — and would then write its
+	// now-obsolete answer over the fresh state. A probe only commits if the
+	// generation it started in is still current.
+	schemeGen int
 	// probeTLS is a package var so tests can stub the network away.
 	probeTLS = func(port string) bool {
 		d := net.Dialer{Timeout: schemeProbeTimeout}
@@ -99,11 +105,13 @@ func SetTLSProbeForTesting(probe func(port string) bool) (restore func()) {
 	orig := probeTLS
 	probeTLS = probe
 	schemeCache = map[string]schemeEntry{}
+	schemeGen++
 	schemeMu.Unlock()
 	return func() {
 		schemeMu.Lock()
 		probeTLS = orig
 		schemeCache = map[string]schemeEntry{}
+		schemeGen++
 		schemeMu.Unlock()
 	}
 }
@@ -114,6 +122,7 @@ func SetTLSProbeForTesting(probe func(port string) bool) (restore func()) {
 func refreshScheme(port string) string {
 	schemeMu.Lock()
 	probe := probeTLS
+	gen := schemeGen
 	schemeMu.Unlock()
 
 	s := "http"
@@ -121,7 +130,13 @@ func refreshScheme(port string) string {
 		s = "https"
 	}
 	schemeMu.Lock()
-	schemeCache[port] = schemeEntry{scheme: s, at: time.Now()}
+	// Only commit if nothing invalidated the cache while the probe was in
+	// flight — otherwise a slow probe from the previous generation lands on
+	// top of newer state. The value is still returned to this caller; it just
+	// doesn't get to speak for everyone else.
+	if gen == schemeGen {
+		schemeCache[port] = schemeEntry{scheme: s, at: time.Now()}
+	}
 	schemeMu.Unlock()
 	return s
 }

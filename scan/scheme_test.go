@@ -73,3 +73,35 @@ func TestCachedSchemeStaleReturnsLastKnown(t *testing.T) {
 		t.Fatalf("stale CachedScheme = %q, want last-known https", got)
 	}
 }
+
+// A probe started before the cache was invalidated must not commit its answer
+// afterwards. CachedScheme probes in a background goroutine, so an in-flight
+// probe routinely outlives the state it was started for — that's what made
+// ui's TestOpenKeyDetectsHTTPS flaky: a leftover goroutine from an earlier
+// test wrote "http" into the cache the new test had just cleared, and the
+// stubbed https prober never got asked. (LE-CLI-006)
+func TestStaleProbeDoesNotClobberCache(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	restoreSlow := SetTLSProbeForTesting(func(string) bool {
+		close(started)
+		<-release
+		return false // the old generation's answer
+	})
+	defer restoreSlow()
+
+	done := make(chan string, 1)
+	go func() { done <- Scheme("3000") }()
+	<-started // the slow probe is now in flight
+
+	// A new generation: cache cleared, different prober installed.
+	restoreFast := SetTLSProbeForTesting(func(string) bool { return true })
+	defer restoreFast()
+
+	close(release)
+	<-done // let the stale probe finish and try to write
+
+	if got := Scheme("3000"); got != "https" {
+		t.Errorf("Scheme = %q, want https — a stale probe overwrote the cache", got)
+	}
+}

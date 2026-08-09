@@ -2,16 +2,17 @@
 .TH "LE" "1" "Aug 2026" "le" ""
 
 .SH NAME
-le-ready - Block until something starts listening (open-when-ready)
+le-watch - Notify when a listener's process exits
 
 
 .SH SYNOPSIS
-\fBle ready PORT [flags]\fP
+\fBle watch [port|pid] [flags]\fP
 
 
 .SH DESCRIPTION
-Block until something is listening on PORT. With --timeout, give up
-after that long and exit 124.
+Poll until the process behind a port (or a PID) exits, then report it —
+the notify-on-exit workflow. With --timeout, give up after that long
+and exit 124 (the process is still running).
 
 .PP
 Exit codes: 0 success · 1 failure · 2 usage error · 124 --timeout elapsed.
@@ -19,7 +20,7 @@ Exit codes: 0 success · 1 failure · 2 usage error · 124 --timeout elapsed.
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
-	help for ready
+	help for watch
 
 .PP
 \fB-t\fP, \fB--timeout\fP=0s

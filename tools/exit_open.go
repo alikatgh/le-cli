@@ -40,7 +40,9 @@ func WatchPID(pid int, timeout time.Duration) error {
 			first = false
 		}
 		if !deadline.IsZero() && time.Now().After(deadline) {
-			return fmt.Errorf("pid %d still running after %s", pid, timeout)
+			// ErrTimeout-wrapped so `le watch --timeout` exits 124 (still
+			// running) rather than 1 (couldn't watch) — see tools.ErrTimeout.
+			return fmt.Errorf("%w: pid %d still running after %s", ErrTimeout, pid, timeout)
 		}
 		time.Sleep(time.Second)
 	}
