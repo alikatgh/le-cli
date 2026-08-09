@@ -5,6 +5,22 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-08-09
+
+### Added
+- **Field focus in the detail pane.** `Tab` moves focus into the pane, `j`/`k`
+  step between fields, `Enter` acts on one, `Tab`/`esc` returns to the table.
+  Two things row-level keys could never do:
+  - **Act on a row's second port.** Each port is its own field, so the `+1` /
+    `+2` extras in the table are reachable — `o` only ever opened the first.
+  - **Reveal the binary and the folder separately**, instead of `F` having to
+    pick one per row.
+
+  `Enter` on the stop field opens the confirm, or copies the inspect command on
+  an `avoid` row. The focused field is marked with a caret in a fixed-width
+  gutter, so focus stays visible under `NO_COLOR` and the `mono` theme and the
+  pane never reflows when focus moves.
+
 ## [0.1.18] - 2026-08-09
 
 ### Fixed
@@ -332,7 +348,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.18...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.19...HEAD
+[0.1.19]: https://github.com/alikatgh/le-cli/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/alikatgh/le-cli/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/alikatgh/le-cli/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/alikatgh/le-cli/compare/v0.1.15...v0.1.16
