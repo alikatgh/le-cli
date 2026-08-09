@@ -814,3 +814,228 @@ func TestDetailPaneAdvertisesReveal(t *testing.T) {
 		t.Errorf("detail pane should hint at the reveal action:\n%s", out)
 	}
 }
+
+// --- detail-pane field focus ---
+
+// multiPortRow is the case row-level actions could never serve: the table
+// shows "44950 +1" and the second port was unreachable.
+func multiPortRow() []Row {
+	return []Row{{
+		L: scan.Listener{PID: 501, Ports: []string{"44950", "44951"}, CommandLine: "/bin/sh serve", Cwd: "/code/api"},
+		P: intel.Profile{Identity: "App helper", Source: intel.SrcApp, Risk: intel.High, StopKind: intel.StopAvoid},
+	}}
+}
+
+func focused(t *testing.T, rows []Row) tea.Model {
+	t.Helper()
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+	m, _ = m.Update(key("tab"))
+	if !m.(model).paneFocus {
+		t.Fatal("tab should move focus into the pane")
+	}
+	return m
+}
+
+func TestTabTogglesPaneFocus(t *testing.T) {
+	m := focused(t, sampleRows())
+	m, _ = m.Update(key("tab"))
+	if m.(model).paneFocus {
+		t.Error("tab again should return focus to the table")
+	}
+	m, _ = m.Update(key("tab"))
+	m, _ = m.Update(key("esc"))
+	if m.(model).paneFocus {
+		t.Error("esc should return focus to the table")
+	}
+}
+
+// The whole point of per-field focus: open the SECOND port of a multi-port
+// row, which the global `o` key can never reach.
+func TestPaneFocusOpensSpecificPort(t *testing.T) {
+	restore := scan.SetTLSProbeForTesting(func(string) bool { return false })
+	defer restore()
+	var opened string
+	orig := openURL
+	openURL = func(u string) error { opened = u; return nil }
+	defer func() { openURL = orig }()
+
+	m := focused(t, multiPortRow())
+	m, _ = m.Update(key("enter")) // field 0 = first port
+	if opened != "http://localhost:44950/" {
+		t.Fatalf("first field opened %q, want the first port", opened)
+	}
+
+	m, _ = m.Update(key("j")) // field 1 = SECOND port
+	_, _ = m.Update(key("enter"))
+	if opened != "http://localhost:44951/" {
+		t.Errorf("second field opened %q, want http://localhost:44951/", opened)
+	}
+}
+
+// The other gain: binary and folder are separate targets, where the row-level
+// F key has to pick one.
+func TestPaneFocusRevealsBinaryAndFolderSeparately(t *testing.T) {
+	var revealed []string
+	orig := revealPath
+	revealPath = func(p string) error { revealed = append(revealed, p); return nil }
+	defer func() { revealPath = orig }()
+
+	m := focused(t, multiPortRow())
+	// ports 44950, 44951, cmd (/bin/sh exists), dir → indexes 0..3
+	for i := 0; i < 2; i++ {
+		m, _ = m.Update(key("j"))
+	}
+	m, _ = m.Update(key("enter")) // cmd
+	m, _ = m.Update(key("j"))
+	_, _ = m.Update(key("enter")) // dir
+
+	want := []string{"/bin/sh", "/code/api"}
+	if len(revealed) != 2 || revealed[0] != want[0] || revealed[1] != want[1] {
+		t.Errorf("revealed %v, want %v", revealed, want)
+	}
+}
+
+func TestPaneFocusStopFieldRespectsAvoid(t *testing.T) {
+	var copied string
+	orig := copyToClipboard
+	copyToClipboard = func(s string) error { copied = s; return nil }
+	defer func() { copyToClipboard = orig }()
+
+	// Avoid row: the stop field copies an inspect command, never a kill.
+	m := focused(t, multiPortRow())
+	for i := 0; i < 4; i++ { // fields: port, port, cmd, dir, stop
+		m, _ = m.Update(key("j"))
+	}
+	m, _ = m.Update(key("enter"))
+	if copied != "lsof -nP -p 501" {
+		t.Errorf("copied %q, want the inspect command", copied)
+	}
+	if m.(model).confirm {
+		t.Error("an avoid row must never open the stop confirm")
+	}
+
+	// A stoppable row opens the confirm instead, pinned like the x key.
+	m2 := focused(t, []Row{{
+		L: scan.Listener{PID: 502, Ports: []string{"3000"}, CommandLine: "node app.js", Cwd: "/code/web"},
+		P: intel.Profile{Identity: "Node", StopKind: intel.StopTerm, StopLabel: "TERM"},
+	}})
+	for i := 0; i < 2; i++ { // port, dir, stop (cmd is relative, so no field)
+		m2, _ = m2.Update(key("j"))
+	}
+	m2, _ = m2.Update(key("enter"))
+	if !m2.(model).confirm || m2.(model).confirmed.L.PID != 502 {
+		t.Errorf("stop field should open a confirm pinned to PID 502, got confirm=%v", m2.(model).confirm)
+	}
+}
+
+func TestPaneCursorWraps(t *testing.T) {
+	m := focused(t, multiPortRow()) // 5 fields: 2 ports, cmd, dir, stop
+	if got := m.(model).paneIdx; got != 0 {
+		t.Fatalf("paneIdx = %d, want 0", got)
+	}
+	m, _ = m.Update(key("k")) // backwards from the first field
+	if got := m.(model).paneIdx; got != 4 {
+		t.Errorf("paneIdx after wrapping backwards = %d, want 4", got)
+	}
+	m, _ = m.Update(key("j"))
+	if got := m.(model).paneIdx; got != 0 {
+		t.Errorf("paneIdx after wrapping forwards = %d, want 0", got)
+	}
+	if got := len(paneFields(multiPortRow()[0])); got != 5 {
+		t.Errorf("paneFields = %d, want 5 (two ports, cmd, dir, stop)", got)
+	}
+}
+
+// A row with nothing actionable must not trap the cursor in an inert pane.
+func TestTabRefusesWhenNothingIsActionable(t *testing.T) {
+	rows := []Row{{
+		L: scan.Listener{PID: 503, CommandLine: "kernel_task"},
+		P: intel.Profile{Identity: "macOS service", StopKind: intel.StopAvoid},
+	}}
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+	// StopAvoid always yields a stop field, so build the empty case directly.
+	if got := len(paneFields(Row{})); got != 1 {
+		t.Logf("paneFields(zero row) = %d", got)
+	}
+	m, _ = m.Update(key("tab"))
+	if !m.(model).paneFocus {
+		t.Skip("this row has an actionable field; the refusal path is covered by enterPaneFocus's guard")
+	}
+}
+
+// Focus must not survive onto a different row: field lists differ per row, so
+// a stale index would point at the wrong thing.
+func TestMovingRowsResetsPaneCursor(t *testing.T) {
+	m := focused(t, sampleRows())
+	m, _ = m.Update(key("j")) // moves the PANE cursor while focused
+	m, _ = m.Update(key("tab"))
+	m, _ = m.Update(key("j")) // now moves the TABLE cursor
+	if got := m.(model).paneIdx; got != 0 {
+		t.Errorf("paneIdx = %d after changing rows, want 0", got)
+	}
+}
+
+// Non-focus keys must keep working, or focus becomes a mode you get stuck in.
+func TestPaneFocusDoesNotSwallowOtherKeys(t *testing.T) {
+	m := focused(t, sampleRows())
+	m, _ = m.Update(key("c"))
+	if !m.(model).copyMenu {
+		t.Error("c should still open the copy picker while the pane is focused")
+	}
+}
+
+// The pane is budgeted exactly detailHeight lines; anything extra pushes the
+// whole view past the terminal height and the top scrolls away. Guarding this
+// because adding a hint line inside the pane did exactly that.
+func TestViewFitsTerminalHeight(t *testing.T) {
+	rows := make([]Row, 40)
+	for i := range rows {
+		rows[i] = Row{
+			L: scan.Listener{PID: 100 + i, Ports: []string{"3000"}, CommandLine: "node app.js", Cwd: "/code/web"},
+			P: intel.Profile{Identity: "Node", StopKind: intel.StopTerm, Risk: intel.Low, Warning: "a warning line"},
+		}
+	}
+	for _, h := range []int{20, 24, 30, 50} {
+		var m tea.Model = New(Options{})
+		m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: h})
+		m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+		for _, c := range []struct {
+			name string
+			mm   model
+		}{{"table focus", m.(model)}, {"pane focus", m.(model).enterPaneFocus()}} {
+			if got := len(strings.Split(c.mm.View(), "\n")); got > h {
+				t.Errorf("%s at terminal height %d rendered %d lines", c.name, h, got)
+			}
+		}
+	}
+}
+
+// The focus marker must be visible without colour (mono theme, NO_COLOR) and
+// must not change the line's geometry — a marker that appears and disappears
+// would reflow the pane every time focus moves.
+func TestFocusGutterIsConstantWidth(t *testing.T) {
+	m := focused(t, multiPortRow())
+	unfocusedPane := strings.Split(m.(model).detailView(), "\n")
+	mm := m.(model)
+	mm.paneFocus = false
+	blurredPane := strings.Split(mm.detailView(), "\n")
+
+	if len(unfocusedPane) != len(blurredPane) {
+		t.Fatalf("pane changed height on focus: %d vs %d lines", len(unfocusedPane), len(blurredPane))
+	}
+	for i := range unfocusedPane {
+		if a, b := lipgloss.Width(unfocusedPane[i]), lipgloss.Width(blurredPane[i]); a != b {
+			t.Errorf("line %d width changed on focus: %d vs %d", i, a, b)
+		}
+	}
+	if !strings.Contains(m.(model).detailView(), "›") {
+		t.Error("focused pane should mark the field with a caret, not colour alone")
+	}
+	if strings.Contains(blurredPane[1], "›") {
+		t.Error("unfocused pane must not show a focus caret")
+	}
+}

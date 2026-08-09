@@ -82,7 +82,9 @@ type model struct {
 	confirm   bool
 	confirmed Row // the row pinned when the confirm dialog opened
 	copyMenu  bool
-	copyRow   Row // the row pinned when the copy picker opened
+	copyRow   Row  // the row pinned when the copy picker opened
+	paneFocus bool // focus is inside the detail pane (see panefocus.go)
+	paneIdx   int  // which pane field is focused
 	flash     string
 	flashErr  bool
 	help      bool
@@ -444,20 +446,48 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// Pane focus intercepts only the keys it redefines (movement, enter,
+	// esc); everything else — x, o, c, f, /, q — keeps working unchanged, so
+	// focus never becomes a mode you can get stuck in.
+	if m.paneFocus {
+		switch msg.String() {
+		case "j", "down":
+			return m.movePaneCursor(1), nil
+		case "k", "up":
+			return m.movePaneCursor(-1), nil
+		case "enter":
+			return m.runPaneField(), nil
+		case "esc":
+			m.paneFocus = false
+			return m, nil
+		}
+	}
+
 	switch msg.String() {
+	case "tab":
+		if m.paneFocus {
+			m.paneFocus = false
+		} else {
+			m = m.enterPaneFocus()
+		}
+		return m, nil
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "?":
 		m.help = !m.help
 	case "j", "down":
 		m.move(1)
+		m.paneIdx = 0 // a different row has a different field list
 	case "k", "up":
 		m.move(-1)
+		m.paneIdx = 0
 	case "g", "home":
 		m.cursor = 0
+		m.paneIdx = 0
 		m.clamp()
 	case "G", "end":
 		m.cursor = len(m.view) - 1
+		m.paneIdx = 0
 		m.clamp()
 	case "/":
 		m.filtering = true
@@ -1041,19 +1071,23 @@ func (m model) detailView() string {
 	if r.L.CPU >= cpuHotPct {
 		cpuStr = lipgloss.NewStyle().Foreground(cpuColor(r.L.CPU)).Bold(true).Render(fmt.Sprintf("%.1f%%", r.L.CPU))
 	}
+	// Every line carries a 2-column gutter, always — "› " marks the focused
+	// field, "  " everything else. A reserved gutter keeps focus visible
+	// without colour (mono theme, NO_COLOR) AND keeps the geometry identical
+	// in both states, so focusing a field never shifts the text under you.
 	lines := []string{
-		title,
-		dimSt.Render("ports  ") + strings.Join(r.L.Ports, ", ") + dimSt.Render("   pid ") + fmt.Sprintf("%d", r.L.PID) + dimSt.Render("   owner ") + string(r.P.Source),
-		dimSt.Render("usage  ") + cpuStr + dimSt.Render(" cpu   ") + fmtMem(r.L.RSS) + dimSt.Render(" mem"),
-		dimSt.Render("cmd    ") + truncate(r.L.CommandLine, m.w-12),
-		dimSt.Render("dir    ") + truncate(orDash(r.L.Cwd), m.w-12) + revealHint(r),
-		dimSt.Render("stop   ") + lipgloss.NewStyle().Foreground(brand).Render(stopShort(r.P)) + dimSt.Render("   (c copies)"),
-		dimSt.Render("back   ") + orDash(r.P.Restart),
+		m.gutter(-1) + title,
+		m.gutter(fieldPort) + m.paneLabel("ports  ", fieldPort) + m.portsCell(r) + dimSt.Render("   pid ") + fmt.Sprintf("%d", r.L.PID) + dimSt.Render("   owner ") + string(r.P.Source),
+		m.gutter(-1) + dimSt.Render("usage  ") + cpuStr + dimSt.Render(" cpu   ") + fmtMem(r.L.RSS) + dimSt.Render(" mem"),
+		m.gutter(fieldCmd) + m.paneLabel("cmd    ", fieldCmd) + truncate(r.L.CommandLine, m.w-14),
+		m.gutter(fieldDir) + m.paneLabel("dir    ", fieldDir) + truncate(orDash(r.L.Cwd), m.w-14) + m.revealHint(r),
+		m.gutter(fieldStop) + m.paneLabel("stop   ", fieldStop) + lipgloss.NewStyle().Foreground(brand).Render(stopShort(r.P)) + dimSt.Render("   (c copies)"),
+		m.gutter(-1) + dimSt.Render("back   ") + orDash(r.P.Restart),
 	}
 	if r.P.Warning != "" {
-		lines = append(lines, lipgloss.NewStyle().Foreground(yellow).Render("⚠ "+r.P.Warning))
+		lines = append(lines, m.gutter(-1)+lipgloss.NewStyle().Foreground(yellow).Render("⚠ "+r.P.Warning))
 	} else if r.P.Note != "" {
-		lines = append(lines, dimSt.Render(r.P.Note))
+		lines = append(lines, m.gutter(-1)+dimSt.Render(r.P.Note))
 	}
 	body := strings.Join(lines, "\n")
 	return boxSt.Width(m.w - 2).Render(body)
@@ -1075,6 +1109,12 @@ func (m model) footerView() string {
 			opt("p", "ps") + opt("i", "inspect") + opt("d", "cd") + opt("a", "one-liner") +
 			keySt.Render("esc") + dimSt.Render(" cancel")
 	}
+	if m.paneFocus {
+		// In the footer, not inside the pane: the layout budgets exactly
+		// detailHeight lines for the pane, so an extra line there pushes the
+		// whole view one row past the terminal height.
+		return m.paneHint()
+	}
 	if m.filtering {
 		return m.filter.View()
 	}
@@ -1084,7 +1124,7 @@ func (m model) footerView() string {
 		}
 		return okSt.Render(m.flash)
 	}
-	keys := []string{"j/k move", "/ filter", "x stop", "o open", "F reveal", "c copy", "f pin", "? help", "q quit"}
+	keys := []string{"j/k move", "tab fields", "/ filter", "x stop", "o open", "F reveal", "c copy", "f pin", "? help", "q quit"}
 	var parts []string
 	for _, k := range keys {
 		sp := strings.SplitN(k, " ", 2)
@@ -1102,6 +1142,7 @@ func (m model) helpView() string {
 		{"1-7", "sort by port / pid / what / risk / owner / dir / cpu — press again to reverse"},
 		{"x or s", "stop the selected listener (with confirm)"},
 		{"o", "open localhost:<port> in the browser (http/https auto-detected)"},
+		{"tab", "focus the detail pane — j/k step between fields, ⏎ acts on one (opens a SPECIFIC port, reveals the binary vs the folder), tab/esc back"},
 		{"F", "reveal the folder in Finder — or the app bundle itself, for a helper with no useful cwd"},
 		{"T", "open a NEW terminal window in the folder (macOS; c → d copies a cd for this shell)"},
 		{"c", "copy… → u url · r curl · l lsof · s stop · p ps · i inspect · d cd · a one-liner (OSC 52 — works over SSH)"},
@@ -1244,7 +1285,10 @@ func Run(opts Options) error {
 // revealHint marks the dir line as actionable — the pane previously stated
 // facts with no indication that anything could be done with them, which is
 // exactly the gap against the mac app's clickable rows.
-func revealHint(r Row) string {
+func (m model) revealHint(r Row) string {
+	if m.paneFocus {
+		return "" // the focused-field hint line says what Enter does
+	}
 	if _, ok := revealTarget(r); !ok {
 		return ""
 	}
