@@ -39,11 +39,57 @@ func TestAppName(t *testing.T) {
 	}
 }
 
-// A bundle path appearing in a LATER argument must not rename the process —
-// argv[0] is the process, everything after it is data.
-func TestAppNamePrefersArgvZero(t *testing.T) {
-	got := AppName("/Applications/Antigravity IDE.app/Contents/MacOS/Electron --inspect /Applications/Other.app/x")
-	if got != "Antigravity IDE" {
-		t.Errorf("AppName = %q, want the argv[0] bundle", got)
+// A bundle path in an ARGUMENT must never name the process. The first case
+// below is the one that matters and the one the original test missed: when
+// argv[0] is NOT a bundle, a later .app path used to win and produce a
+// confidently wrong identity — strictly worse than the generic label.
+func TestAppNameOnlyReadsArgvZero(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			"unbundled executable with a bundle argument",
+			"/usr/bin/tool --open /Applications/Other.app/Contents/MacOS/Other",
+			"",
+		},
+		{
+			"open(1) launching an app is still open(1)",
+			"/usr/bin/open -a /Applications/Slack.app",
+			"",
+		},
+		{
+			"bundle in argv[0] wins over one in the arguments",
+			"/Applications/Antigravity IDE.app/Contents/MacOS/Electron --inspect /Applications/Other.app/x",
+			"Antigravity IDE",
+		},
+		{
+			"vendor directory in an argument is ignored too",
+			"/usr/local/bin/rsync /Users/me/Library/Application Support/Figma/",
+			"",
+		},
+		{
+			"relative command with a bundle argument",
+			"node --require /Applications/Other.app/x.js",
+			"",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := AppName(c.in); got != c.want {
+				t.Errorf("AppName(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// The prefix must be where the executable LIVES, not merely present in the
+// string — otherwise a path that mentions /Applications/ deeper down slips in.
+func TestAppNameRequiresTheBundleAtArgvZeroRoot(t *testing.T) {
+	if got := AppName("/opt/wrapper/Applications/Fake.app/Contents/MacOS/Fake"); got != "Fake" {
+		// This one legitimately resolves via the generic bundle fallback —
+		// it IS argv[0] and it IS a bundle, just not under /Applications.
+		t.Errorf("AppName = %q, want Fake from the generic bundle rule", got)
 	}
 }

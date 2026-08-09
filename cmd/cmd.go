@@ -462,15 +462,30 @@ func printTable(w io.Writer, rows []row) {
 	// silently overflowed the old 7-wide PORT column. Both were visible
 	// on a real machine the moment intel started naming apps.
 	const (
-		portW  = 9 // fits "*44950 +1" — a pinned multi-port row, the widest case
-		pidW   = 7
-		cpuW   = 8
-		whatW  = 22
-		dirW   = 26
-		riskW  = 7
-		ownerW = 8
-		stopW  = 40
+		pidW    = 7
+		cpuW    = 8
+		whatW   = 22
+		dirW    = 26
+		riskW   = 7
+		ownerW  = 8
+		maxStop = 40
 	)
+	// PORT and STOP are sized from the widest cell actually present, matching
+	// the TUI. A constant here is how the old 7-wide PORT column came to
+	// overflow on "44950 +1" — the width has to come from the data, and
+	// printTable already holds all of it.
+	portW, stopW := len("PORT"), len("STOP WITH")
+	for _, r := range rows {
+		if w := textw.Width(portCell(r.Ports)); w > portW {
+			portW = w
+		}
+		if w := textw.Width(stopListCell(r.Profile)); w > stopW {
+			stopW = w
+		}
+	}
+	if stopW > maxStop {
+		stopW = maxStop
+	}
 	cell := textw.Cell
 	_, _ = fmt.Fprintf(w, "%s  %s  %s  %s  %s  %s  %s  %s\n",
 		cell("PORT", portW), cell("PID", pidW), cell("CPU", cpuW), cell("WHAT", whatW),

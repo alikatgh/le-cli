@@ -27,29 +27,69 @@ import (
 
 // AppName extracts the product name from a process's command line, or ""
 // when the path reveals nothing (a bare /usr/libexec/rapportd, say).
+//
+// Only argv[0] is considered. Scanning the whole command line would let a
+// bundle path in an ARGUMENT rename the process: `/usr/bin/tool --open
+// /Applications/Other.app/…` is not Other, and naming it that — with raised
+// confidence — is worse than the generic label it replaced.
 func AppName(cmdline string) string {
-	if name := appBundleUnder(cmdline, "/Applications/"); name != "" {
+	argv0 := executableArg(cmdline)
+	if argv0 == "" {
+		return ""
+	}
+	if name := appBundleUnder(argv0, "/Applications/"); name != "" {
 		return name
 	}
-	if name := appBundleUnder(cmdline, "/System/Applications/"); name != "" {
+	if name := appBundleUnder(argv0, "/System/Applications/"); name != "" {
 		return name
 	}
-	if name := segmentAfter(cmdline, "/Application Support/"); name != "" {
+	if name := segmentAfter(argv0, "/Application Support/"); name != "" {
 		return name
 	}
 	// A bundle somewhere else entirely (~/Library/…, /opt/…): still better
 	// than nothing, and still the product for anything self-contained.
-	return bundleName(cmdline)
+	return bundleName(argv0)
 }
 
-// appBundleUnder returns the bundle name when the command line's FIRST bundle
-// sits directly under prefix — i.e. it is a top-level installed application.
-func appBundleUnder(cmdline, prefix string) string {
-	i := strings.Index(cmdline, prefix)
-	if i < 0 {
+// executableArg returns the argv[0] portion of a space-joined command line.
+//
+// argv boundaries are lost by the time ps hands us a single string, and a
+// bundle path legitimately contains spaces ("Grammarly Desktop.app"), so the
+// split can't be on whitespace. Instead it cuts at the first thing that can
+// only be a NEW argument:
+//
+//	" -"  a flag                     (…/Electron --inspect …)
+//	" /"  another absolute path      (/usr/local/bin/rsync /Users/…)
+//
+// Neither can occur inside a single path in practice — a space inside a path
+// is followed by the rest of a component, not by a dash or a slash — while
+// both reliably mark where argv[0] ended. Anything not starting with "/" is
+// rejected outright. A path that does contain one of those sequences gets
+// truncated and yields no name, which is the conservative direction: a
+// generic label, never a confident wrong one.
+func executableArg(cmdline string) string {
+	cmdline = strings.TrimSpace(cmdline)
+	if !strings.HasPrefix(cmdline, "/") {
 		return ""
 	}
-	rest := cmdline[i+len(prefix):]
+	end := len(cmdline)
+	for _, sep := range []string{" -", " /"} {
+		if i := strings.Index(cmdline, sep); i >= 0 && i < end {
+			end = i
+		}
+	}
+	return cmdline[:end]
+}
+
+// appBundleUnder returns the bundle name when argv[0] IS a bundle directly
+// under prefix — i.e. a top-level installed application. Anchored at the
+// start, so the prefix has to be where the executable lives, not merely
+// somewhere in the string.
+func appBundleUnder(argv0, prefix string) string {
+	if !strings.HasPrefix(argv0, prefix) {
+		return ""
+	}
+	rest := argv0[len(prefix):]
 	end := strings.Index(rest, ".app/")
 	if end < 0 {
 		return ""

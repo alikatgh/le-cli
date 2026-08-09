@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/charmbracelet/lipgloss"
 	"os"
 	"strings"
 	"testing"
@@ -497,5 +498,52 @@ func TestCPUListCell(t *testing.T) {
 		if got := cpuListCell(c.cpu); got != c.want {
 			t.Errorf("cpuListCell(%v) = %q, want %q", c.cpu, got, c.want)
 		}
+	}
+}
+
+// The plain table's columns must line up for every row, including a CJK app
+// name (2 display columns per rune) and a multi-port cell — the two cases
+// that skewed it once intel started naming apps from their bundles.
+func TestPrintTableColumnsAlign(t *testing.T) {
+	rows := []row{
+		{Listener: scan.Listener{PID: 1, Ports: []string{"3354"}, Cwd: "/"},
+			Profile: intel.Profile{Identity: "Pulse Secure", Source: intel.SrcApp, Risk: intel.High, StopKind: intel.StopAvoid}},
+		{Listener: scan.Listener{PID: 2, Ports: []string{"44950", "44951"}, Cwd: "/"},
+			Profile: intel.Profile{Identity: "Figma", Source: intel.SrcApp, Risk: intel.High, StopKind: intel.StopAvoid}},
+		{Listener: scan.Listener{PID: 3, Ports: []string{"50010"}, Cwd: "/"},
+			Profile: intel.Profile{Identity: "企业微信", Source: intel.SrcApp, Risk: intel.High, StopKind: intel.StopAvoid}},
+		{Listener: scan.Listener{PID: 4, Ports: []string{"5037"}, Cwd: "/code"},
+			Profile: intel.Profile{Identity: "adb", Source: intel.SrcTerminal, Risk: intel.Low, StopKind: intel.StopTerm, StopLabel: "Send TERM to PID 4"}},
+	}
+	var buf bytes.Buffer
+	printTable(&buf, rows)
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	header := lines[0]
+	want := lipgloss.Width(header[:strings.Index(header, "RISK")])
+	for i, l := range lines[1:] {
+		idx := strings.Index(l, string(rows[i].Profile.Risk))
+		if idx < 0 {
+			t.Fatalf("row %d has no risk cell: %q", i, l)
+		}
+		if got := lipgloss.Width(l[:idx]); got != want {
+			t.Errorf("row %d (%s): RISK at column %d, header at %d\n%s", i, rows[i].Profile.Identity, got, want, l)
+		}
+	}
+}
+
+// A refused row has no command to run, and repeating the advice in the widest
+// column crowded out the identity.
+func TestPrintTableOmitsStopForRefusedRows(t *testing.T) {
+	var buf bytes.Buffer
+	printTable(&buf, []row{{
+		Listener: scan.Listener{PID: 1, Ports: []string{"3354"}},
+		Profile:  intel.Profile{Identity: "OneDrive", Source: intel.SrcApp, Risk: intel.High, StopKind: intel.StopAvoid, StopLabel: "Avoid — owned by an app"},
+	}})
+	if strings.Contains(buf.String(), "Avoid — owned by") {
+		t.Errorf("refused row should not repeat the advice in the STOP column:\n%s", buf.String())
+	}
+	if !strings.Contains(buf.String(), "—") {
+		t.Errorf("refused row should show an em dash:\n%s", buf.String())
 	}
 }
