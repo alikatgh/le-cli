@@ -174,6 +174,13 @@ Generalized bug shapes. Grep here before reproducing anything.
 ---
 
 ## Chronological log
+### 2026-08-10 — swept the same guard across every package that touches the machine (LE-CLI-016b)
+- **Where:** `tools/exec_hooks.go` + `tools/exec_hooks_guard_test.go` (new), `kill/exec_hooks_guard_test.go` (new), `tools/system_test.go`.
+- **Why:** LE-CLI-016 was one instance of a class. `tools/` runs `killall Dock`, `killall Finder`, `pmset displaysleepnow` and `open`; `kill/` runs `syscall.Kill`, `launchctl bootout`, `brew services stop`, `docker stop`. Neither had a package-wide guard — `kill/`'s hooks were vars but every stub was per-test, which is exactly the arrangement `ui/` had before it opened 876 windows.
+- **Shape:** an `init()` in a `_test.go` file per package. `tools` neuters to a recorder (a test wanting an invocation reads it back); `kill` neuters to an **error**, because Stop branches on these errors and a fake success would let a test assert "stopped cleanly" down a path that shells out in production.
+- **Each guard has a canary** that fails if the guard is ever removed — probing with `/usr/bin/true` (which the real impl would succeed on) and `termProcess(0)` (which would signal the test binary's own process group). Both verified non-vacuous by renaming the `init` away.
+- **Bonus:** recording invocations made `system.go`'s real contract testable for the first time — "the SAME command the app runs" lives entirely in the argv, and asserting it previously meant restarting Finder.
+
 ### 2026-08-10 — the fuzz test that opened ~876 Terminal windows (LE-CLI-016)
 - **Where:** `ui/invariants_test.go:128`, `ui/invariants_degenerate_test.go:38` (key lists), `ui/ui.go:181,193` (`revealPath`, `openTerminalAt`), `ui/ui.go:1339` (`Run`). Fixed by `ui/launchers_guard_test.go` (new).
 - **Symptom:** hundreds of empty Terminal windows, hundreds of Finder windows at Macintosh HD, and dozens of Chrome tabs on localhost ports appeared on the live desktop; `last` shows 876 tty logins in bursts of 108–178/min at 01:14–01:47.
