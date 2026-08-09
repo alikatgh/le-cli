@@ -1337,6 +1337,20 @@ func clampInt(v, lo, hi int) int {
 // Run launches the TUI with the given options.
 func Run(opts Options) error {
 	p := tea.NewProgram(New(opts), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// WithMouseCellMotion puts the TERMINAL — not le — into mouse-reporting
+	// mode. Bubble Tea turns it back off when Run returns normally or panics,
+	// but not when the process dies without unwinding (SIGKILL, SIGHUP on a
+	// closed window, a crash in a child that takes the group down). The
+	// terminal then keeps reporting every mouse MOVE as input for the rest of
+	// that shell's life: the prompt fills with `;62;38M65;62;38M…` and, worse,
+	// in the byte-encoded mouse modes those coordinates decode to literal
+	// letters — a mouse sweep can "press" o/F/T in whatever is reading stdin.
+	//
+	// Disabling is idempotent and costs one write, so do it unconditionally on
+	// the way out rather than reasoning about which exits Bubble Tea covers.
+	// 1000 = press/release, 1002 = cell motion, 1003 = all motion, 1006 = SGR
+	// encoding, 1015 = urxvt encoding.
+	defer fmt.Fprint(os.Stderr, "\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l")
 	_, err := p.Run()
 	return err
 }

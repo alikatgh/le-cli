@@ -14,6 +14,25 @@ both when a fix lands on shared behavior.
 
 Generalized bug shapes. Grep here before reproducing anything.
 
+- **Stubbing a side effect AT THE CALL SITE is the fix that gets forgotten.
+  Neuter it for the whole test binary instead.** LE-CLI-015 stubbed the one
+  persistence path a fuzz test touched (`favorites`) and left `o`/`F`/`T` —
+  which shell out to `open` — live in the same key list. One `go test` run
+  therefore fired 101 real desktop launches; a session of ~20 runs opened ~876
+  Terminal login shells, hundreds of Finder windows and dozens of Chrome tabs
+  on the developer's live desktop. A `_test.go` file whose `init()` disables
+  every launcher hook is compiled only into the test binary, runs before any
+  test, and cannot be opted out of by a new test that does not know it exists.
+  Prefer that shape for ANY hook that touches the world outside the process.
+  (LE-CLI-016)
+- **`WithMouseCellMotion` puts the TERMINAL into a mode your program owns but
+  does not always restore.** Bubble Tea disables mouse reporting when `Run`
+  returns or panics — not when the process is killed. The terminal then reports
+  every mouse MOVE as input forever: the prompt fills with `;62;38M65;…`, and
+  because the byte-encoded modes map coordinates onto printable ASCII, a mouse
+  sweep can "type" real letters into whatever reads stdin next. Disable
+  1000/1002/1003/1006/1015 unconditionally in a `defer`; it is one idempotent
+  write. (LE-CLI-016)
 - **A UI test that presses keys presses the ones with SIDE EFFECTS too.** A
   randomised key-sequence test included `f` (pin a port), which persists — so
   it wrote six synthetic ports into the developer's real
@@ -150,6 +169,13 @@ Generalized bug shapes. Grep here before reproducing anything.
 ---
 
 ## Chronological log
+### 2026-08-10 — the fuzz test that opened ~876 Terminal windows (LE-CLI-016)
+- **Where:** `ui/invariants_test.go:128`, `ui/invariants_degenerate_test.go:38` (key lists), `ui/ui.go:181,193` (`revealPath`, `openTerminalAt`), `ui/ui.go:1339` (`Run`). Fixed by `ui/launchers_guard_test.go` (new).
+- **Symptom:** hundreds of empty Terminal windows, hundreds of Finder windows at Macintosh HD, and dozens of Chrome tabs on localhost ports appeared on the live desktop; `last` shows 876 tty logins in bursts of 108–178/min at 01:14–01:47.
+- **Cause:** the randomised key tests press `o`/`F`/`T`, which call `openURL`/`revealPath`/`openTerminalAt` — real `exec.Command("open", …)`. LE-CLI-015 stubbed only `favorites`, the side effect it happened to hit. Measured: **101 real launches per `go test` run**; ~20 runs in one session ≈ the 876 observed.
+- **Fix:** `init()` in a `_test.go` file neuters all three hooks for the whole test binary — compiled only into tests, unopt-out-able, zero cost to the shipped binary. Also `Run` now disables mouse modes 1000/1002/1003/1006/1015 in a `defer` (see below).
+- **Lesson:** stub the WORLD once at the binary boundary, not the call site — a per-test stub only protects the tests that remembered it.
+
 ### 2026-08-09 — randomised TUI invariant test, and the config it trashed (LE-CLI-015)
 - **Where:** `ui/invariants_test.go` (new).
 - **Why:** three cursor mechanics landed in one day (pane focus, grouping with folded headers, content-sized columns) and they all mutate the same state. Unit tests cover each alone; this drives them together with random key sequences, background scans, and resizes, asserting cursor range, `selected()`/`items[cursor]` agreement, `viewIdx` range, pane focus only on rows, and a non-empty render.
