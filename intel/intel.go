@@ -435,10 +435,16 @@ func Make(l scan.Listener, env Env) Profile {
 		} else if word("python") || word("python3") {
 			devServer(&p, "Python service", 76, "Python process listening locally, likely a dev server or tool.", "Restart the Python command.", l)
 		} else if strings.Contains(text, "language_server") || strings.Contains(text, "language-server") || strings.Contains(text, "code helper") || strings.Contains(text, "antigravity") {
+			// Name the editor when the bundle says which one. "Editor
+			// language service" three times over tells you nothing; "Antigravity
+			// IDE" tells you whose completions break if you stop it.
 			p.Identity, p.Kind, p.Source, p.Confidence, p.Risk = "Editor language service", Editor, SrcIDE, 80, Med
+			if app := AppName(l.CommandLine); app != "" {
+				p.Identity, p.Confidence = app, 88
+			}
 			p.StopKind = StopAvoid
 			p.StopLabel = "Avoid unless you recognize the editor helper"
-			p.Explain = "Editor helper for code intelligence, indexing, or extensions."
+			p.Explain = "Editor helper for code intelligence, indexing, or extensions." + helperSuffix(l)
 			p.Note = "Stopping it can break completions or indexing until the editor reloads."
 			p.Warning = "Stop only if you recognize the editor helper."
 		} else if formula != "" {
@@ -449,9 +455,17 @@ func Make(l scan.Listener, env Env) Profile {
 			p.Warning = "Managed services may restart unless stopped through their manager."
 		} else if system || bgApp {
 			p.Identity, p.Source, p.Confidence, p.Risk = pickStr(system, "macOS service", "App helper"), pickSrc(system, SrcMacOS, SrcApp), pick(system, 78, 72), High
+			// The bundle path names the product. Without this the table reads
+			// "App helper" once per background app — eight identical rows on a
+			// normal machine — while /Applications/OneDrive.app sits unread in
+			// the command line. Confidence rises with it: we now know WHAT it is,
+			// even though the advice (don't stop it) is unchanged.
+			if app := AppName(l.CommandLine); app != "" {
+				p.Identity, p.Confidence = app, pick(system, 88, 86)
+			}
 			p.StopKind = StopAvoid
 			p.StopLabel = "Avoid — owned by " + pickStr(system, "macOS", "an app")
-			p.Explain = pickStr(system, "macOS background service listening locally.", "Desktop app helper listening locally.")
+			p.Explain = pickStr(system, "macOS background service listening locally.", "Desktop app helper listening locally.") + helperSuffix(l)
 			p.Note = "It may restart automatically if the owning app or macOS needs it."
 			p.Warning = "Only stop this if you know why it is running."
 		} else if wildcard {

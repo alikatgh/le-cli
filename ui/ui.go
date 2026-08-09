@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/alikatgh/le-cli/intel"
+	"github.com/alikatgh/le-cli/internal/textw"
 	"github.com/alikatgh/le-cli/kill"
 	"github.com/alikatgh/le-cli/scan"
 )
@@ -930,17 +931,38 @@ func (m model) tableView() string {
 	if showDir {
 		dirBudget = dirW + 1
 	}
-	wWhat := clampInt(m.w-gutterW-8-1-7-1-cpuW-1-7-1-9-1-3-dirBudget, 14, 40)
-	stopW := m.w - gutterW - wWhat - 36 - (cpuW + 1) - dirBudget
+	// PORT and STOP are sized from the widest cell actually present, not from
+	// a constant. Two reasons: a fixed 8-wide PORT silently overflowed on
+	// "*44950 +1" (pinned, multi-port) and shifted every column after it; and
+	// STOP is the widest column while saying "avoid — inspect first" on most
+	// rows — sizing it to content hands ~20 columns back to WHAT, which is
+	// where the identity lives.
+	//
+	// Measured over the whole filtered set, never the visible window: a width
+	// derived from what happens to be on screen makes every column twitch as
+	// you scroll.
+	portW, stopW := 8, 6
+	for _, r := range m.view {
+		if w := textw.Width(portCellFor(m, r)); w > portW {
+			portW = w
+		}
+		if w := textw.Width(stopTableCell(r.P)); w > stopW {
+			stopW = w
+		}
+	}
+	portW = clampInt(portW, 8, 12)
+	stopW = clampInt(stopW, 6, 34)
+	fixed := gutterW + portW + 1 + 7 + 1 + cpuW + 1 + 7 + 1 + 9 + 1 + dirBudget + stopW
+	wWhat := clampInt(m.w-fixed, 14, 48)
 	var header string
 	if showDir {
-		header = fmt.Sprintf("%-8s %-7s %-*s %-*s %-*s %-7s %-9s %s",
-			m.colLabel("PORT", sortPort), m.colLabel("PID", sortPID), cpuW, m.colLabel("CPU", sortCPU),
+		header = fmt.Sprintf("%-*s %-7s %-*s %-*s %-*s %-7s %-9s %s",
+			portW, m.colLabel("PORT", sortPort), m.colLabel("PID", sortPID), cpuW, m.colLabel("CPU", sortCPU),
 			wWhat, m.colLabel("WHAT", sortWhat),
 			dirW, m.colLabel("DIR", sortDir), m.colLabel("RISK", sortRisk), m.colLabel("OWNER", sortOwner), "STOP")
 	} else {
-		header = fmt.Sprintf("%-8s %-7s %-*s %-*s %-7s %-9s %s",
-			m.colLabel("PORT", sortPort), m.colLabel("PID", sortPID), cpuW, m.colLabel("CPU", sortCPU),
+		header = fmt.Sprintf("%-*s %-7s %-*s %-*s %-7s %-9s %s",
+			portW, m.colLabel("PORT", sortPort), m.colLabel("PID", sortPID), cpuW, m.colLabel("CPU", sortCPU),
 			wWhat, m.colLabel("WHAT", sortWhat),
 			m.colLabel("RISK", sortRisk), m.colLabel("OWNER", sortOwner), "STOP")
 	}
@@ -959,16 +981,11 @@ func (m model) tableView() string {
 		// shifts every column after WHAT. Same trap truncate() was fixed for.
 		// Make the port a ⌘-clickable link to its localhost URL. osc8 is
 		// zero-width, so padRight still aligns the column to 8 display cells.
-		portText := portCell(r.L.Ports)
-		if m.isFavorite(r) {
-			// ASCII star on purpose: "★" is East-Asian-ambiguous width and
-			// would shift the column in some terminals.
-			portText = "*" + portText
-		}
+		portText := portCellFor(m, r)
 		if url, ok := urlFor(r); ok {
 			portText = osc8(portText, url)
 		}
-		port := padRight(portText, 8)
+		port := padRight(portText, portW)
 		pid := padRight(fmt.Sprintf("%d", r.L.PID), 7)
 		cpu := padRight(cpuCell(r.L.CPU), cpuW)
 		what := padRight(truncate(r.P.Identity, wWhat), wWhat)
@@ -978,20 +995,25 @@ func (m model) tableView() string {
 		}
 		risk := padRight(string(r.P.Risk), 7)
 		owner := padRight(truncate(string(r.P.Source), 9), 9)
-		stop := truncate(stopShort(r.P), stopW)
+		stop := truncate(stopTableCell(r.P), stopW)
 
-		gutter := lipgloss.NewStyle().Foreground(riskColor(r.P.Risk)).Render("▎") + " "
+		gutter := railFor(r) + " "
 		if i == m.cursor {
 			line := port + " " + pid + " " + cpu + " " + what + " " + dir + risk + " " + owner + " " + stop
 			b.WriteString(gutter + selSt.Width(m.w-gutterW).Render(line))
 		} else {
-			// Hierarchy: identity and the stop command read at full weight;
-			// pid/dir/owner recede; risk and CPU carry their color (bold when
-			// severe, so the mono theme — which has no red hue — still flags them).
-			riskSt := lipgloss.NewStyle().Foreground(riskColor(r.P.Risk))
-			if r.P.Risk != intel.Low && r.P.Risk != intel.Med {
-				riskSt = riskSt.Bold(true)
-			}
+			// Hierarchy is organised by what you can DO, not by risk alone.
+			// Before this, a screen of background helpers you must not touch
+			// rendered as nine bold red rails while the three processes you
+			// actually control receded — the UI shouted loudest about the rows
+			// where shouting is useless. Now weight follows actionability:
+			// a row you can stop carries a bold identity and a solid rail, one
+			// you can't gets a hairline rail and normal weight. Risk keeps its
+			// colour either way, so nothing is hidden — it just stops drowning
+			// the signal. Weight, not colour, does the work, so this survives
+			// the mono theme and NO_COLOR.
+			riskSt := riskStyleFor(r)
+			whatSt := whatStyleFor(r)
 			cpuSt := lipgloss.NewStyle().Foreground(cpuColor(r.L.CPU))
 			if r.L.CPU >= cpuHotPct {
 				cpuSt = cpuSt.Bold(true)
@@ -1000,7 +1022,7 @@ func (m model) tableView() string {
 				port + " " +
 				dimSt.Render(pid) + " " +
 				cpuSt.Render(cpu) + " " +
-				what + " " +
+				whatSt.Render(what) + " " +
 				dimSt.Render(dir) +
 				riskSt.Render(risk) + " " +
 				dimSt.Render(owner) + " " +
@@ -1016,13 +1038,10 @@ func (m model) tableView() string {
 // padRight pads s with spaces to display width n (no-op if already wider).
 // Padding by lipgloss.Width, not rune count: a 4-rune CJK identity occupies
 // 8 columns, and fmt's %-*s would under-pad it and shift every later column.
-func padRight(s string, n int) string {
-	w := lipgloss.Width(s)
-	if w >= n {
-		return s
-	}
-	return s + strings.Repeat(" ", n-w)
-}
+// padRight and truncate delegate to internal/textw so the TUI and `le list`
+// share one implementation of column arithmetic — they drifted once, and the
+// table that hadn't learned about display width skewed on a CJK app name.
+func padRight(s string, n int) string { return textw.Pad(s, n) }
 
 // colLabel appends a plain-ASCII direction marker to a column header when
 // it's the active sort column, so the sort state is visible without opening
@@ -1223,39 +1242,7 @@ func dirCell(cwd, home string, n int) string {
 	return "…" + string(r[start:])
 }
 
-func truncate(s string, n int) string {
-	s = strings.TrimSpace(s)
-	if n < 1 {
-		return ""
-	}
-	if lipgloss.Width(s) <= n {
-		return s
-	}
-	if n <= 1 {
-		return "…"
-	}
-	// Accumulate by DISPLAY WIDTH, not rune count. A prior version of this
-	// fix switched from byte-slicing to rune-slicing to stop cutting
-	// multi-byte UTF-8 characters in half — that fixed the invalid-UTF-8
-	// crash risk, but a wide rune (CJK, some emoji) still costs 2 terminal
-	// columns while "costing" only 1 against a rune-count budget, so the
-	// result could still overflow the caller's column budget by up to ~2x
-	// (verified: a CJK container/directory name truncated to a rune count
-	// of 8 rendered at 15 display columns). Walk runes one at a time,
-	// tracking cumulative lipgloss.Width, so the output never exceeds n.
-	var b strings.Builder
-	width := 0
-	budget := n - 1 // reserve 1 column for the ellipsis, itself 1 column wide
-	for _, r := range s {
-		rw := lipgloss.Width(string(r))
-		if width+rw > budget {
-			break
-		}
-		b.WriteRune(r)
-		width += rw
-	}
-	return b.String() + "…"
-}
+func truncate(s string, n int) string { return textw.Truncate(s, n) }
 
 func orDash(s string) string {
 	if strings.TrimSpace(s) == "" {
@@ -1293,4 +1280,65 @@ func (m model) revealHint(r Row) string {
 		return ""
 	}
 	return dimSt.Render("   (F reveals)")
+}
+
+// portCellFor renders the PORT cell's text (star included, link excluded) so
+// the width pass and the render pass can never disagree about how wide it is.
+func portCellFor(m model, r Row) string {
+	text := portCell(r.L.Ports)
+	if m.isFavorite(r) {
+		// ASCII star on purpose: "★" is East-Asian-ambiguous width and would
+		// shift the column in some terminals.
+		text = "*" + text
+	}
+	return text
+}
+
+// stopTableCell is the STOP column's text. stopShort renders the full advice
+// ("avoid — inspect first"), which is right in the detail pane and wrong in a
+// table where it repeated on 12 of 15 rows — in the widest column — while
+// RISK and OWNER already said it. An em dash means "nothing to run here".
+func stopTableCell(p intel.Profile) string {
+	if p.StopKind == intel.StopAvoid {
+		return "—"
+	}
+	return stopShort(p)
+}
+
+// railFor renders the 1-column risk rail at the head of a row. Solid for a
+// row you can act on, hairline for one le refuses to stop: same width, same
+// colour information, different weight — so a screen full of untouchable
+// system helpers stops competing with the handful of rows that are yours.
+func railFor(r Row) string {
+	st := lipgloss.NewStyle().Foreground(riskColor(r.P.Risk))
+	if r.P.StopKind == intel.StopAvoid {
+		return st.Faint(true).Render("│")
+	}
+	return st.Render("▎")
+}
+
+// actionable reports whether this row is one the user can actually do
+// something about. It is the axis the table's visual weight is organised on.
+func actionable(r Row) bool { return r.P.StopKind != intel.StopAvoid }
+
+// whatStyleFor gives the identity its weight: bold for a row you can act on,
+// normal for one le refuses to stop. Not dimmed — the app name is the whole
+// point of the column and must stay readable; it just doesn't compete.
+func whatStyleFor(r Row) lipgloss.Style {
+	if actionable(r) {
+		return lipgloss.NewStyle().Bold(true)
+	}
+	return lipgloss.NewStyle()
+}
+
+// riskStyleFor colours the RISK cell always, and bolds it only when the row is
+// BOTH severe and actionable — "dangerous and yours to deal with". Bolding
+// severity you can't act on is what made nine untouchable helpers drown out
+// the three processes that mattered.
+func riskStyleFor(r Row) lipgloss.Style {
+	st := lipgloss.NewStyle().Foreground(riskColor(r.P.Risk))
+	if actionable(r) && r.P.Risk != intel.Low && r.P.Risk != intel.Med {
+		return st.Bold(true)
+	}
+	return st
 }

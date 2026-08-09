@@ -19,6 +19,7 @@ import (
 
 	"github.com/alikatgh/le-cli/config"
 	"github.com/alikatgh/le-cli/intel"
+	"github.com/alikatgh/le-cli/internal/textw"
 	"github.com/alikatgh/le-cli/kill"
 	"github.com/alikatgh/le-cli/scan"
 	"github.com/alikatgh/le-cli/tools"
@@ -454,12 +455,47 @@ func printTable(w io.Writer, rows []row) {
 		return
 	}
 	home, _ := os.UserHomeDir()
-	_, _ = fmt.Fprintf(w, "%-7s  %-7s  %-8s  %-22s  %-26s  %-7s  %-8s  %s\n", "PORT", "PID", "CPU", "WHAT", "DIR", "RISK", "OWNER", "STOP WITH")
+	// Columns are padded by DISPLAY WIDTH via textw, not fmt's %-Ns.
+	// fmt pads by rune count, which is wrong twice over here: an
+	// East-Asian app name (企业微信 — 4 runes, 8 columns) skews every
+	// column to its right, and a multi-port cell ("44950 +1", 8 chars)
+	// silently overflowed the old 7-wide PORT column. Both were visible
+	// on a real machine the moment intel started naming apps.
+	const (
+		pidW    = 7
+		cpuW    = 8
+		whatW   = 22
+		dirW    = 26
+		riskW   = 7
+		ownerW  = 8
+		maxStop = 40
+	)
+	// PORT and STOP are sized from the widest cell actually present, matching
+	// the TUI. A constant here is how the old 7-wide PORT column came to
+	// overflow on "44950 +1" — the width has to come from the data, and
+	// printTable already holds all of it.
+	portW, stopW := len("PORT"), len("STOP WITH")
 	for _, r := range rows {
-		_, _ = fmt.Fprintf(w, "%-7s  %-7d  %-8s  %-22s  %-26s  %-7s  %-8s  %s\n",
-			portCell(r.Ports), r.PID, cpuListCell(r.CPU), truncate(r.Profile.Identity, 22),
-			dirCell(r.Cwd, home, 26), string(r.Profile.Risk),
-			string(r.Profile.Source), truncate(r.Profile.StopLabel, 40))
+		if w := textw.Width(portCell(r.Ports)); w > portW {
+			portW = w
+		}
+		if w := textw.Width(stopListCell(r.Profile)); w > stopW {
+			stopW = w
+		}
+	}
+	if stopW > maxStop {
+		stopW = maxStop
+	}
+	cell := textw.Cell
+	_, _ = fmt.Fprintf(w, "%s  %s  %s  %s  %s  %s  %s  %s\n",
+		cell("PORT", portW), cell("PID", pidW), cell("CPU", cpuW), cell("WHAT", whatW),
+		cell("DIR", dirW), cell("RISK", riskW), cell("OWNER", ownerW), "STOP WITH")
+	for _, r := range rows {
+		_, _ = fmt.Fprintf(w, "%s  %s  %s  %s  %s  %s  %s  %s\n",
+			cell(portCell(r.Ports), portW), cell(strconv.Itoa(r.PID), pidW),
+			cell(cpuListCell(r.CPU), cpuW), cell(r.Profile.Identity, whatW),
+			cell(dirCell(r.Cwd, home, dirW), dirW), cell(string(r.Profile.Risk), riskW),
+			cell(string(r.Profile.Source), ownerW), textw.Truncate(stopListCell(r.Profile), stopW))
 	}
 }
 
@@ -834,4 +870,16 @@ func truncate(s string, n int) string {
 		return string(r[:n])
 	}
 	return string(r[:n-1]) + "…"
+}
+
+// stopListCell is the STOP column's text. A row le refuses to stop repeats
+// "avoid — inspect first" verbatim — on a normal machine that was 12 of 15
+// rows saying the same thing, in the widest column, while RISK and OWNER
+// already carried the message. An em dash says "nothing to run here" in one
+// column and hands the width back to the columns that identify the process.
+func stopListCell(p intel.Profile) string {
+	if p.StopKind == intel.StopAvoid {
+		return "—"
+	}
+	return p.StopLabel
 }
