@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/alikatgh/le-cli/internal/label"
 )
 
 // Grouping the list by owner.
@@ -32,6 +34,11 @@ type listItem struct {
 	count  int    // group header: how many rows it holds
 	hidden int    // group header: how many are hidden right now (0 when open)
 	row    Row    // row item
+	// viewIdx is this row's position in m.view. Grouping reorders and
+	// interleaves lines, so anything computed once across the whole filtered
+	// set (disambiguated labels) has to be looked up by this, never by the
+	// line index.
+	viewIdx int
 }
 
 // buildItems turns the sorted, filtered rows into the lines to render.
@@ -40,8 +47,8 @@ type listItem struct {
 func (m *model) buildItems() {
 	if !m.grouped {
 		m.items = make([]listItem, 0, len(m.view))
-		for _, r := range m.view {
-			m.items = append(m.items, listItem{row: r})
+		for i, r := range m.view {
+			m.items = append(m.items, listItem{row: r, viewIdx: i})
 		}
 		return
 	}
@@ -51,18 +58,26 @@ func (m *model) buildItems() {
 	// sort means (lowest port first, hottest CPU first) true of the groups
 	// too, instead of imposing a second, invisible ordering.
 	var order []string
-	byOwner := map[string][]Row{}
-	for _, r := range m.view {
+	type indexed struct {
+		row Row
+		idx int
+	}
+	byOwner := map[string][]indexed{}
+	for i, r := range m.view {
 		owner := string(r.P.Source)
 		if _, seen := byOwner[owner]; !seen {
 			order = append(order, owner)
 		}
-		byOwner[owner] = append(byOwner[owner], r)
+		byOwner[owner] = append(byOwner[owner], indexed{row: r, idx: i})
 	}
 
 	m.items = m.items[:0]
 	for _, owner := range order {
-		rows := byOwner[owner]
+		indexedRows := byOwner[owner]
+		rows := make([]Row, len(indexedRows))
+		for i, ir := range indexedRows {
+			rows[i] = ir.row
+		}
 		collapsed := m.isCollapsed(owner, rows)
 		hidden := 0
 		if collapsed {
@@ -72,10 +87,20 @@ func (m *model) buildItems() {
 		if collapsed {
 			continue
 		}
-		for _, r := range rows {
-			m.items = append(m.items, listItem{row: r})
+		for _, ir := range indexedRows {
+			m.items = append(m.items, listItem{row: ir.row, viewIdx: ir.idx})
 		}
 	}
+}
+
+// rowLabels disambiguates identities across the whole filtered set, so two
+// listeners of the same app are told apart wherever they end up on screen.
+func (m model) rowLabels() []string {
+	items := make([]label.Item, len(m.view))
+	for i, r := range m.view {
+		items[i] = label.Item{Identity: r.P.Identity, Helper: r.L.Command}
+	}
+	return label.Disambiguate(items)
 }
 
 // isCollapsed decides whether a group is currently folded.

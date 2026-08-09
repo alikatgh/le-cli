@@ -911,7 +911,12 @@ func (m model) headerView() string {
 	}
 	// Risk pulse: elevated counts get their color in the header, so a
 	// screenful of green never hides the two rows that matter.
-	var hi, med int
+	//
+	// Alongside it, how many listeners you can actually stop. On a normal
+	// machine "9 high" is mostly background helpers le refuses to touch, and
+	// the honest summary of that screen is "3 of these are yours" — the same
+	// reframing the row weighting does, stated once at the top.
+	var hi, med, canStop int
 	for _, r := range m.view {
 		switch r.P.Risk {
 		case intel.Low:
@@ -919,6 +924,9 @@ func (m model) headerView() string {
 			med++
 		default:
 			hi++
+		}
+		if actionable(r) {
+			canStop++
 		}
 	}
 	pulse := ""
@@ -933,6 +941,11 @@ func (m model) headerView() string {
 	}
 	if pulse != "" {
 		pulse += dimSt.Render("  ·  ")
+	}
+	// Only worth saying when it isn't the whole list: on a screen where
+	// everything is stoppable the count restates len(view) and earns nothing.
+	if canStop > 0 && canStop < len(m.view) {
+		pulse += okSt.Render(fmt.Sprintf("%d stoppable", canStop)) + dimSt.Render("  ·  ")
 	}
 	when := "scanning…"
 	if !m.lastScan.IsZero() {
@@ -978,6 +991,11 @@ func (m model) tableView() string {
 	// Measured over the whole filtered set, never the visible window: a width
 	// derived from what happens to be on screen makes every column twitch as
 	// you scroll.
+	// Labels are disambiguated across the WHOLE filtered set, not the visible
+	// window, for the same reason the column widths are: a label that gains or
+	// loses a suffix as you scroll is worse than either version of it.
+	labels := m.rowLabels()
+
 	portW, stopW := 8, 6
 	for _, r := range m.view {
 		if w := textw.Width(portCellFor(m, r)); w > portW {
@@ -987,10 +1005,19 @@ func (m model) tableView() string {
 			stopW = w
 		}
 	}
+	widestLabel := 0
+	for _, l := range labels {
+		if w := textw.Width(l); w > widestLabel {
+			widestLabel = w
+		}
+	}
 	portW = clampInt(portW, 8, 12)
 	stopW = clampInt(stopW, 6, 34)
 	fixed := gutterW + portW + 1 + 7 + 1 + cpuW + 1 + 7 + 1 + 9 + 1 + dirBudget + stopW
 	wWhat := clampInt(m.w-fixed, 14, 48)
+	if widestLabel < wWhat {
+		wWhat = clampInt(widestLabel, 14, 48) // don't reserve space nothing uses
+	}
 	var header string
 	if showDir {
 		header = fmt.Sprintf("%-*s %-7s %-*s %-*s %-*s %-7s %-9s %s",
@@ -1032,7 +1059,7 @@ func (m model) tableView() string {
 		port := padRight(portText, portW)
 		pid := padRight(fmt.Sprintf("%d", r.L.PID), 7)
 		cpu := padRight(cpuCell(r.L.CPU), cpuW)
-		what := padRight(truncate(r.P.Identity, wWhat), wWhat)
+		what := padRight(truncate(labels[m.items[i].viewIdx], wWhat), wWhat)
 		dir := ""
 		if showDir {
 			dir = padRight(dirCell(r.L.Cwd, homeDir, dirW), dirW) + " "

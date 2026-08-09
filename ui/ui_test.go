@@ -1199,3 +1199,80 @@ func TestWeightFollowsActionability(t *testing.T) {
 		t.Error("both high-risk rows should keep the same risk colour")
 	}
 }
+
+// --- labels and header counts ---
+
+// One app owning several listeners printed the same name on every row; the
+// suffix appears only where a listing actually collides.
+func TestTableLabelsDisambiguateCollisions(t *testing.T) {
+	rows := []Row{
+		{L: scan.Listener{PID: 1, Ports: []string{"55387"}, Command: "Electron"},
+			P: intel.Profile{Identity: "Antigravity IDE", Source: intel.SrcIDE, Risk: intel.Med, StopKind: intel.StopAvoid}},
+		{L: scan.Listener{PID: 2, Ports: []string{"55396"}, Command: "language_server_macos_arm"},
+			P: intel.Profile{Identity: "Antigravity IDE", Source: intel.SrcIDE, Risk: intel.Med, StopKind: intel.StopAvoid}},
+		{L: scan.Listener{PID: 3, Ports: []string{"42050"}, Command: "OneDrive Sync Service"},
+			P: intel.Profile{Identity: "OneDrive", Source: intel.SrcApp, Risk: intel.High, StopKind: intel.StopAvoid}},
+	}
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+	out := m.(model).tableView()
+
+	for _, want := range []string{"Antigravity IDE · Electron", "Antigravity IDE · language_server"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("colliding rows should be distinguishable, missing %q:\n%s", want, out)
+		}
+	}
+	// OneDrive appears once: no suffix, however different its helper binary is.
+	if strings.Contains(out, "OneDrive · ") {
+		t.Errorf("a unique identity must not gain a suffix:\n%s", out)
+	}
+}
+
+// Labels are computed over the whole filtered set, so a row's name doesn't
+// change as it scrolls in and out of view.
+func TestLabelsDoNotDependOnScrollPosition(t *testing.T) {
+	rows := make([]Row, 40)
+	for i := range rows {
+		rows[i] = Row{
+			L: scan.Listener{PID: 100 + i, Ports: []string{strconv.Itoa(3000 + i)}, Command: "node"},
+			P: intel.Profile{Identity: "Node service", Source: intel.SrcTerminal, Risk: intel.Low, StopKind: intel.StopTerm, StopLabel: "TERM"},
+		}
+	}
+	// One row with a different helper, far down: it forces suffixes on all of
+	// them, and that must be true at the top of the list as well.
+	rows[38].L.Command = "bun"
+
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 20})
+	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+	if !strings.Contains(m.(model).tableView(), "Node service · node") {
+		t.Error("a collision anywhere in the set should label the rows at the top too")
+	}
+}
+
+// After ranking rows by actionability, the number worth stating is how many
+// listeners are actually yours — "9 high" is mostly helpers le won't touch.
+func TestHeaderCountsStoppableListeners(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
+	m, _ = m.Update(scannedMsg{rows: machineRows(), at: time.Now()})
+	if got := m.(model).headerView(); !strings.Contains(got, "3 stoppable") {
+		t.Errorf("header should count stoppable listeners:\n%s", got)
+	}
+}
+
+// When everything is stoppable the count just restates the total, so it is
+// left out rather than padding the header with a tautology.
+func TestHeaderOmitsStoppableCountWhenItSaysNothing(t *testing.T) {
+	rows := []Row{
+		{L: scan.Listener{PID: 1, Ports: []string{"3000"}}, P: intel.Profile{Identity: "Node", Source: intel.SrcTerminal, Risk: intel.Low, StopKind: intel.StopTerm}},
+		{L: scan.Listener{PID: 2, Ports: []string{"3001"}}, P: intel.Profile{Identity: "Vite", Source: intel.SrcTerminal, Risk: intel.Low, StopKind: intel.StopTerm}},
+	}
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
+	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+	if got := m.(model).headerView(); strings.Contains(got, "stoppable") {
+		t.Errorf("all-stoppable list should not restate the total:\n%s", got)
+	}
+}

@@ -19,6 +19,7 @@ import (
 
 	"github.com/alikatgh/le-cli/config"
 	"github.com/alikatgh/le-cli/intel"
+	"github.com/alikatgh/le-cli/internal/label"
 	"github.com/alikatgh/le-cli/internal/textw"
 	"github.com/alikatgh/le-cli/kill"
 	"github.com/alikatgh/le-cli/scan"
@@ -464,7 +465,7 @@ func printTable(w io.Writer, rows []row) {
 	const (
 		pidW    = 7
 		cpuW    = 8
-		whatW   = 22
+		maxWhat = 34 // fits "Antigravity IDE · language_server"
 		dirW    = 26
 		riskW   = 7
 		ownerW  = 8
@@ -474,7 +475,24 @@ func printTable(w io.Writer, rows []row) {
 	// the TUI. A constant here is how the old 7-wide PORT column came to
 	// overflow on "44950 +1" — the width has to come from the data, and
 	// printTable already holds all of it.
+	// Same disambiguation the TUI does: one app owning several listeners
+	// otherwise prints the same name on every one of its rows.
+	labels := make([]label.Item, len(rows))
+	for i, r := range rows {
+		labels[i] = label.Item{Identity: r.Profile.Identity, Helper: r.Command}
+	}
+	names := label.Disambiguate(labels)
+
 	portW, stopW := len("PORT"), len("STOP WITH")
+	whatW := len("WHAT")
+	for _, n := range names {
+		if w := textw.Width(n); w > whatW {
+			whatW = w
+		}
+	}
+	if whatW > maxWhat {
+		whatW = maxWhat
+	}
 	for _, r := range rows {
 		if w := textw.Width(portCell(r.Ports)); w > portW {
 			portW = w
@@ -490,10 +508,10 @@ func printTable(w io.Writer, rows []row) {
 	_, _ = fmt.Fprintf(w, "%s  %s  %s  %s  %s  %s  %s  %s\n",
 		cell("PORT", portW), cell("PID", pidW), cell("CPU", cpuW), cell("WHAT", whatW),
 		cell("DIR", dirW), cell("RISK", riskW), cell("OWNER", ownerW), "STOP WITH")
-	for _, r := range rows {
+	for i, r := range rows {
 		_, _ = fmt.Fprintf(w, "%s  %s  %s  %s  %s  %s  %s  %s\n",
 			cell(portCell(r.Ports), portW), cell(strconv.Itoa(r.PID), pidW),
-			cell(cpuListCell(r.CPU), cpuW), cell(r.Profile.Identity, whatW),
+			cell(cpuListCell(r.CPU), cpuW), cell(names[i], whatW),
 			cell(dirCell(r.Cwd, home, dirW), dirW), cell(string(r.Profile.Risk), riskW),
 			cell(string(r.Profile.Source), ownerW), textw.Truncate(stopListCell(r.Profile), stopW))
 	}

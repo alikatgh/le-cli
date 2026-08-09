@@ -547,3 +547,36 @@ func TestPrintTableOmitsStopForRefusedRows(t *testing.T) {
 		t.Errorf("refused row should show an em dash:\n%s", buf.String())
 	}
 }
+
+// `le list` must disambiguate the same way the TUI does — the two tables
+// showing different names for the same process is its own kind of confusion.
+func TestPrintTableDisambiguatesCollisions(t *testing.T) {
+	rows := []row{
+		{Listener: scan.Listener{PID: 1, Ports: []string{"55387"}, Command: "Electron"},
+			Profile: intel.Profile{Identity: "Antigravity IDE", Source: intel.SrcIDE, Risk: intel.Med, StopKind: intel.StopAvoid}},
+		{Listener: scan.Listener{PID: 2, Ports: []string{"55396"}, Command: "language_server_macos_arm"},
+			Profile: intel.Profile{Identity: "Antigravity IDE", Source: intel.SrcIDE, Risk: intel.Med, StopKind: intel.StopAvoid}},
+		{Listener: scan.Listener{PID: 3, Ports: []string{"42050"}, Command: "OneDrive Sync Service"},
+			Profile: intel.Profile{Identity: "OneDrive", Source: intel.SrcApp, Risk: intel.High, StopKind: intel.StopAvoid}},
+	}
+	var buf bytes.Buffer
+	printTable(&buf, rows)
+	out := buf.String()
+	for _, want := range []string{"Antigravity IDE · Electron", "Antigravity IDE · language_server"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "OneDrive · ") {
+		t.Errorf("a unique identity must not gain a suffix:\n%s", out)
+	}
+	// …and the columns still line up with the longer labels in place.
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	want := lipgloss.Width(lines[0][:strings.Index(lines[0], "RISK")])
+	for i, l := range lines[1:] {
+		idx := strings.Index(l, string(rows[i].Profile.Risk))
+		if got := lipgloss.Width(l[:idx]); got != want {
+			t.Errorf("row %d: RISK at %d, header at %d\n%s", i, got, want, l)
+		}
+	}
+}
