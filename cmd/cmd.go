@@ -222,7 +222,9 @@ func stopCmd() *cobra.Command {
 
 func holdCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "hold PORT",
+		// Both accepted forms in the synopsis: the range is not a hidden
+		// extra, and `man le-hold` only shows what Use spells out.
+		Use:   "hold PORT|PORT-PORT",
 		Short: "Hold a port — or a range PORT-PORT — so nothing else can grab it (Ctrl-C frees it)",
 		Args:  usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {

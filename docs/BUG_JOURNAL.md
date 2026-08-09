@@ -40,7 +40,12 @@ Generalized bug shapes. Grep here before reproducing anything.
   `le-hold`'s described the pre-range behavior. The fix isn't diligence, it's a
   CI job. Corollary: **a drift check needs a deterministic generator** — cobra
   stamps `time.Now()` into the `.TH` header, so an unpinned date turns the check
-  red on the 1st of every month and trains everyone to ignore it. (LE-CLI-003)
+  red on the 1st of every month and trains everyone to ignore it. Second
+  corollary: **regenerate-and-diff only catches what the generator WRITES.**
+  `GenManTree` overwrites but never deletes, so a removed command leaves a
+  tracked, unmodified orphan that `git diff` calls clean — clear the output
+  directory first and check `git status --porcelain` (M + ?? + D), not `git
+  diff`. (LE-CLI-003)
 - **A background refresher must not commit a result the world has moved past.**
   `CachedScheme` probes in a goroutine, so a probe outlives the state it was
   started for and lands on top of newer state (a cleared cache, a swapped

@@ -5,12 +5,13 @@
 //
 // CI runs this and fails on a dirty man/ (see .github/workflows/ci.yml), which
 // is the only thing that keeps the committed pages honest: the manual "run it
-// and commit the diff" step is exactly what got skipped for eleven commands.
+// and commit the diff" step is exactly what got skipped for twelve commands.
 package main
 
 import (
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra/doc"
@@ -29,6 +30,19 @@ func main() {
 	const dir = "man"
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		log.Fatal(err)
+	}
+	// Clear the directory first: GenManTree writes and overwrites, but never
+	// DELETES, so a renamed or removed command leaves its old page behind —
+	// tracked, unmodified, and therefore invisible to a `git diff` drift check.
+	// Regenerating from empty makes the removal show up as a deletion.
+	stale, err := filepath.Glob(filepath.Join(dir, "*.1"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, f := range stale {
+		if err := os.Remove(f); err != nil {
+			log.Fatal(err)
+		}
 	}
 	date, err := time.Parse(time.DateOnly, manDate)
 	if err != nil {

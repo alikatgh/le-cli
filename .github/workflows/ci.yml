@@ -52,9 +52,13 @@ jobs:
       - name: man pages are up to date
         run: |
           go run ./internal/gendocs
-          if ! git diff --quiet --exit-code -- man/ || [ -n "$(git ls-files --others --exclude-standard man/)" ]; then
-            echo "man/ is stale — run 'go run ./internal/gendocs' and commit the diff:"
-            git status --short man/
+          # --porcelain covers all three drift shapes: modified (usage text
+          # changed), untracked (a new command), and deleted (a removed one —
+          # gendocs clears man/ first, so an orphaned page shows up as a
+          # deletion instead of sitting there tracked and unmodified).
+          if [ -n "$(git status --porcelain -- man/)" ]; then
+            echo "man/ is stale — run 'go run ./internal/gendocs' and commit the result:"
+            git status --short -- man/
             git diff -- man/
             exit 1
           fi
