@@ -53,6 +53,14 @@ Generalized bug shapes. Grep here before reproducing anything.
   test flaky. Capture a generation counter when the work starts; only write if
   it still matches. A mutex protects the map, not the ordering, so `-race` will
   never catch this. (LE-CLI-006)
+- **A test stub for shared state must tolerate being called by goroutines it
+  didn't start.** The stub for LE-CLI-006 did `close(started)` on every call;
+  a leftover `CachedScheme` goroutine from an earlier test called it a second
+  time and panicked the whole binary with "close of closed channel" — only at
+  `-count=50`, so a single run looked fine. Guard one-shot signals with
+  `sync.Once`. Corollary: **a test for a background-goroutine bug is itself
+  exposed to background goroutines** — stress it (`-count=50`), don't trust one
+  green run. (LE-CLI-007)
 - **Anything a script branches on is a contract; if it isn't pinned by a test
   it will drift.** Exit codes and `--json` key names are read by machines, and
   both can be broken by an edit that looks local (a struct tag three packages

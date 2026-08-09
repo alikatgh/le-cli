@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -83,8 +84,13 @@ func TestCachedSchemeStaleReturnsLastKnown(t *testing.T) {
 func TestStaleProbeDoesNotClobberCache(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
+	// sync.Once, not a bare close: a background goroutine CachedScheme spawned
+	// in an EARLIER test can still be running and call this stub a second time
+	// — that's the whole premise of the bug under test — and a second
+	// close(started) panics the test binary. Reproduced at -count=50.
+	var signal sync.Once
 	restoreSlow := SetTLSProbeForTesting(func(string) bool {
-		close(started)
+		signal.Do(func() { close(started) })
 		<-release
 		return false // the old generation's answer
 	})
