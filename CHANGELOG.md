@@ -28,6 +28,12 @@ All notable changes to `le` are documented here. Format loosely follows
   from inside the process — that is what `le fix-terminal` is for.
 
 ### Changed
+- **Stop output names the port.** `le stop --dir ~/work --dry-run` used to print
+  `would stop node (pid 100) — TERM` for each match, leaving two same-named
+  processes distinguishable only by PID — while `--json` had carried the ports
+  all along. The preview, the ✓/✗ result lines and the restart failure line now
+  read `would stop node (pid 100) on 3000 — TERM`, the same phrasing
+  `le watch-all` uses.
 - **Rows that share a name are told apart.** Naming processes after their
   bundle (0.1.20) turned "Editor language service ×3" into "Antigravity IDE
   ×3" — more meaningful, equally indistinguishable. A colliding identity now

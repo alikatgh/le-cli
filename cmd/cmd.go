@@ -652,23 +652,30 @@ func runStop(target string, dryRun, asJSON bool) error {
 	if len(matched) == 0 {
 		return fmt.Errorf("nothing listening on %s", target)
 	}
-	return dispatchStop(matched, dryRun, asJSON)
+	return dispatchStop(os.Stdout, os.Stderr, matched, dryRun, asJSON, kill.Stop)
 }
 
 // dispatchStop is the shared tail of the port/pid and --dir paths: render the
 // dry-run preview or execute the stops, as text or JSON.
-func dispatchStop(matched []row, dryRun, asJSON bool) error {
+//
+// The writers and the stop func are parameters rather than os.Stdout and
+// kill.Stop because of the one branch that must never regress: --dry-run
+// promises to touch nothing, and the failure mode of getting that wrong is
+// killing the user's processes when they asked for a preview. Injected, a test
+// can assert that stop is never called on either dry-run path; hardcoded, it
+// can only assert what got printed.
+func dispatchStop(w, errW io.Writer, matched []row, dryRun, asJSON bool, stop func(scan.Listener, intel.Profile) (string, error)) error {
 	if dryRun {
 		if asJSON {
-			return previewMatchedJSON(os.Stdout, matched)
+			return previewMatchedJSON(w, matched)
 		}
-		previewMatched(os.Stdout, matched)
+		previewMatched(w, matched)
 		return nil
 	}
 	if asJSON {
-		return stopMatchedJSON(os.Stdout, matched, kill.Stop)
+		return stopMatchedJSON(w, matched, stop)
 	}
-	return stopMatched(os.Stdout, os.Stderr, matched, kill.Stop)
+	return stopMatched(w, errW, matched, stop)
 }
 
 func runStopDir(dir string, dryRun, asJSON bool) error {
@@ -677,7 +684,7 @@ func runStopDir(dir string, dryRun, asJSON bool) error {
 	if len(matched) == 0 {
 		return fmt.Errorf("no listeners have a working directory under %s", dir)
 	}
-	return dispatchStop(matched, dryRun, asJSON)
+	return dispatchStop(os.Stdout, os.Stderr, matched, dryRun, asJSON, kill.Stop)
 }
 
 // runRestart bounces every listener matching the port/pid through its service
@@ -692,7 +699,7 @@ func runRestart(target string) error {
 	for _, r := range matched {
 		msg, err := kill.Restart(r.Listener, r.Profile)
 		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "✗ %s (pid %d): %v\n", r.Profile.Identity, r.PID, err)
+			_, _ = fmt.Fprintf(os.Stderr, "✗ %s (pid %d)%s: %v\n", r.Profile.Identity, r.PID, portSuffix(r), err)
 			failures++
 			continue
 		}
@@ -766,11 +773,27 @@ func previewMatched(w io.Writer, matched []row) {
 		// A real stop refuses StopAvoid rows (macOS/system helpers), so the
 		// dry-run must not promise "would stop" for them. (LE-411)
 		if r.Profile.StopKind == intel.StopAvoid {
-			_, _ = fmt.Fprintf(w, "would SKIP %s (pid %d) — no safe automatic stop, inspect first\n", r.Profile.Identity, r.PID)
+			_, _ = fmt.Fprintf(w, "would SKIP %s (pid %d)%s — no safe automatic stop, inspect first\n", r.Profile.Identity, r.PID, portSuffix(r))
 			continue
 		}
-		_, _ = fmt.Fprintf(w, "would stop %s (pid %d) — %s\n", r.Profile.Identity, r.PID, r.Profile.StopLabel)
+		_, _ = fmt.Fprintf(w, "would stop %s (pid %d)%s — %s\n", r.Profile.Identity, r.PID, portSuffix(r), r.Profile.StopLabel)
 	}
+}
+
+// portSuffix renders " on 3000, 5432", or "" for a listener with no ports.
+//
+// The text output used to identify a row by name and PID only, while the JSON
+// output beside it already carried Ports — so `le stop --dir ~/work --dry-run`
+// listing two node processes gave the user nothing to tell them apart except a
+// PID, which is not what anyone thinks in. Same lesson as LE-CLI-014 (identity
+// is only useful if it distinguishes) and LE-CLI-012 (data you already have and
+// never render is the cheapest feature there is). " on <ports>" is the phrasing
+// watch-all already uses, so the two agree.
+func portSuffix(r row) string {
+	if len(r.Ports) == 0 {
+		return ""
+	}
+	return " on " + strings.Join(r.Ports, ", ")
 }
 
 // matchDir returns every row whose working directory is dir or nested under
@@ -899,11 +922,11 @@ func stopMatched(w, errW io.Writer, matched []row, stop func(scan.Listener, inte
 	for _, r := range matched {
 		msg, err := stop(r.Listener, r.Profile)
 		if err != nil {
-			_, _ = fmt.Fprintf(errW, "✗ %s (pid %d): %v\n", r.Profile.Identity, r.PID, err)
+			_, _ = fmt.Fprintf(errW, "✗ %s (pid %d)%s: %v\n", r.Profile.Identity, r.PID, portSuffix(r), err)
 			failed++
 			continue
 		}
-		_, _ = fmt.Fprintf(w, "✓ %s (pid %d) — %s\n", r.Profile.Identity, r.PID, msg)
+		_, _ = fmt.Fprintf(w, "✓ %s (pid %d)%s — %s\n", r.Profile.Identity, r.PID, portSuffix(r), msg)
 	}
 	if failed > 0 {
 		return fmt.Errorf("%d of %d could not be stopped", failed, len(matched))

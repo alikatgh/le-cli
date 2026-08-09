@@ -174,6 +174,13 @@ Generalized bug shapes. Grep here before reproducing anything.
 ---
 
 ## Chronological log
+### 2026-08-10 — the dry-run preview never told you which port (LE-CLI-017)
+- **Where:** `cmd/cmd.go` — `previewMatched`, `stopMatched`, `runRestart`; new `portSuffix`. Tests: `cmd/dispatch_stop_test.go` (new).
+- **Symptom:** `le stop --dir ~/work --dry-run` printed `would stop node (pid 100) — TERM` twice. Two same-named processes, and the only thing separating them was a PID — while the `--json` output beside it had carried `Ports` all along.
+- **Found by:** writing the test for a different contract (`--dry-run` must never call `kill.Stop`). The port assertion was added as a throwaway sanity check and was the thing that failed.
+- **Fix:** `portSuffix` renders ` on 3000, 5432` (empty when the row has no ports) and is used by the preview, the ✓/✗ result lines and the restart failure line. Phrasing matches `watch-all`, so the two agree.
+- **Lesson:** when two renderers of the same data disagree, the poorer one is the bug — and text-vs-JSON is exactly where that drift hides, because only one of them is read during development. Third instance of this family after LE-CLI-012 (data collected, never rendered) and LE-CLI-014 (identity that doesn't distinguish).
+
 ### 2026-08-10 — swept the same guard across every package that touches the machine (LE-CLI-016b)
 - **Where:** `tools/exec_hooks.go` + `tools/exec_hooks_guard_test.go` (new), `kill/exec_hooks_guard_test.go` (new), `tools/system_test.go`.
 - **Why:** LE-CLI-016 was one instance of a class. `tools/` runs `killall Dock`, `killall Finder`, `pmset displaysleepnow` and `open`; `kill/` runs `syscall.Kill`, `launchctl bootout`, `brew services stop`, `docker stop`. Neither had a package-wide guard — `kill/`'s hooks were vars but every stub was per-test, which is exactly the arrangement `ui/` had before it opened 876 windows.
