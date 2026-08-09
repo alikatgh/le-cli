@@ -14,6 +14,16 @@ both when a fix lands on shared behavior.
 
 Generalized bug shapes. Grep here before reproducing anything.
 
+- **When the cursor indexes a DERIVED list, every index you stored is now
+  wrong.** Adding group headers made screen lines ≠ rows, and the pin handler
+  still did `for i, row := range m.view { m.cursor = i }` — putting the cursor
+  on whatever line happened to share that index. Grep every `cursor =` when the
+  list model changes, and re-find by identity (PID), never by remembered
+  position. (LE-CLI-013)
+- **A fold must summarise what it hides.** Collapsing eight rows behind
+  "app · 8" moves the problem unless the header also names the ports inside —
+  "what's on 42050?" must not require unfolding first. Same rule for any
+  progressive-disclosure UI. (LE-CLI-013)
 - **A test that asserts rendered ANSI escapes is a test of your terminal, not
   your code.** lipgloss strips styling when stdout is not a TTY, so an
   escape-matching assertion passed under a forced-colour run and failed under
@@ -126,6 +136,13 @@ Generalized bug shapes. Grep here before reproducing anything.
 ---
 
 ## Chronological log
+### 2026-08-09 — group the list by owner (LE-CLI-013)
+- **Where:** `ui/group.go` (new), `ui/ui.go` (the cursor now indexes `m.items`, not `m.view`), `config/config.go` (`group` key). Tests: `ui/group_test.go`, `config/config_test.go`.
+- **Why:** 15 listeners, 12 of them background helpers the user is told not to touch. Grouped, the same machine reads as 9 lines with all three stoppable processes visible.
+- **Risk and its guards:** folding HIDES ports, so grouping is opt-in (`z`, or `group = true`); only all-unactionable groups of 3+ fold by default; an active filter expands everything (a search that hides a match is a lie); a pinned port keeps its group open; and folded headers list their ports.
+- **The refactor's sharp edge:** once headers exist, a screen line is not a row. `selected()` returns false on a header (so every row action refuses instead of hitting a neighbour), and the pin handler's `m.cursor = i` over `m.view` had to become a re-find by PID over `m.items`.
+- **Lesson:** a test asserting "focus drops when you move onto a header" was unwritable as stated — while the pane is focused, j/k move between FIELDS, so the cursor cannot walk onto a header at all. The real path is a REBUILD changing what a line index means. Write the test for the mechanism that actually exists.
+
 ### 2026-08-09 — the table said "App helper" eight times (LE-CLI-012)
 - **Where:** `intel/appname.go` (new) + the app/editor branches of `intel/intel.go`; `internal/textw` (new); `cmd/cmd.go` printTable; `ui/ui.go` table widths, rails, weights.
 - **Symptom:** on a real machine, 8 of 15 rows read "App helper" and 3 read "Editor language service" — the table could not distinguish OneDrive from BlueStacks from 企业微信, and STOP repeated "avoid — inspec…" on 12 rows in the widest column.

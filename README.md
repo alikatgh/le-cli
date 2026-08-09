@@ -157,6 +157,7 @@ Optional `~/.config/le/config` (or `$XDG_CONFIG_HOME/le/config`):
 ```
 interval = 2      # TUI refresh seconds (default 3)
 filter   = node   # initial TUI filter (default none)
+group    = true   # start grouped by owner (default false)
 theme    = nord   # default / light / nord / dracula / solarized / mono /
                   # msdos / system7 / gameboy / phosphor / amber / paper /
                   # blueprint / vaporwave

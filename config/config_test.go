@@ -145,3 +145,37 @@ func TestLoadTheme(t *testing.T) {
 		t.Errorf("Theme = %q, want nord (quotes stripped)", c.Theme)
 	}
 }
+
+// Grouping can fold rows out of sight, so only an explicit truthy value may
+// turn it on — a typo must fail toward showing everything.
+func TestGroupOption(t *testing.T) {
+	cases := map[string]bool{
+		"group = true":  true,
+		"group = yes":   true,
+		"group = 1":     true,
+		"group = on":    true,
+		"group = false": false,
+		"group = ":      false,
+		"group = ture":  false, // typo: must NOT hide anything
+		"group = 2":     false,
+	}
+	for line, want := range cases {
+		t.Run(line, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", dir)
+			if err := os.MkdirAll(filepath.Join(dir, "le"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "le", "config"), []byte(line+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			got, warn := Load()
+			if warn != "" {
+				t.Fatalf("unexpected warning: %s", warn)
+			}
+			if got.Group != want {
+				t.Errorf("%q => Group=%v, want %v", line, got.Group, want)
+			}
+		})
+	}
+}

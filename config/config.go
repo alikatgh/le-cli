@@ -5,6 +5,7 @@
 //	interval = 2     # TUI refresh seconds (default 3)
 //	filter   = node  # initial TUI filter (default none)
 //	theme    = nord  # TUI theme — `le --help` or the ? overlay lists all fourteen
+//	group    = true  # start the TUI grouped by owner (default false)
 package config
 
 import (
@@ -22,6 +23,7 @@ type Config struct {
 	IntervalSeconds int
 	Filter          string
 	Theme           string
+	Group           bool // start grouped by owner
 }
 
 // Interval is the TUI refresh cadence, clamped to a sane minimum.
@@ -82,6 +84,11 @@ func Load() (Config, string) {
 			c.Filter = val
 		case "theme":
 			c.Theme = val
+		case "group":
+			// Only an explicit truthy value turns it on. Grouping can fold
+			// rows out of sight, so a typo must fall back to showing
+			// everything rather than to hiding some of it.
+			c.Group = val == "true" || val == "yes" || val == "1" || val == "on"
 		}
 	}
 	return c, ""
