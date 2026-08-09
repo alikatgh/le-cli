@@ -183,9 +183,38 @@ func TestMakeSystemService(t *testing.T) {
 }
 
 func TestMakeBackgroundApp(t *testing.T) {
-	l := scan.Listener{PID: 1, Ports: []string{"51000"}, CommandLine: "/Applications/Rewind.app/Contents/MacOS/RewindHelper"}
+	// The bundle names the product, so the row says "Rewind" — not the
+	// eighth copy of "App helper". The advice is unchanged: still SrcApp,
+	// still High, still StopAvoid. Knowing WHAT it is doesn't make it safe
+	// to stop; it makes the refusal comprehensible.
+	l := scan.Listener{PID: 1, Ports: []string{"51000"}, Command: "RewindHelper", CommandLine: "/Applications/Rewind.app/Contents/MacOS/RewindHelper"}
 	got := Make(l, emptyEnv())
-	check(t, "bg-app", got, want{identity: "App helper", source: SrcApp, kind: App, risk: High, stop: StopAvoid})
+	check(t, "bg-app", got, want{identity: "Rewind", source: SrcApp, kind: App, risk: High, stop: StopAvoid})
+	if !strings.Contains(got.Explain, "RewindHelper") {
+		t.Errorf("explain should still name the specific helper, got %q", got.Explain)
+	}
+}
+
+// When the path reveals no product, the generic label must survive — the
+// naming is an upgrade, never a regression into a worse guess. rapportd is
+// the real case: a bare /usr/libexec binary with no bundle to read.
+func TestMakeSystemServiceWithoutABundleKeepsGenericLabel(t *testing.T) {
+	l := scan.Listener{PID: 1, Ports: []string{"51000"}, Command: "rapportd", CommandLine: "/usr/libexec/rapportd"}
+	if got := Make(l, emptyEnv()); got.Identity != "macOS service" {
+		t.Errorf("identity = %q, want macOS service for an unnameable path", got.Identity)
+	}
+}
+
+// …and a system bundle DOES get named: ControlCenter beats "macOS service".
+func TestMakeSystemServiceNamesItsBundle(t *testing.T) {
+	l := scan.Listener{PID: 1, Ports: []string{"5000"}, Command: "ControlCenter", CommandLine: "/System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter"}
+	got := Make(l, emptyEnv())
+	if got.Identity != "ControlCenter" {
+		t.Errorf("identity = %q, want ControlCenter", got.Identity)
+	}
+	if got.Source != SrcMacOS || got.StopKind != StopAvoid {
+		t.Errorf("naming must not change the advice: source=%v stop=%v", got.Source, got.StopKind)
+	}
 }
 
 func TestMakeWildcardOpenListener(t *testing.T) {

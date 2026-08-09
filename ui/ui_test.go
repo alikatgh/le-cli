@@ -1038,3 +1038,164 @@ func TestFocusGutterIsConstantWidth(t *testing.T) {
 		t.Error("unfocused pane must not show a focus caret")
 	}
 }
+
+// --- table column alignment ---
+
+// tableRows is a realistic mix: a CJK app name (2 columns per rune), rows
+// with a "+1" multi-port cell, and both stop kinds. Every one of these skewed
+// a column at some point.
+func tableRows() []Row {
+	mk := func(pid int, ports []string, id string, src intel.Source, risk intel.Risk, sk intel.StopKind, label, cwd string) Row {
+		return Row{
+			L: scan.Listener{PID: pid, Ports: ports, Cwd: cwd},
+			P: intel.Profile{Identity: id, Source: src, Risk: risk, StopKind: sk, StopLabel: label},
+		}
+	}
+	return []Row{
+		mk(3580, []string{"3354"}, "Pulse Secure", intel.SrcApp, intel.High, intel.StopAvoid, "", "/"),
+		mk(765, []string{"5000", "5001"}, "ControlCenter", intel.SrcMacOS, intel.High, intel.StopAvoid, "", "/"),
+		mk(69148, []string{"5037"}, "adb", intel.SrcTerminal, intel.Low, intel.StopTerm, "Send TERM to PID 69148", "~"),
+		mk(27470, []string{"50010"}, "企业微信", intel.SrcApp, intel.High, intel.StopAvoid, "", "/"),
+		mk(1087, []string{"44950", "44951"}, "Figma", intel.SrcApp, intel.High, intel.StopAvoid, "", "/"),
+		mk(80690, []string{"55534"}, "Node service", intel.SrcTerminal, intel.Low, intel.StopTerm, "Send TERM to PID 80690", "/code/web"),
+	}
+}
+
+// Columns must line up for EVERY row, whatever is in them. Rune-count padding
+// passed this for ASCII and skewed 4 columns on 企业微信; a fixed-width PORT
+// cell passed until a pinned multi-port row ("*44950 +1") overflowed it.
+func TestTableColumnsAlign(t *testing.T) {
+	for _, width := range []int{110, 128, 160} {
+		var m tea.Model = New(Options{})
+		m, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: 30})
+		m, _ = m.Update(scannedMsg{rows: tableRows(), at: time.Now()})
+		mm := m.(model)
+		mm.favs = map[string]bool{"44950": true} // the widest port cell: "*44950 +1"
+		mm.applyFilter()
+
+		lines := strings.Split(mm.tableView(), "\n")
+		if len(lines) < len(tableRows())+1 {
+			t.Fatalf("width %d: only %d lines rendered", width, len(lines))
+		}
+		header := lines[0]
+		// lipgloss.Width discounts ANSI and OSC-8 escapes, so the display
+		// column of a token is the width of everything before it.
+		colOf := func(line, token string) int {
+			i := strings.Index(line, token)
+			if i < 0 {
+				return -1
+			}
+			return lipgloss.Width(line[:i])
+		}
+		wantRisk := colOf(header, "RISK")
+		if wantRisk < 0 {
+			t.Fatalf("width %d: no RISK header", width)
+		}
+		for i, r := range mm.view {
+			line := lines[i+1]
+			if got := colOf(line, r.P.Identity); got < 0 {
+				t.Errorf("width %d: %q missing from its row", width, r.P.Identity)
+			}
+			if got := colOf(line, string(r.P.Risk)); got != wantRisk {
+				t.Errorf("width %d: row %q RISK at column %d, header at %d", width, r.P.Identity, got, wantRisk)
+			}
+		}
+	}
+}
+
+// The refusal advice repeated on most rows in the widest column while RISK and
+// OWNER already said it; the table now spends that space on identity.
+func TestAvoidRowsShowNoStopCommand(t *testing.T) {
+	if got := stopTableCell(intel.Profile{StopKind: intel.StopAvoid}); got != "—" {
+		t.Errorf("avoid row STOP cell = %q, want an em dash", got)
+	}
+	if got := stopTableCell(intel.Profile{StopKind: intel.StopTerm, StopLabel: "Send TERM to PID 1"}); got == "—" {
+		t.Error("a stoppable row must still show its command")
+	}
+	// …and the detail pane keeps the full advice, which is where it belongs.
+	if got := stopShort(intel.Profile{StopKind: intel.StopAvoid}); !strings.Contains(got, "avoid") {
+		t.Errorf("detail pane stop text = %q, want the full advice", got)
+	}
+}
+
+// Column widths are derived from the whole filtered set, not the visible
+// window — otherwise every column twitches as the list scrolls.
+func TestColumnWidthsDoNotChangeWhileScrolling(t *testing.T) {
+	rows := make([]Row, 60)
+	for i := range rows {
+		rows[i] = Row{
+			L: scan.Listener{PID: 1000 + i, Ports: []string{strconv.Itoa(3000 + i)}, Cwd: "/code"},
+			P: intel.Profile{Identity: "Node", Source: intel.SrcTerminal, Risk: intel.Low, StopKind: intel.StopTerm, StopLabel: "Send TERM to PID 1"},
+		}
+	}
+	// One wide-stop row far down the list: if widths were measured over the
+	// visible window, reaching it would resize the columns mid-scroll.
+	rows[55].P.StopLabel = "launchctl bootout gui/501/com.example.a.very.long.label"
+	rows[55].P.StopKind = intel.StopLaunchd
+
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 20})
+	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+
+	headerAt := func(mm model) int {
+		return lipgloss.Width(strings.Split(mm.tableView(), "\n")[0])
+	}
+	top := headerAt(m.(model))
+	m, _ = m.Update(key("G")) // jump to the bottom
+	if bottom := headerAt(m.(model)); bottom != top {
+		t.Errorf("header width changed while scrolling: %d at top, %d at bottom", top, bottom)
+	}
+}
+
+// --- visual hierarchy ---
+
+// The rails must differ in WEIGHT, not just colour: a mono-theme or NO_COLOR
+// user gets no hue at all, and "which of these can I actually touch" is the
+// question the table exists to answer.
+func TestRailWeightFollowsActionability(t *testing.T) {
+	stoppable := Row{P: intel.Profile{Risk: intel.Low, StopKind: intel.StopTerm}}
+	refused := Row{P: intel.Profile{Risk: intel.High, StopKind: intel.StopAvoid}}
+
+	if got := railFor(stoppable); !strings.Contains(got, "▎") {
+		t.Errorf("stoppable row rail = %q, want the solid rail", got)
+	}
+	if got := railFor(refused); !strings.Contains(got, "│") {
+		t.Errorf("refused row rail = %q, want the hairline rail", got)
+	}
+	// Same width in both states, or the whole table shifts by row.
+	if a, b := lipgloss.Width(railFor(stoppable)), lipgloss.Width(railFor(refused)); a != b || a != 1 {
+		t.Errorf("rail widths differ: stoppable=%d refused=%d, want both 1", a, b)
+	}
+}
+
+// A high-risk row you CAN stop is the one worth shouting about; a high-risk
+// row le refuses to stop keeps its colour but drops the bold, so nine
+// untouchable helpers no longer outshout the three processes that are yours.
+//
+// Asserts the STYLE DECISION rather than the rendered escapes: lipgloss
+// strips styling when stdout is not a terminal, so an escape-matching test
+// passes or fails depending on how the suite was invoked. (It did exactly
+// that — green under a forced-colour run, red under plain `go test`.)
+func TestWeightFollowsActionability(t *testing.T) {
+	stoppableHigh := Row{P: intel.Profile{Identity: "MongoDB", Risk: intel.High, StopKind: intel.StopBrew}}
+	refusedHigh := Row{P: intel.Profile{Identity: "OneDrive", Risk: intel.High, StopKind: intel.StopAvoid}}
+	stoppableLow := Row{P: intel.Profile{Identity: "Node", Risk: intel.Low, StopKind: intel.StopTerm}}
+
+	if !whatStyleFor(stoppableLow).GetBold() {
+		t.Error("an actionable row's identity should be bold")
+	}
+	if whatStyleFor(refusedHigh).GetBold() {
+		t.Error("a refused row's identity must not be bold — that is the noise this fixes")
+	}
+	if !riskStyleFor(stoppableHigh).GetBold() {
+		t.Error("high risk you CAN act on should be bold")
+	}
+	if riskStyleFor(refusedHigh).GetBold() {
+		t.Error("high risk you cannot act on should keep colour but drop bold")
+	}
+	// Colour still carries risk on every row, actionable or not — nothing is
+	// hidden, it just stops drowning the signal.
+	if riskStyleFor(refusedHigh).GetForeground() != riskStyleFor(stoppableHigh).GetForeground() {
+		t.Error("both high-risk rows should keep the same risk colour")
+	}
+}

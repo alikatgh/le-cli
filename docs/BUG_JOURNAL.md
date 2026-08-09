@@ -14,6 +14,28 @@ both when a fix lands on shared behavior.
 
 Generalized bug shapes. Grep here before reproducing anything.
 
+- **A test that asserts rendered ANSI escapes is a test of your terminal, not
+  your code.** lipgloss strips styling when stdout is not a TTY, so an
+  escape-matching assertion passed under a forced-colour run and failed under
+  plain `go test`. Extract the decision (`whatStyleFor`, `riskStyleFor`) and
+  assert `Style.GetBold()`. (LE-CLI-012)
+- **Data you already collected but never render is the cheapest feature you
+  will ever ship.** Eight rows read "App helper" while `/Applications/OneDrive.app`
+  sat unread in the command line the whole time. Before adding a source, check
+  what the existing one already knows. (LE-CLI-012)
+- **Column arithmetic must be done in DISPLAY WIDTH, once, in one place.** The
+  TUI learned this and `le list` did not, so the moment intel started naming
+  apps — putting 企业微信 in the WHAT column — the plain table skewed 4 columns
+  on that row while the TUI was fine. Two renderers, two implementations, one
+  of them wrong. `internal/textw` is now the only one. Corollary: **size a
+  column from the widest cell in the WHOLE filtered set, never the visible
+  window**, or the columns twitch as the list scrolls. (LE-CLI-012)
+- **Rank visual weight by what the user can DO, not by severity.** A screen of
+  high-risk system helpers rendered nine bold red rails while the three
+  processes the user actually controls receded — the UI shouted loudest where
+  shouting is useless. Weight follows actionability; colour still carries risk.
+  Do it in weight/glyph rather than hue so it survives mono themes and
+  NO_COLOR. (LE-CLI-012)
 - **A pane's height is a BUDGET, not a suggestion.** The layout reserves
   `detailHeight` lines for the detail box and sizes the table around it, so one
   extra line inside the pane pushed the whole view one row past the terminal
@@ -104,6 +126,13 @@ Generalized bug shapes. Grep here before reproducing anything.
 ---
 
 ## Chronological log
+### 2026-08-09 — the table said "App helper" eight times (LE-CLI-012)
+- **Where:** `intel/appname.go` (new) + the app/editor branches of `intel/intel.go`; `internal/textw` (new); `cmd/cmd.go` printTable; `ui/ui.go` table widths, rails, weights.
+- **Symptom:** on a real machine, 8 of 15 rows read "App helper" and 3 read "Editor language service" — the table could not distinguish OneDrive from BlueStacks from 企业微信, and STOP repeated "avoid — inspec…" on 12 rows in the widest column.
+- **Cause:** the product name was in the command line all along (`/Applications/<Product>.app/…`, or the `Application Support/<Vendor>` segment) and was simply never read.
+- **Two bugs the fix exposed:** `le list` padded with fmt's `%-Ns` (rune count), so a CJK app name skewed every column right of WHAT by 4; and its 7-wide PORT column overflowed on `44950 +1`. Both now go through `internal/textw`, shared with the TUI so the two renderers cannot disagree again.
+- **Lesson:** verify a display change against REAL data — the CJK skew and the port overflow were both invisible in fixtures and obvious in one `le list` on the machine that reported the problem.
+
 ### 2026-08-09 — detail pane gains field focus (LE-CLI-011)
 - **Where:** `ui/panefocus.go` (new), `ui/ui.go` (model fields, key routing, pane render, footer). Tests: `ui/ui_test.go`.
 - **Why:** row-level actions could only ever pick ONE reveal target per row and could never reach a row's second port — the `+1`/`+2` extras in the table were unreachable. Tab now focuses the pane, j/k step fields, Enter acts.
