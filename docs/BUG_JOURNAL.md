@@ -14,6 +14,15 @@ both when a fix lands on shared behavior.
 
 Generalized bug shapes. Grep here before reproducing anything.
 
+- **Forcing `LC_ALL=C` to stabilize a PARSE also mangles the DISPLAY.** ps and
+  lsof escape every byte >= 0x80 under the C locale, in two different
+  notations (`M-dM-<M^A` vs `\xe4\xbc\x81`), so a Chinese/Cyrillic/emoji-named
+  app rendered as line noise everywhere — TUI, `le list`, `--json`. Keep the
+  locale (the lstart parse depends on it) and decode on the way in; guard the
+  decode by accepting it only when the result is valid UTF-8 that gained a
+  multi-byte rune, so ordinary ASCII argv containing "M-d" is never corrupted.
+  General shape: **a locale/format you force for machine-readability is still
+  reaching a human — decode before display.** (LE-CLI-009)
 - **A subprocess that exits non-zero on a NORMAL result can't have its error
   blindly swallowed OR blindly surfaced.** `lsof -iTCP -sTCP:LISTEN` exits **1
   on an empty match** — so `out, _ := runCmd(...)` (swallow) hides a real lsof
@@ -83,6 +92,13 @@ Generalized bug shapes. Grep here before reproducing anything.
 ---
 
 ## Chronological log
+### 2026-08-09 — non-ASCII process names rendered as line noise; detail pane had no actions (LE-CLI-009/010)
+- **Where:** `scan/unescape.go` (new), `scan/scan.go` (parsePSCommandLines + the lsof `c` field), `ui/ui.go` (F/T keys, copy picker i/d/a, revealHint). Tests: `scan/unescape_test.go` (incl. fuzz), `ui/ui_test.go`.
+- **LE-CLI-009 symptom/cause:** a WeCom listener showed `cmd /Applications/M-dM-<M^AM-dM-8M^Z…` in the pane, `le list`, and `--json`. Our own `LC_ALL=C` (needed for the lstart parse behind the recycle guard) makes ps escape non-ASCII in vis meta notation and lsof as `\xHH`. Decoded both on the way in; verified against the live process.
+- **LE-CLI-009 gotcha:** `M^A` (no dash) is what ps actually emits for meta-control; my first decoder handled only `M-^A`, and the valid-UTF-8 guard then silently returned the ORIGINAL — a correct-looking no-op. A guard that falls back to the input hides decoder bugs: assert decoded values against real captured strings.
+- **LE-CLI-010:** the pane stated facts with no way to act on them, unlike the app's clickable rows — worst on an "avoid — inspect first" row, which advised inspection while offering none. Added `F` reveal (binary for a helper with a useless container cwd, else the folder), `T` new terminal, and picker entries `i` context inspect / `d` cd / `a` one-liner.
+- **Lesson:** an affordance the UI names ("inspect first") must exist as a keystroke, or the advice is decoration. Also: sample rows are SORTED before display — a test that picks a row by index tests whichever row the sort put there, not the one you meant. Select by identity.
+
 ### 2026-08-09 — the four gaps a "is this world class?" audit surfaced (LE-CLI-003/004/005)
 - **Where:** `cmd/exit.go` (new), `cmd/cmd.go` (Execute, `usageArgs`, groups), `tools/tools.go` + `tools/exit_open.go` (sentinels), `internal/gendocs/main.go`, `.github/workflows/ci.yml`, `docs/COMPATIBILITY.md` (new). Tests: `cmd/exit_test.go`, `cmd/json_contract_test.go`.
 - **LE-CLI-003 (man drift):** `man/` held 7 pages for 18 commands and goreleaser ships that directory — the manual regen step was skipped for a year. CI now runs gendocs and fails on a dirty `man/`; gendocs pins its date so the check can't false-positive on a month rollover.

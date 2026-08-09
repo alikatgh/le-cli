@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -626,5 +627,190 @@ func TestFmtMem(t *testing.T) {
 	}
 	if got := fmtMem(2 * 1024 * 1024); got != "2.0 GB" {
 		t.Errorf("fmtMem(2GB) = %q, want 2.0 GB", got)
+	}
+}
+
+// --- row actions (parity with the mac app's clickable rows) ---
+
+// withRow drives the model until the named row is selected. By identity, not
+// index: the table sorts by port, so sampleRows' order is NOT the view order
+// and an index-based helper silently tests the wrong row.
+func withRow(t *testing.T, identity string) tea.Model {
+	t.Helper()
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	for i := 0; i < len(sampleRows()); i++ {
+		if r, ok := m.(model).selected(); ok && r.P.Identity == identity {
+			return m
+		}
+		m, _ = m.Update(key("j"))
+	}
+	t.Fatalf("no row named %q in the view", identity)
+	return m
+}
+
+func TestRevealKeyRevealsWorkingDirectory(t *testing.T) {
+	var revealed string
+	orig := revealPath
+	revealPath = func(p string) error { revealed = p; return nil }
+	defer func() { revealPath = orig }()
+
+	m := withRow(t, "Node service") // cwd /code/web
+	m, _ = m.Update(key("F"))
+
+	if revealed != "/code/web" {
+		t.Errorf("revealed %q, want /code/web", revealed)
+	}
+	if mm := m.(model); mm.flashErr || !strings.Contains(mm.flash, "revealed") {
+		t.Errorf("flash = %q (err=%v), want a success flash", mm.flash, mm.flashErr)
+	}
+}
+
+// The row that prompted all this: an app helper whose cwd is a useless
+// container path. Nothing on disk matches the fake test path, so there is
+// nothing to reveal — and the refusal must say so rather than silently
+// revealing the wrong thing.
+func TestRevealKeyWithoutTargetExplainsItself(t *testing.T) {
+	called := false
+	orig := revealPath
+	revealPath = func(string) error { called = true; return nil }
+	defer func() { revealPath = orig }()
+
+	m := withRow(t, "macOS service") // StopAvoid, no cwd, non-existent binary path
+	m, _ = m.Update(key("F"))
+
+	if called {
+		t.Error("must not try to reveal a path that doesn't resolve")
+	}
+	if mm := m.(model); !mm.flashErr || !strings.Contains(mm.flash, "nothing to reveal") {
+		t.Errorf("flash = %q (err=%v), want an explanatory error", mm.flash, mm.flashErr)
+	}
+}
+
+// revealTarget prefers the binary over the cwd for an avoid row, because a
+// helper's cwd is a container path and its binary is the actual answer to
+// "what is this?". Verified against a real path so the on-disk check passes.
+func TestRevealTargetPrefersBinaryForAppHelper(t *testing.T) {
+	helper := Row{
+		L: scan.Listener{PID: 9, CommandLine: "/bin/sh --serve", Cwd: "/tmp"},
+		P: intel.Profile{Identity: "App helper", StopKind: intel.StopAvoid},
+	}
+	got, ok := revealTarget(helper)
+	if !ok || got != "/bin/sh" {
+		t.Errorf("revealTarget = (%q, %v), want (/bin/sh, true)", got, ok)
+	}
+
+	// A normal row keeps its working directory.
+	normal := Row{
+		L: scan.Listener{PID: 9, CommandLine: "/bin/sh app.js", Cwd: "/code/web"},
+		P: intel.Profile{Identity: "Node", StopKind: intel.StopTerm},
+	}
+	if got, ok := revealTarget(normal); !ok || got != "/code/web" {
+		t.Errorf("revealTarget = (%q, %v), want (/code/web, true)", got, ok)
+	}
+}
+
+func TestExecutablePathHandlesSpacesAndGivesUp(t *testing.T) {
+	// Longest existing prefix wins, so a path with spaces still resolves.
+	dir := t.TempDir()
+	spaced := dir + "/My App"
+	if err := os.WriteFile(spaced, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := executablePath(spaced + " --flag"); got != spaced {
+		t.Errorf("executablePath = %q, want %q", got, spaced)
+	}
+	// Nothing on disk → no guess.
+	if got := executablePath("/definitely/not/here --flag"); got != "" {
+		t.Errorf("executablePath = %q, want empty for a non-existent path", got)
+	}
+	// Not an absolute path → not a path at all.
+	if got := executablePath("node app.js"); got != "" {
+		t.Errorf("executablePath = %q, want empty for a bare command", got)
+	}
+}
+
+func TestTerminalKeyNeedsAWorkingDirectory(t *testing.T) {
+	var opened string
+	orig := openTerminalAt
+	openTerminalAt = func(d string) error { opened = d; return nil }
+	defer func() { openTerminalAt = orig }()
+
+	m := withRow(t, "Node service")
+	_, _ = m.Update(key("T"))
+	if opened != "/code/web" {
+		t.Errorf("opened terminal at %q, want /code/web", opened)
+	}
+
+	opened = ""
+	m = withRow(t, "MongoDB") // no cwd
+	m, _ = m.Update(key("T"))
+	if opened != "" {
+		t.Error("must not open a terminal with no working directory")
+	}
+	if mm := m.(model); !mm.flashErr {
+		t.Errorf("flash = %q, want an error flash", mm.flash)
+	}
+}
+
+func TestCopyPickerContextActions(t *testing.T) {
+	cases := []struct {
+		name string
+		row  string
+		key  string
+		want string
+	}{
+		{"inspect falls back to lsof for a plain process", "Node service", "i", "lsof -nP -p 101"},
+		{"inspect uses brew for a managed service", "MongoDB", "i", "brew services info mongodb-community"},
+		{"cd quotes the directory", "Node service", "d", "cd '/code/web'"},
+		{"one-liner combines cd and the command", "Node service", "a", "cd '/code/web' && node app.js"},
+		{"one-liner without a cwd is just the command", "MongoDB", "a", "/opt/homebrew/opt/mongodb-community/bin/mongod"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var copied string
+			orig := copyToClipboard
+			copyToClipboard = func(s string) error { copied = s; return nil }
+			defer func() { copyToClipboard = orig }()
+
+			m := withRow(t, c.row)
+			m, _ = m.Update(key("c"))
+			m, _ = m.Update(key(c.key))
+
+			if copied != c.want {
+				t.Errorf("copied %q, want %q", copied, c.want)
+			}
+			if m.(model).copyMenu {
+				t.Error("picker should close after a choice")
+			}
+		})
+	}
+}
+
+// An avoid row must still get its inspect actions — refusing to STOP something
+// is not a reason to refuse to LOOK at it, and "inspect first" is the advice
+// the pane itself gives.
+func TestAvoidRowStillGetsInspectActions(t *testing.T) {
+	var copied string
+	orig := copyToClipboard
+	copyToClipboard = func(s string) error { copied = s; return nil }
+	defer func() { copyToClipboard = orig }()
+
+	m := withRow(t, "macOS service") // StopAvoid
+	m, _ = m.Update(key("c"))
+	_, _ = m.Update(key("i"))
+
+	if copied != "lsof -nP -p 103" {
+		t.Errorf("copied %q, want lsof -nP -p 103", copied)
+	}
+}
+
+// The pane has to advertise the action, or nobody finds it.
+func TestDetailPaneAdvertisesReveal(t *testing.T) {
+	m := withRow(t, "Node service")
+	out := m.(model).detailView()
+	if !strings.Contains(out, "F reveals") {
+		t.Errorf("detail pane should hint at the reveal action:\n%s", out)
 	}
 }

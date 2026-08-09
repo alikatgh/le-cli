@@ -104,7 +104,9 @@ func Scan() ([]Listener, error) {
 			}
 		case 'c':
 			if a := byPID[cur]; a != nil {
-				a.command = val
+				// lsof escapes non-ASCII as \xHH under LC_ALL=C — decode it
+				// (different notation from ps's, same cause). See unescape.go.
+				a.command = unescapeLsof(val)
 			}
 		case 'n':
 			// Only keep localhost-reachable binds (loopback + wildcards). A bind
@@ -289,7 +291,9 @@ func parsePSCommandLines(out string, rows map[int]psRow) map[int]bool {
 		}
 		r := rows[pid]
 		if len(fields) > 1 {
-			r.command = strings.Join(fields[1:], " ")
+			// LC_ALL=C makes ps vis-escape every non-ASCII byte; decode so a
+			// Chinese/Cyrillic/emoji app name reads as itself. See unescape.go.
+			r.command = unescapePS(strings.Join(fields[1:], " "))
 		}
 		rows[pid] = r
 		seen[pid] = true
