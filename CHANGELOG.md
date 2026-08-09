@@ -5,6 +5,32 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Changed
+- **Exit codes are now specific, and are a documented contract.** Every
+  failure used to exit `1`, which made the waiting commands unscriptable —
+  `le wait 3000 -t 30s` timing out looked exactly like a typo'd flag. Now:
+  `0` success, `1` failure, `2` usage error, `124` a `--timeout` elapsed (the
+  `timeout(1)` convention, so it drops into existing retry idioms). Scripts
+  that only tested "non-zero" are unaffected; scripts that tested `-eq 1` for
+  a timeout should now test `-eq 124`.
+- `le --help` groups commands by what they're for — see what's listening /
+  stop it the right way / hold-wait-forward a port / macOS housekeeping —
+  instead of one flat list of nineteen. No command was removed or renamed.
+
+### Added
+- `docs/COMPATIBILITY.md`: exactly what scripts may rely on. The exit codes
+  and the `--json` field names are now promised surfaces, pinned by golden
+  tests so a rename fails CI here rather than in your pipeline.
+- Man pages for every command. Twelve of nineteen had none — `le check`,
+  `le forward`, `le watch`, `le qr` and the rest now ship a manual in the
+  release tarball, and CI fails if `man/` drifts from the command tree again.
+
+### Fixed
+- A TLS scheme probe started before the cache was invalidated could commit its
+  stale answer afterwards, so a link occasionally opened as `http://` against
+  an HTTPS dev server (and made a test flaky). Probes now carry a generation
+  counter and only commit if it still matches.
+
 ## [0.1.16] - 2026-07-11
 
 ### Added

@@ -43,6 +43,26 @@ jobs:
       - name: test
         run: go test -race ./...
 
+      # The committed man/ pages are what ship inside the release tarball and
+      # what brew installs, but regenerating them was a manual "run gendocs and
+      # commit the diff" step — which is exactly the step that got skipped, so
+      # eleven commands shipped with no man page at all. Fail here instead.
+      # gendocs pins its date (internal/gendocs/main.go), so a dirty tree means
+      # real content drift, never just a month rollover.
+      - name: man pages are up to date
+        run: |
+          go run ./internal/gendocs
+          # --porcelain covers all three drift shapes: modified (usage text
+          # changed), untracked (a new command), and deleted (a removed one —
+          # gendocs clears man/ first, so an orphaned page shows up as a
+          # deletion instead of sitting there tracked and unmodified).
+          if [ -n "$(git status --porcelain -- man/)" ]; then
+            echo "man/ is stale — run 'go run ./internal/gendocs' and commit the result:"
+            git status --short -- man/
+            git diff -- man/
+            exit 1
+          fi
+
   lint:
     runs-on: ubuntu-latest
     steps:
