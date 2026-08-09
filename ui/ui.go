@@ -1333,24 +1333,43 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
+// ResetTerminal undoes every terminal mode le turns on, in the order a
+// recovering terminal wants them: mouse reporting off (1000 press/release,
+// 1002 cell motion, 1003 all motion, and the 1006/1015 encodings), bracketed
+// paste off, cursor visible, alt screen left.
+//
+// It is exported because the process that turned these on is, in the case that
+// matters, already dead — `kill -9` runs no defers and no signal handlers, so
+// recovery has to come from a SECOND process. That is `le fix-terminal`.
+// Every sequence is idempotent, so sending the whole set is always safe.
+const ResetTerminal = "\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l" +
+	"\x1b[?2004l" + // bracketed paste (Bubble Tea enables it by default)
+	"\x1b[?25h" + // cursor visible
+	"\x1b[?1049l" // leave the alt screen
+
 // Run starts the TUI.
 // Run launches the TUI with the given options.
 func Run(opts Options) error {
 	p := tea.NewProgram(New(opts), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	// WithMouseCellMotion puts the TERMINAL — not le — into mouse-reporting
-	// mode. Bubble Tea turns it back off when Run returns normally or panics,
-	// but not when the process dies without unwinding (SIGKILL, SIGHUP on a
-	// closed window, a crash in a child that takes the group down). The
-	// terminal then keeps reporting every mouse MOVE as input for the rest of
-	// that shell's life: the prompt fills with `;62;38M65;62;38M…` and, worse,
-	// in the byte-encoded mouse modes those coordinates decode to literal
-	// letters — a mouse sweep can "press" o/F/T in whatever is reading stdin.
+	// mode, and le owns turning it back off. Left on, the terminal reports
+	// every mouse MOVE as input for the rest of that shell's life: the prompt
+	// fills with `;62;38M65;62;38M…` and, worse, the byte-encoded modes
+	// transmit a coordinate as 32+value, so screen columns decode to printable
+	// ASCII — a mouse sweep can "press" o/F/T in whatever reads stdin next.
 	//
-	// Disabling is idempotent and costs one write, so do it unconditionally on
-	// the way out rather than reasoning about which exits Bubble Tea covers.
+	// Be precise about what this defer does and does not buy, because it is
+	// easy to over-trust: Bubble Tea already restores on a normal return, on a
+	// panic, and on SIGINT/SIGTERM (it installs its own handler, tea.go:286).
+	// This covers the remaining unwinding paths — an early error return, or a
+	// future refactor that adds one — and nothing more. A defer cannot run on
+	// SIGKILL or on Go's default SIGHUP death, so a `kill -9`'d le still leaves
+	// the terminal wedged. That case is unfixable from inside the process,
+	// which is why `le --fix-terminal` exists.
+	//
 	// 1000 = press/release, 1002 = cell motion, 1003 = all motion, 1006 = SGR
-	// encoding, 1015 = urxvt encoding.
-	defer fmt.Fprint(os.Stderr, "\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l")
+	// encoding, 1015 = urxvt encoding. Disabling is idempotent.
+	defer fmt.Fprint(os.Stderr, ResetTerminal)
 	_, err := p.Run()
 	return err
 }

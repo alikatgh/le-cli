@@ -7,6 +7,26 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [0.1.21] - 2026-08-09
 
+### Added
+- **`le fix-terminal`** — undoes the terminal modes a TUI leaves behind when it
+  is killed without getting to clean up: mouse reporting, bracketed paste, a
+  hidden cursor, the alt screen. The symptom is a prompt that fills with
+  `;62;38M65;…` every time you move the mouse. `reset` does this too; this
+  exists because it is discoverable from the tool that caused the problem, and
+  because it does not also wipe your scrollback. Every sequence it sends is
+  idempotent, so running it on a healthy terminal does nothing.
+
+### Fixed
+- **A killed `le` no longer leaves mouse reporting on** for exits it can
+  observe. The TUI enables mouse cell-motion tracking, which is a mode of *the
+  terminal*, not of `le` — and a terminal left in it reports every mouse move
+  as input to whatever reads that tty next. Worse, the byte-encoded modes
+  transmit a coordinate as `32 + value`, so screen columns decode to printable
+  ASCII and a mouse sweep can type real letters into your shell. Bubble Tea
+  already restored on a normal exit, a panic and SIGINT/SIGTERM; the remaining
+  unwinding paths are now covered too. A `kill -9` still cannot be cleaned up
+  from inside the process — that is what `le fix-terminal` is for.
+
 ### Changed
 - **Rows that share a name are told apart.** Naming processes after their
   bundle (0.1.20) turned "Editor language service ×3" into "Antigravity IDE

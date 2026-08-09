@@ -113,19 +113,56 @@ as `32 + value`, so screen positions decode to **printable ASCII**: column 47
 is `O`, column 52 is `T`, column 38 is `F`. A mouse sweep over a terminal stuck
 in that mode can "type" real letters into whatever is reading stdin.
 
-### Fix
+### Fix — and an honest accounting of what it covers
+
+The first version of this fix was a `defer` in `Run` with a comment claiming it
+covered "SIGKILL, SIGHUP, a crash that takes the group down". That comment was
+wrong, and wrong in the direction that matters: **a `defer` does not run on
+SIGKILL, and it does not run on Go's default SIGHUP death either.** It cannot
+cover the case it claimed to.
+
+What the exits actually look like, checked against bubbletea v1.3.10:
+
+| exit | restored by |
+|---|---|
+| normal return, panic | Bubble Tea |
+| SIGINT, SIGTERM | Bubble Tea's own handler (`tea.go:286`) |
+| early error return from `Run` | **the new `defer`** |
+| SIGKILL, default SIGHUP | nothing in-process — impossible |
+
+So the `defer` stays, because it is one idempotent write and it closes the
+error-return path, but it is not the interesting half:
 
 ```go
-defer fmt.Fprint(os.Stderr, "\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l")
+defer fmt.Fprint(os.Stderr, ResetTerminal)
 ```
 
-One idempotent write on the way out, unconditionally, rather than reasoning
-about which exit paths Bubble Tea covers.
+The `kill -9` case is unfixable from inside the dying process, so recovery has
+to come from a **second** process. That is the new command:
+
+```
+le fix-terminal
+```
+
+It writes mouse-off (1000/1002/1003/1006/1015), bracketed-paste-off, cursor-on
+and leave-alt-screen — every one idempotent, so it is a no-op on a healthy
+terminal. `reset` also works and always has; `fix-terminal` exists because it
+is discoverable from the tool that caused the problem, and because `reset`
+additionally clears the scrollback, which people are reasonably unwilling to do
+mid-debug.
+
+`cmd/fix_terminal_test.go` asserts the escape bytes literally rather than
+against the constant the implementation uses — a typo in an escape sequence
+raises no error and produces a command that silently fails at its only job.
 
 ### If a shell is stuck right now
 
 ```sh
-printf '\e[?1000l\e[?1002l\e[?1003l\e[?1006l\e[?1015l'   # or just: reset
+le fix-terminal
+# or, without le:
+printf '\e[?1000l\e[?1002l\e[?1003l\e[?1006l\e[?1015l\e[?2004l\e[?25h\e[?1049l'
+# or, if you don't mind losing scrollback:
+reset
 ```
 
 ## Verification
@@ -144,9 +181,14 @@ printf '\e[?1000l\e[?1002l\e[?1003l\e[?1006l\e[?1015l'   # or just: reset
 2. **A fuzz test inherits every side effect of every key it presses.** Before
    handing random input to a state machine, enumerate what that machine can do
    to things outside the process.
-3. **A TUI borrows global terminal state.** Anything you switch on — mouse
-   modes, alt screen, bracketed paste — must be switched off in a `defer`, not
-   only on the happy path.
+3. **A TUI borrows global state that outlives the process.** Anything you
+   switch on — mouse modes, alt screen, bracketed paste — needs a restore path
+   on every exit you can observe, and an out-of-process recovery for the exits
+   you cannot (`kill -9`). "It's in a defer" is not the same as "it's covered".
+4. **Verify the failure mode you name in a comment.** The first version of this
+   fix claimed a `defer` handled SIGKILL. Reading bubbletea's source produced a
+   correct table of who restores what, and turned a half-true one-liner into a
+   real fix plus a real recovery command.
 4. **`last` is a debugger.** Bursts of tty logins per minute pinned the cause to
    a minute-accurate window and ruled out cron, LaunchAgents and shell rc files
    before a line of code was read.

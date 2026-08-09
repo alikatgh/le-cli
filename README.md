@@ -193,6 +193,20 @@ settings section.
 
 Wheel scrolls, left-click selects. The list auto-refreshes.
 
+### If your terminal is left in a weird state
+
+```sh
+le fix-terminal
+```
+
+The TUI turns on mouse reporting, and turns it back off on every exit it can
+observe. A `kill -9` gives it no chance to — and a terminal left in
+mouse-reporting mode treats every mouse *move* as input, so your prompt fills
+with `;62;38M65;…` whenever you move the mouse. `fix-terminal` also restores a
+hidden cursor, bracketed paste and the alt screen. Everything it sends is
+idempotent, so it is safe on a healthy terminal, and unlike `reset` it leaves
+your scrollback alone.
+
 ## Layout
 
 ```

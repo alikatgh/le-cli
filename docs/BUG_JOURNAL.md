@@ -30,9 +30,14 @@ Generalized bug shapes. Grep here before reproducing anything.
   returns or panics — not when the process is killed. The terminal then reports
   every mouse MOVE as input forever: the prompt fills with `;62;38M65;…`, and
   because the byte-encoded modes map coordinates onto printable ASCII, a mouse
-  sweep can "type" real letters into whatever reads stdin next. Disable
-  1000/1002/1003/1006/1015 unconditionally in a `defer`; it is one idempotent
-  write. (LE-CLI-016)
+  sweep can "type" real letters into whatever reads stdin next. Restore in a
+  `defer` for the unwinding paths — but do NOT claim that covers `kill -9`: a
+  defer runs on neither SIGKILL nor Go's default SIGHUP death. Global terminal
+  state needs an out-of-process escape hatch (`le fix-terminal`) as well.
+  Corollary: **when a comment names a failure mode, go read that failure mode.**
+  The first cut of this fix asserted the defer handled SIGKILL; bubbletea's
+  source (`tea.go:286`) showed it already handles SIGINT/SIGTERM and that the
+  defer only closes the error-return path. (LE-CLI-016)
 - **A UI test that presses keys presses the ones with SIDE EFFECTS too.** A
   randomised key-sequence test included `f` (pin a port), which persists — so
   it wrote six synthetic ports into the developer's real

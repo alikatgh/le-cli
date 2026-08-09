@@ -96,6 +96,13 @@ func newRoot(version string) *cobra.Command {
 		holdCmd(), waitCmd(), readyCmd(), openCmd(), forwardCmd())
 	group(root, "macos", "macOS housekeeping:",
 		flushDNSCmd(), restartDockCmd(), restartFinderCmd(), sleepDisplayCmd(), keepAwakeCmd())
+	// Its own group, fenced after the macOS tools for the same reason they are
+	// fenced: it is housekeeping, not the thesis. It does NOT go ungrouped —
+	// "Additional Commands" is where a command goes to be undiscoverable, and
+	// this one is only ever wanted by someone whose terminal is already broken
+	// and who is scanning `le --help` for anything that looks like a way out.
+	group(root, "repair", "Recover a terminal a killed TUI left in a bad state:",
+		fixTerminalCmd())
 	// Ungrouped on purpose — cobra files it under "Additional Commands"
 	// alongside help/completion, which is where a version command belongs.
 	root.AddCommand(versionCmd(version))
@@ -277,6 +284,38 @@ func versionCmd(version string) *cobra.Command {
 }
 
 // --- system utilities (1:1 with the app's action tools) ---
+
+// fixTerminalCmd is the recovery half of the mouse-mode problem. The TUI turns
+// mouse reporting on and turns it back off on every exit it can observe — but
+// `kill -9` runs no defers and no signal handlers, and a terminal left in
+// mouse-reporting mode then treats every mouse MOVE as input: the prompt fills
+// with `;62;38M65;…`, and because the byte-encoded modes transmit a coordinate
+// as 32+value, a mouse sweep can type real letters into whatever reads stdin.
+//
+// Recovery has to come from a second process, which is what this is. `reset`
+// also works and is always available; this exists because it is discoverable
+// from the tool that caused the problem, and because `reset` additionally
+// clears the scrollback, which people are rightly reluctant to do.
+func fixTerminalCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "fix-terminal",
+		Short: "Undo terminal modes a killed TUI left behind",
+		Long: "Undo the terminal modes a TUI leaves behind when it is killed without\n" +
+			"getting to clean up — mouse reporting, bracketed paste, a hidden cursor,\n" +
+			"the alt screen. Symptoms are a prompt that fills with `;62;38M65;…`\n" +
+			"whenever the mouse moves, a missing cursor, or a terminal that stays\n" +
+			"blank after a crash.\n\n" +
+			"Every sequence it writes is idempotent, so running it on a healthy\n" +
+			"terminal does nothing. Do not redirect its output — the escapes have to\n" +
+			"reach the terminal to have any effect.\n\n" +
+			"`reset` does this too, and also clears your scrollback.",
+		Args: usageArgs(cobra.NoArgs),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, err := fmt.Fprint(cmd.OutOrStdout(), ui.ResetTerminal)
+			return err
+		},
+	}
+}
 
 func flushDNSCmd() *cobra.Command {
 	return &cobra.Command{
