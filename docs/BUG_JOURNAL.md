@@ -53,6 +53,13 @@ Generalized bug shapes. Grep here before reproducing anything.
   test flaky. Capture a generation counter when the work starts; only write if
   it still matches. A mutex protects the map, not the ordering, so `-race` will
   never catch this. (LE-CLI-006)
+- **A fallback that succeeds quietly is how a step goes missing for a month.**
+  release.yml skipped the Homebrew tap bump with one log line and a green
+  check when `TAP_GITHUB_TOKEN` was absent — so v0.1.16 published and brew
+  users sat on v0.1.15 until someone happened to look. Once a capability is
+  expected, its absence is a failure, not a branch: the job now fails (after
+  publishing and attesting, so nothing is lost). Applies to any
+  "configured? then do the extra thing" step. (LE-CLI-008)
 - **A test stub for shared state must tolerate being called by goroutines it
   didn't start.** The stub for LE-CLI-006 did `close(started)` on every call;
   a leftover `CachedScheme` goroutine from an earlier test called it a second
