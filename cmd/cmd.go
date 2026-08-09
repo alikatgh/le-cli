@@ -76,7 +76,7 @@ func newRoot(version string) *cobra.Command {
 			if cfg.Theme != "" && !ui.ApplyTheme(cfg.Theme) {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "le: unknown theme %q in config (themes: %s) — using default\n", cfg.Theme, strings.Join(ui.ThemeNames(), " / "))
 			}
-			return ui.Run(ui.Options{Interval: cfg.Interval(), Filter: cfg.Filter})
+			return ui.Run(ui.Options{Interval: cfg.Interval(), Filter: cfg.Filter, Group: cfg.Group})
 		},
 	}
 	// A bad flag is misuse, not a runtime failure — exit 2. Set on root;

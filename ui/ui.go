@@ -53,6 +53,7 @@ type Options struct {
 	Interval time.Duration // refresh cadence (0 = default)
 	Filter   string        // initial filter text
 	Theme    string        // theme name ("" = default; validated by the caller)
+	Group    bool          // start grouped by owner
 }
 
 // Row pairs a listener with its computed profile.
@@ -95,6 +96,9 @@ type model struct {
 	sortCol   int
 	sortAsc   bool
 	favs      map[string]bool // pinned ports — sort to the top, render a *
+	grouped   bool            // group the list by owner (see group.go)
+	collapsed map[string]bool // per-owner fold state, only while grouped
+	items     []listItem      // the rendered lines; the cursor indexes THESE
 }
 
 // New builds the initial model from launch options.
@@ -111,7 +115,7 @@ func New(opts Options) model {
 	if opts.Theme != "" {
 		ApplyTheme(opts.Theme) // unknown names warned by the caller pre-alt-screen
 	}
-	m := model{filter: ti, loading: true, interval: interval, sortCol: sortPort, sortAsc: true, favs: loadFavorites()}
+	m := model{filter: ti, loading: true, interval: interval, sortCol: sortPort, sortAsc: true, favs: loadFavorites(), grouped: opts.Group}
 	m.applyFilter()
 	return m
 }
@@ -465,6 +469,28 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
+	case "z":
+		m.grouped = !m.grouped
+		m.buildItems()
+		m.clamp()
+		if m.grouped {
+			m.flash, m.flashErr = "grouped by owner — enter folds a group, Z folds all", false
+		} else {
+			m.flash, m.flashErr = "flat list", false
+		}
+		return m, nil
+	case "Z":
+		if m.grouped {
+			m = m.setAllGroups(m.anyExpanded())
+		}
+		return m, nil
+	case "enter", "right", "left", " ":
+		// Only meaningful on a group header; on a row these keys stay free
+		// for the pane-focus handler above and for future bindings.
+		if owner, ok := m.selectedGroup(); ok {
+			return m.toggleGroup(owner), nil
+		}
+		return m, nil
 	case "tab":
 		if m.paneFocus {
 			m.paneFocus = false
@@ -487,7 +513,7 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.paneIdx = 0
 		m.clamp()
 	case "G", "end":
-		m.cursor = len(m.view) - 1
+		m.cursor = len(m.items) - 1
 		m.paneIdx = 0
 		m.clamp()
 	case "/":
@@ -584,12 +610,8 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Re-partition and keep the cursor on the row that was toggled —
 			// it just moved.
 			m.sortView()
-			for i, row := range m.view {
-				if row.L.PID == r.L.PID {
-					m.cursor = i
-					break
-				}
-			}
+			m.buildItems() // pinning can un-collapse a group, changing line count
+			m.focusRowByPID(r.L.PID)
 			m.clamp()
 		}
 	}
@@ -651,8 +673,8 @@ func (m model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		// on len(m.view) instead of the visible window let a click in the empty
 		// space below the last visible row select an off-screen row.
 		end := m.offset + m.listHeight()
-		if end > len(m.view) {
-			end = len(m.view)
+		if end > len(m.items) {
+			end = len(m.items)
 		}
 		if idx := m.offset + (msg.Y - 2); msg.Y >= 2 && idx >= m.offset && idx < end {
 			m.cursor = idx
@@ -663,7 +685,7 @@ func (m model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) move(d int) {
-	if len(m.view) == 0 {
+	if len(m.items) == 0 {
 		return
 	}
 	m.cursor += d
@@ -671,11 +693,20 @@ func (m *model) move(d int) {
 }
 
 func (m *model) clamp() {
+	// A group header holds no fields, so pane focus cannot survive landing on
+	// one — otherwise the footer advertises actions for a row that isn't
+	// there. Normalised here because every path that moves the cursor or
+	// rebuilds the list ends up in clamp.
+	if m.paneFocus {
+		if _, ok := m.selected(); !ok {
+			m.paneFocus = false
+		}
+	}
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
-	if m.cursor > len(m.view)-1 {
-		m.cursor = len(m.view) - 1
+	if m.cursor > len(m.items)-1 {
+		m.cursor = len(m.items) - 1
 	}
 	if m.cursor < 0 {
 		m.cursor = 0
@@ -714,6 +745,7 @@ func (m *model) applyFilter() {
 	}
 	m.view = out
 	m.sortView()
+	m.buildItems()
 }
 
 // sortView sorts m.view by the active column/direction in place. Stable so
@@ -816,9 +848,14 @@ func firstPortNum(ports []string) int {
 	return n
 }
 
+// selected returns the listener under the cursor. A group header is a line
+// but not a listener, so it reports false — every row action then refuses
+// with its usual message instead of acting on a neighbouring row.
 func (m model) selected() (Row, bool) {
-	if m.cursor >= 0 && m.cursor < len(m.view) {
-		return m.view[m.cursor], true
+	if m.cursor >= 0 && m.cursor < len(m.items) {
+		if it := m.items[m.cursor]; !it.header {
+			return it.row, true
+		}
 	}
 	return Row{}, false
 }
@@ -913,7 +950,7 @@ func (m model) tableView() string {
 	if m.loading && len(m.view) == 0 {
 		return dimSt.Render("  scanning localhost…")
 	}
-	if len(m.view) == 0 {
+	if len(m.items) == 0 {
 		return dimSt.Render("  no listeners match.")
 	}
 
@@ -971,11 +1008,18 @@ func (m model) tableView() string {
 
 	rows := m.listHeight()
 	end := m.offset + rows
-	if end > len(m.view) {
-		end = len(m.view)
+	if end > len(m.items) {
+		end = len(m.items)
 	}
 	for i := m.offset; i < end; i++ {
-		r := m.view[i]
+		if it := m.items[i]; it.header {
+			b.WriteString(m.groupHeaderLine(it, i == m.cursor, m.w-gutterW))
+			if i < end-1 {
+				b.WriteString("\n")
+			}
+			continue
+		}
+		r := m.items[i].row
 		// Cells are padded to DISPLAY width (padRight), not fmt's rune
 		// count — %-*s under-pads CJK identities (8 cols in 4 runes) and
 		// shifts every column after WHAT. Same trap truncate() was fixed for.
@@ -1143,7 +1187,7 @@ func (m model) footerView() string {
 		}
 		return okSt.Render(m.flash)
 	}
-	keys := []string{"j/k move", "tab fields", "/ filter", "x stop", "o open", "F reveal", "c copy", "f pin", "? help", "q quit"}
+	keys := []string{"j/k move", m.groupedHint(), "/ filter", "x stop", "o open", "c copy", "f pin", "? help", "q quit"}
 	var parts []string
 	for _, k := range keys {
 		sp := strings.SplitN(k, " ", 2)
@@ -1161,6 +1205,7 @@ func (m model) helpView() string {
 		{"1-7", "sort by port / pid / what / risk / owner / dir / cpu — press again to reverse"},
 		{"x or s", "stop the selected listener (with confirm)"},
 		{"o", "open localhost:<port> in the browser (http/https auto-detected)"},
+		{"z", "group the list by owner — folds the owners with nothing you can act on; ⏎ folds one, Z folds/unfolds all (persist with `group = true` in config)"},
 		{"tab", "focus the detail pane — j/k step between fields, ⏎ acts on one (opens a SPECIFIC port, reveals the binary vs the folder), tab/esc back"},
 		{"F", "reveal the folder in Finder — or the app bundle itself, for a helper with no useful cwd"},
 		{"T", "open a NEW terminal window in the folder (macOS; c → d copies a cd for this shell)"},
