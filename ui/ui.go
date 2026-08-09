@@ -3,9 +3,11 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -160,7 +162,90 @@ var (
 		_, err := osc52.New(s).WriteTo(os.Stderr)
 		return err
 	}
+	// revealPath opens a file manager with the path selected — the app's
+	// "Reveal" action. `open -R` selects the item itself on macOS; xdg-open
+	// can only open the containing directory, so Linux gets the parent.
+	// #nosec G204 -- "open"/"xdg-open" are fixed commands and the path is
+	// passed as a discrete argv element (no shell), so nothing in it can be
+	// interpreted as a command. The path itself comes from lsof's cwd field or
+	// from a stat'd argv[0], never from user input.
+	revealPath = func(path string) error {
+		if runtime.GOOS == "darwin" {
+			return exec.Command("open", "-R", path).Start()
+		}
+		return exec.Command("xdg-open", filepath.Dir(path)).Start()
+	}
+	// openTerminalAt opens a NEW terminal window at dir — the app's
+	// "Terminal" action. It cannot cd the shell le is running in (a child
+	// can't change its parent's directory), which is why `c → d` copies a
+	// `cd` command as the in-place alternative.
+	openTerminalAt = func(dir string) error {
+		if runtime.GOOS != "darwin" {
+			return errNoTerminalLauncher
+		}
+		return exec.Command("open", "-a", "Terminal", dir).Start()
+	}
 )
+
+var errNoTerminalLauncher = errors.New("opening a terminal window is macOS-only — use c → d to copy a cd command")
+
+// revealTarget is what "reveal in Finder" should select: the working
+// directory when there is one, otherwise the executable itself. An app helper
+// (the case that prompted this) usually has a useless container path for a
+// cwd but a perfectly informative binary path — "what IS this thing" is
+// answered by /Applications/Foo.app, not by ~/Library/Containers/…/Data.
+func revealTarget(r Row) (string, bool) {
+	if exe := executablePath(r.L.CommandLine); exe != "" && (r.L.Cwd == "" || r.P.StopKind == intel.StopAvoid) {
+		return exe, true
+	}
+	if r.L.Cwd != "" {
+		return r.L.Cwd, true
+	}
+	return "", false
+}
+
+// executablePath pulls argv[0] out of a command line. Command lines are
+// space-joined argv, so a path containing spaces can't be recovered
+// unambiguously — take the longest prefix that exists on disk, which handles
+// "/Applications/My App.app/Contents/MacOS/My App" correctly and gives up
+// (returns "") rather than guessing.
+func executablePath(cmdline string) string {
+	cmdline = strings.TrimSpace(cmdline)
+	if cmdline == "" || !strings.HasPrefix(cmdline, "/") {
+		return ""
+	}
+	if _, err := os.Stat(cmdline); err == nil {
+		return cmdline
+	}
+	fields := strings.Split(cmdline, " ")
+	for i := len(fields); i > 0; i-- {
+		candidate := strings.Join(fields[:i], " ")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// inspectCommand is the context-aware "how do I look into this?" command —
+// the CLI half of the app's per-field Copy inspect actions. Ordered by how
+// much the owner knows: a supervisor's own inspect beats a generic lsof.
+func inspectCommand(r Row) string {
+	switch r.P.StopKind {
+	case intel.StopDocker:
+		id := r.P.StopArgID
+		if id == "" {
+			id = r.P.StopArg
+		}
+		return "docker inspect " + id
+	case intel.StopBrew:
+		return "brew services info " + r.P.StopArg
+	case intel.StopLaunchd:
+		return "launchctl print " + intel.LaunchdDomainTarget(r.P.StopArg)
+	default:
+		return fmt.Sprintf("lsof -nP -p %d", r.L.PID)
+	}
+}
 
 // stopCommand renders the selected row's stop action as a paste-able shell
 // command. StopAvoid rows return false: suggesting a kill command for a
@@ -306,6 +391,33 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Parity with the app's "Copy ps": inspect the process behind the row.
 			m.copyResult(fmt.Sprintf("ps -p %d -o pid,pcpu,pmem,lstart,command", r.L.PID))
 			m.copyMenu = false
+		case "i":
+			// Context-aware inspect — docker/brew/launchctl know more about
+			// their own service than lsof does. The "avoid — inspect first"
+			// advice is only actionable if inspecting is one keystroke.
+			m.copyResult(inspectCommand(r))
+			m.copyMenu = false
+		case "d":
+			// A child process can't cd its parent shell, so the honest
+			// equivalent of the app's "Reveal / Terminal here" for the shell
+			// you're already in is a cd command you can paste.
+			if r.L.Cwd != "" {
+				m.copyResult("cd " + shellSingleQuote(r.L.Cwd))
+			} else {
+				m.flash, m.flashErr = "no working directory for "+r.P.Identity, true
+			}
+			m.copyMenu = false
+		case "a":
+			// The app's "Copy one-liner": everything needed to restart this
+			// by hand — cd there, then run exactly what is running now.
+			if r.L.CommandLine == "" {
+				m.flash, m.flashErr = "no command line recorded for "+r.P.Identity, true
+			} else if r.L.Cwd != "" {
+				m.copyResult("cd " + shellSingleQuote(r.L.Cwd) + " && " + r.L.CommandLine)
+			} else {
+				m.copyResult(r.L.CommandLine)
+			}
+			m.copyMenu = false
 		case "esc", "q":
 			m.copyMenu = false
 		}
@@ -389,6 +501,31 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		if r, ok := m.selected(); ok {
 			m.copyMenu, m.copyRow, m.flash = true, r, ""
+		}
+	case "F":
+		// Parity with the app's Reveal: the detail pane told you WHERE the
+		// thing is, but you couldn't get to it — which is most of what you
+		// want on an "avoid — inspect first" row.
+		if r, ok := m.selected(); ok {
+			target, has := revealTarget(r)
+			switch {
+			case !has:
+				m.flash, m.flashErr = "nothing to reveal for "+r.P.Identity+" — no folder or resolvable binary", true
+			case revealPath(target) != nil:
+				m.flash, m.flashErr = "couldn't reveal "+target, true
+			default:
+				m.flash, m.flashErr = "revealed "+target, false
+			}
+		}
+	case "T":
+		if r, ok := m.selected(); ok {
+			if r.L.Cwd == "" {
+				m.flash, m.flashErr = "no working directory for "+r.P.Identity, true
+			} else if err := openTerminalAt(r.L.Cwd); err != nil {
+				m.flash, m.flashErr = err.Error(), true
+			} else {
+				m.flash, m.flashErr = "opened a terminal in "+r.L.Cwd, false
+			}
 		}
 	case "f":
 		if r, ok := m.selected(); ok {
@@ -909,7 +1046,7 @@ func (m model) detailView() string {
 		dimSt.Render("ports  ") + strings.Join(r.L.Ports, ", ") + dimSt.Render("   pid ") + fmt.Sprintf("%d", r.L.PID) + dimSt.Render("   owner ") + string(r.P.Source),
 		dimSt.Render("usage  ") + cpuStr + dimSt.Render(" cpu   ") + fmtMem(r.L.RSS) + dimSt.Render(" mem"),
 		dimSt.Render("cmd    ") + truncate(r.L.CommandLine, m.w-12),
-		dimSt.Render("dir    ") + truncate(orDash(r.L.Cwd), m.w-12),
+		dimSt.Render("dir    ") + truncate(orDash(r.L.Cwd), m.w-12) + revealHint(r),
 		dimSt.Render("stop   ") + lipgloss.NewStyle().Foreground(brand).Render(stopShort(r.P)) + dimSt.Render("   (c copies)"),
 		dimSt.Render("back   ") + orDash(r.P.Restart),
 	}
@@ -934,7 +1071,8 @@ func (m model) footerView() string {
 	if m.copyMenu {
 		label := lipgloss.NewStyle().Foreground(yellow).Render("copy " + m.copyRow.P.Identity + ":  ")
 		opt := func(k, desc string) string { return keySt.Render(k) + dimSt.Render(" "+desc+"  ") }
-		return label + opt("u", "url") + opt("r", "curl") + opt("l", "lsof") + opt("s", "stop") + opt("p", "ps") +
+		return label + opt("u", "url") + opt("r", "curl") + opt("l", "lsof") + opt("s", "stop") +
+			opt("p", "ps") + opt("i", "inspect") + opt("d", "cd") + opt("a", "one-liner") +
 			keySt.Render("esc") + dimSt.Render(" cancel")
 	}
 	if m.filtering {
@@ -946,7 +1084,7 @@ func (m model) footerView() string {
 		}
 		return okSt.Render(m.flash)
 	}
-	keys := []string{"j/k move", "/ filter", "1-6 sort", "x stop", "o open", "c copy", "f pin", "? help", "q quit"}
+	keys := []string{"j/k move", "/ filter", "x stop", "o open", "F reveal", "c copy", "f pin", "? help", "q quit"}
 	var parts []string
 	for _, k := range keys {
 		sp := strings.SplitN(k, " ", 2)
@@ -964,7 +1102,9 @@ func (m model) helpView() string {
 		{"1-7", "sort by port / pid / what / risk / owner / dir / cpu — press again to reverse"},
 		{"x or s", "stop the selected listener (with confirm)"},
 		{"o", "open localhost:<port> in the browser (http/https auto-detected)"},
-		{"c", "copy… → u url · r curl · l lsof · s stop · p ps (OSC 52 — works over SSH)"},
+		{"F", "reveal the folder in Finder — or the app bundle itself, for a helper with no useful cwd"},
+		{"T", "open a NEW terminal window in the folder (macOS; c → d copies a cd for this shell)"},
+		{"c", "copy… → u url · r curl · l lsof · s stop · p ps · i inspect · d cd · a one-liner (OSC 52 — works over SSH)"},
 		{"f", "pin/unpin the port — pinned ports (*) stay at the top, saved in ~/.config/le/favorites"},
 		{"r", "refresh now"},
 		{"t", "cycle theme (persist via config: theme = <name>)"},
@@ -1099,4 +1239,14 @@ func Run(opts Options) error {
 	p := tea.NewProgram(New(opts), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
+}
+
+// revealHint marks the dir line as actionable — the pane previously stated
+// facts with no indication that anything could be done with them, which is
+// exactly the gap against the mac app's clickable rows.
+func revealHint(r Row) string {
+	if _, ok := revealTarget(r); !ok {
+		return ""
+	}
+	return dimSt.Render("   (F reveals)")
 }
