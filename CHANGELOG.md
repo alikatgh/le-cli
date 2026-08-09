@@ -5,6 +5,31 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-08-09
+
+### Fixed
+- Non-ASCII process names read as themselves again. A Chinese, Cyrillic, or
+  emoji-named app rendered as `M-dM-<M^AM-dM-8M^Z…` in the TUI, `le list`, and
+  `--json`, because `le` forces `LC_ALL=C` (the PID-recycle guard's `lstart`
+  parse depends on it) and under the C locale `ps` and `lsof` escape every
+  non-ASCII byte — in two different notations. Both are decoded on the way in
+  now, guarded so ordinary ASCII arguments containing `M-d` or `\x41` are never
+  rewritten.
+
+### Added
+- The detail pane does things now, instead of only stating them — parity with
+  the mac app's clickable rows, and especially with its advice: an
+  `avoid — inspect first` row used to offer no way to inspect.
+  - `F` reveals the folder in Finder — or the **app bundle itself** when the
+    row is a helper whose working directory is an opaque container path.
+  - `T` opens a new terminal window in the folder (macOS). It can't `cd` the
+    shell `le` runs in, so `c → d` is the in-place equivalent.
+  - The copy picker gains `i` context-aware inspect (`docker inspect` /
+    `brew services info` / `launchctl print` / `lsof -p`), `d` for
+    `cd '<dir>'`, and `a` for a `cd … && <command>` one-liner. Inspect works
+    on `avoid` rows too: refusing to stop something is no reason to refuse to
+    look at it.
+
 ## [0.1.17] - 2026-08-09
 
 ### Changed
@@ -307,7 +332,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.17...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.18...HEAD
+[0.1.18]: https://github.com/alikatgh/le-cli/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/alikatgh/le-cli/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/alikatgh/le-cli/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/alikatgh/le-cli/compare/v0.1.14...v0.1.15
