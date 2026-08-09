@@ -17,11 +17,23 @@ import "os/exec"
 // The guard belongs at the boundary, not at the call site, because a call-site
 // stub only protects the tests whose author knew to write it.
 //
-// KeepAwake is deliberately NOT routed through these: it needs a live
-// *exec.Cmd to Start, Wait and Kill, and abstracting that would be a bigger
-// change than the risk justifies — caffeinate changes nothing a user can see,
-// and because it blocks, a test that reached it would hang rather than quietly
-// wreck the machine. Route it through here if it ever stops blocking.
+// Two call sites in this package are deliberately NOT routed through these,
+// and the reasoning is written down so the next reader can tell a decision
+// from an oversight:
+//
+//   - KeepAwake needs a live *exec.Cmd to Start, Wait and Kill, and
+//     abstracting that would be a bigger change than the risk justifies —
+//     caffeinate changes nothing a user can see, and because it blocks, a test
+//     that reached it would hang rather than quietly wreck the machine. Route
+//     it through here if it ever stops blocking.
+//   - renderQR shells out to qrencode, which draws a QR code on stdout and
+//     touches nothing else; when qrencode is absent it prints an install tip
+//     and returns. There is no damage to prevent, so guarding it would be
+//     ceremony. Guard it if it ever gains a flag that writes a file.
+//
+// startForward (forward.go) is a var seam of its own and IS neutered by the
+// test guard, because a real `kubectl port-forward` can bind a local port
+// against a live cluster.
 var (
 	// runCombined runs a one-shot command and returns its combined output.
 	runCombined = execCombined

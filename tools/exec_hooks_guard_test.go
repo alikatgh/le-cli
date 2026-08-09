@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"errors"
 	"sync"
 	"testing"
 )
@@ -26,6 +27,16 @@ func init() {
 	runToCompletion = func(exe string, args ...string) error {
 		recordCommand(exe, args)
 		return nil
+	}
+	// startForward was already a seam for tests, but an ungoverned one: a test
+	// that forgot to stub it launched a real `kubectl port-forward`, which can
+	// actually bind a local port against a live cluster. It refuses with an
+	// error rather than returning a no-op wait/kill pair, because Forward
+	// supervises what it starts — handing it a process that "succeeds" and
+	// exits instantly would spin the retry ladder instead of failing.
+	startForward = func(args []string) (func() error, func(), error) {
+		recordCommand("kubectl", append([]string{"port-forward"}, args...))
+		return nil, nil, errors.New("tools: test binary refused to start a real kubectl port-forward (see exec_hooks_guard_test.go)")
 	}
 }
 
