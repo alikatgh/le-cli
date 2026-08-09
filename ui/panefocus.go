@@ -79,8 +79,11 @@ func (m model) focusedField() (paneField, bool) {
 	return fs[m.paneIdx], true
 }
 
-// enterPaneFocus moves focus into the pane. It refuses when the row has
-// nothing actionable rather than trapping the cursor in an inert pane.
+// enterPaneFocus moves focus into the pane. The empty-list branch is
+// defensive: paneFields always emits a stop field today (pinned by
+// TestEveryRowHasAtLeastOneField), so it is unreachable — but it costs one
+// comparison and it is the difference between a clear message and a cursor
+// trapped in an inert pane if that ever changes.
 func (m model) enterPaneFocus() model {
 	r, ok := m.selected()
 	if !ok {

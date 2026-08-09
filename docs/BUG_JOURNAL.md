@@ -109,7 +109,7 @@ Generalized bug shapes. Grep here before reproducing anything.
 - **Why:** row-level actions could only ever pick ONE reveal target per row and could never reach a row's second port — the `+1`/`+2` extras in the table were unreachable. Tab now focuses the pane, j/k step fields, Enter acts.
 - **Height bug I introduced and caught:** the "what Enter does" hint started as a line INSIDE the pane, which pushed the view one row past the terminal height at every size (main fit exactly; mine overflowed by 1). Moved to the footer; `TestViewFitsTerminalHeight` now guards it.
 - **Cursor bug I introduced and caught:** a scripted patch put `m.paneIdx = 0` in the pane block's own `j` case rather than the table's, so the field cursor reset on every press and never advanced past 1. Found by printing the field list and cursor per keystroke instead of guessing.
-- **Lesson:** focus state must be visible WITHOUT colour and must not change geometry — a reserved 2-column gutter (`› ` / `  `) does both, and a width-equality test across focus states keeps it honest.
+- **Lesson:** focus state must be visible WITHOUT colour and must not change geometry — a reserved 2-column gutter (a caret plus a space, versus two spaces) does both, and a width-equality test across focus states keeps it honest.
 
 ### 2026-08-09 — non-ASCII process names rendered as line noise; detail pane had no actions (LE-CLI-009/010)
 - **Where:** `scan/unescape.go` (new), `scan/scan.go` (parsePSCommandLines + the lsof `c` field), `ui/ui.go` (F/T keys, copy picker i/d/a, revealHint). Tests: `scan/unescape_test.go` (incl. fuzz), `ui/ui_test.go`.

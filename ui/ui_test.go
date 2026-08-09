@@ -948,22 +948,21 @@ func TestPaneCursorWraps(t *testing.T) {
 	}
 }
 
-// A row with nothing actionable must not trap the cursor in an inert pane.
-func TestTabRefusesWhenNothingIsActionable(t *testing.T) {
-	rows := []Row{{
+// Every row has at least a stop field (a stoppable row opens the confirm, an
+// avoid row copies its inspect command), so Tab always has somewhere to land.
+// enterPaneFocus still guards the empty case defensively; this pins the
+// invariant that makes the guard unreachable today, so if a future change to
+// paneFields breaks it, this fails rather than the pane silently going inert.
+func TestEveryRowHasAtLeastOneField(t *testing.T) {
+	rows := append(sampleRows(), multiPortRow()...)
+	rows = append(rows, Row{ // the barest possible row: no ports, no cwd, no path
 		L: scan.Listener{PID: 503, CommandLine: "kernel_task"},
 		P: intel.Profile{Identity: "macOS service", StopKind: intel.StopAvoid},
-	}}
-	var m tea.Model = New(Options{})
-	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
-	// StopAvoid always yields a stop field, so build the empty case directly.
-	if got := len(paneFields(Row{})); got != 1 {
-		t.Logf("paneFields(zero row) = %d", got)
-	}
-	m, _ = m.Update(key("tab"))
-	if !m.(model).paneFocus {
-		t.Skip("this row has an actionable field; the refusal path is covered by enterPaneFocus's guard")
+	})
+	for _, r := range rows {
+		if got := len(paneFields(r)); got == 0 {
+			t.Errorf("%s has no actionable pane fields", r.P.Identity)
+		}
 	}
 }
 
