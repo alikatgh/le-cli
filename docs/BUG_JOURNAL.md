@@ -14,6 +14,18 @@ both when a fix lands on shared behavior.
 
 Generalized bug shapes. Grep here before reproducing anything.
 
+- **A pane's height is a BUDGET, not a suggestion.** The layout reserves
+  `detailHeight` lines for the detail box and sizes the table around it, so one
+  extra line inside the pane pushed the whole view one row past the terminal
+  height and scrolled the header off. Put per-state hints in the FOOTER (which
+  already swaps content by mode) and assert `len(View()) <= h` in a test.
+  (LE-CLI-011)
+- **A scripted `.replace(..., 1)` patches the FIRST match, which may be code
+  you added seconds earlier.** Inserting `m.paneIdx = 0` into "the j case"
+  landed it inside the new pane-focus block instead of the table's, so the
+  field cursor reset itself on every keypress and stuck at 1. When patching by
+  pattern, anchor on surrounding lines unique to the target — or read the
+  result back before believing it. (LE-CLI-011)
 - **Forcing `LC_ALL=C` to stabilize a PARSE also mangles the DISPLAY.** ps and
   lsof escape every byte >= 0x80 under the C locale, in two different
   notations (`M-dM-<M^A` vs `\xe4\xbc\x81`), so a Chinese/Cyrillic/emoji-named
@@ -92,6 +104,13 @@ Generalized bug shapes. Grep here before reproducing anything.
 ---
 
 ## Chronological log
+### 2026-08-09 — detail pane gains field focus (LE-CLI-011)
+- **Where:** `ui/panefocus.go` (new), `ui/ui.go` (model fields, key routing, pane render, footer). Tests: `ui/ui_test.go`.
+- **Why:** row-level actions could only ever pick ONE reveal target per row and could never reach a row's second port — the `+1`/`+2` extras in the table were unreachable. Tab now focuses the pane, j/k step fields, Enter acts.
+- **Height bug I introduced and caught:** the "what Enter does" hint started as a line INSIDE the pane, which pushed the view one row past the terminal height at every size (main fit exactly; mine overflowed by 1). Moved to the footer; `TestViewFitsTerminalHeight` now guards it.
+- **Cursor bug I introduced and caught:** a scripted patch put `m.paneIdx = 0` in the pane block's own `j` case rather than the table's, so the field cursor reset on every press and never advanced past 1. Found by printing the field list and cursor per keystroke instead of guessing.
+- **Lesson:** focus state must be visible WITHOUT colour and must not change geometry — a reserved 2-column gutter (a caret plus a space, versus two spaces) does both, and a width-equality test across focus states keeps it honest.
+
 ### 2026-08-09 — non-ASCII process names rendered as line noise; detail pane had no actions (LE-CLI-009/010)
 - **Where:** `scan/unescape.go` (new), `scan/scan.go` (parsePSCommandLines + the lsof `c` field), `ui/ui.go` (F/T keys, copy picker i/d/a, revealHint). Tests: `scan/unescape_test.go` (incl. fuzz), `ui/ui_test.go`.
 - **LE-CLI-009 symptom/cause:** a WeCom listener showed `cmd /Applications/M-dM-<M^AM-dM-8M^Z…` in the pane, `le list`, and `--json`. Our own `LC_ALL=C` (needed for the lstart parse behind the recycle guard) makes ps escape non-ASCII in vis meta notation and lsof as `\xHH`. Decoded both on the way in; verified against the live process.
