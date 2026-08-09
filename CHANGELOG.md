@@ -5,6 +5,20 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.21] - 2026-08-09
+
+### Changed
+- **Rows that share a name are told apart.** Naming processes after their
+  bundle (0.1.20) turned "Editor language service ×3" into "Antigravity IDE
+  ×3" — more meaningful, equally indistinguishable. A colliding identity now
+  gains its helper binary (`Antigravity IDE · Electron`,
+  `· language_server`); a unique one is left alone however exotic its binary,
+  and two rows running the same binary also stay clean, since the port column
+  already separates them. Applies to both the TUI and `le list`.
+- The header counts **stoppable** listeners alongside the risk pulse. On a
+  normal machine "9 high" is mostly helpers `le` refuses to touch, and "3
+  stoppable" is the honest summary. Omitted when everything is stoppable.
+
 ## [0.1.20] - 2026-08-09
 
 ### Added
@@ -385,7 +399,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.20...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.21...HEAD
+[0.1.21]: https://github.com/alikatgh/le-cli/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/alikatgh/le-cli/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/alikatgh/le-cli/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/alikatgh/le-cli/compare/v0.1.17...v0.1.18
