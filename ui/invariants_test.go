@@ -21,6 +21,16 @@ import (
 // A violated invariant here is a panic or a wrong-row action in the real TUI.
 func checkInvariants(t *testing.T, mm model, trail []string) {
 	t.Helper()
+	checkStateInvariants(t, mm, trail)
+	if v := mm.View(); v == "" {
+		t.Fatalf("empty view — after keys: %s", strings.Join(trail, " "))
+	}
+}
+
+// The state half, split out so the degenerate-size sweep can assert all of it
+// on a zero-area window, where an empty view is legitimate rather than a bug.
+func checkStateInvariants(t *testing.T, mm model, trail []string) {
+	t.Helper()
 	ctx := func() string { return "after keys: " + strings.Join(trail, " ") }
 
 	if len(mm.items) > 0 {
@@ -58,9 +68,6 @@ func checkInvariants(t *testing.T, mm model, trail []string) {
 		if !it.header && (it.viewIdx < 0 || it.viewIdx >= len(mm.view)) {
 			t.Fatalf("item viewIdx %d out of range for %d view rows — %s", it.viewIdx, len(mm.view), ctx())
 		}
-	}
-	if v := mm.View(); v == "" {
-		t.Fatalf("empty view — %s", ctx())
 	}
 }
 
