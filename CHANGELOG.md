@@ -5,6 +5,43 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.20] - 2026-08-09
+
+### Added
+- **The table names the app.** Eight rows used to read "App helper" and three
+  more "Editor language service" — the product was in the command line all
+  along (`/Applications/<Product>.app/…`, or the `Application Support/<Vendor>`
+  segment for sidecars) and was never read. Rows now say OneDrive, BlueStacks,
+  企业微信, Figma, Grammarly Desktop, Pulse Secure, Adobe, Antigravity IDE. The
+  advice is unchanged — still high risk, still refused; knowing what a thing is
+  doesn't make it safe to stop, it makes the refusal comprehensible. Only
+  `argv[0]` is read, so a bundle path in an argument can't rename a process,
+  and an unnameable path keeps the generic label.
+- **Group the list by owner** with `z` (or `group = true` in the config).
+  Fifteen listeners, twelve of them untouchable helpers, becomes nine lines
+  with every stoppable process on screen. `⏎` folds one group, `Z` folds all.
+  Folding hides ports, so it is guarded: opt-in; only all-unactionable groups
+  of 3+ fold by default; an active filter expands everything; a pinned port
+  keeps its group open; and a folded header lists the ports inside it.
+
+### Changed
+- **Visual weight follows what you can do.** A row you can stop gets a solid
+  rail and a bold identity; one `le` refuses to stop gets a hairline rail and
+  normal weight. Risk keeps its colour on every row — before, nine bold red
+  rails belonged to processes you must not touch while the three you control
+  receded. Weight and glyph rather than hue, so it survives `mono` and
+  `NO_COLOR`.
+- **The STOP column stops repeating itself.** A refused row shows an em dash
+  instead of "avoid — inspect first" on 12 of 15 rows in the widest column;
+  `PORT` and `STOP` are sized from the widest cell present, and the freed width
+  goes to the identity.
+
+### Fixed
+- `le list` misaligned every column right of WHAT on a CJK app name (fmt pads
+  by rune count; 企业微信 is 4 runes and 8 columns) and overflowed its PORT
+  column on a multi-port cell like `44950 +1`. Both renderers now share
+  `internal/textw`, so the TUI and the plain table can't disagree again.
+
 ## [0.1.19] - 2026-08-09
 
 ### Added
@@ -348,7 +385,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.19...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.20...HEAD
+[0.1.20]: https://github.com/alikatgh/le-cli/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/alikatgh/le-cli/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/alikatgh/le-cli/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/alikatgh/le-cli/compare/v0.1.16...v0.1.17
