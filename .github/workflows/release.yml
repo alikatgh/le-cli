@@ -62,7 +62,11 @@ jobs:
           if [ -n "$TAP_GITHUB_TOKEN" ]; then
             go run github.com/goreleaser/goreleaser/v2@v2.16.0 release --clean
           else
-            echo "TAP_GITHUB_TOKEN not configured — skipping the Homebrew tap update (bump manually per RELEASING.md)"
+            echo "::warning::TAP_GITHUB_TOKEN missing or expired — publishing the release WITHOUT updating the Homebrew tap. Bump it manually per RELEASING.md."
+            # Recorded, not exited on: the release must still publish and the
+            # attestation step below must still run. The job is failed at the
+            # end instead — see "Tap was not updated".
+            echo "TAP_SKIPPED=1" >> "$GITHUB_ENV"
             TAP_GITHUB_TOKEN="" go run github.com/goreleaser/goreleaser/v2@v2.16.0 release --clean --skip=homebrew
           fi
 
@@ -75,3 +79,19 @@ jobs:
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: 'dist/*.tar.gz'
+
+      # A skipped tap bump used to be a green run with one line buried in the
+      # log — so v0.1.16 shipped and brew users stayed on v0.1.15 for a month
+      # without anyone noticing. Now that the secret exists, its absence means
+      # it EXPIRED, which is exactly the case that must not pass quietly.
+      # Deliberately last: the release is already published and attested, so
+      # this fails the run without costing anything — the same trade the
+      # attestation step above documents.
+      - name: Tap was not updated
+        if: env.TAP_SKIPPED == '1'
+        run: |
+          echo "::error::Release published, but the Homebrew tap was NOT updated (TAP_GITHUB_TOKEN missing or expired)."
+          echo "brew users are still on the previous version. Fix: re-create the fine-grained PAT"
+          echo "(contents:write on alikatgh/homebrew-tap), 'gh secret set TAP_GITHUB_TOKEN --repo alikatgh/le-cli',"
+          echo "and bump Formula/le.rb by hand for THIS release per RELEASING.md."
+          exit 1
