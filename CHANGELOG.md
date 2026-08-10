@@ -5,6 +5,46 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.21] - 2026-08-09
+
+### Added
+- **`le fix-terminal`** — undoes the terminal modes a TUI leaves behind when it
+  is killed without getting to clean up: mouse reporting, bracketed paste, a
+  hidden cursor, the alt screen. The symptom is a prompt that fills with
+  `;62;38M65;…` every time you move the mouse. `reset` does this too; this
+  exists because it is discoverable from the tool that caused the problem, and
+  because it does not also wipe your scrollback. Every sequence it sends is
+  idempotent, so running it on a healthy terminal does nothing.
+
+### Fixed
+- **A killed `le` no longer leaves mouse reporting on** for exits it can
+  observe. The TUI enables mouse cell-motion tracking, which is a mode of *the
+  terminal*, not of `le` — and a terminal left in it reports every mouse move
+  as input to whatever reads that tty next. Worse, the byte-encoded modes
+  transmit a coordinate as `32 + value`, so screen columns decode to printable
+  ASCII and a mouse sweep can type real letters into your shell. Bubble Tea
+  already restored on a normal exit, a panic and SIGINT/SIGTERM; the remaining
+  unwinding paths are now covered too. A `kill -9` still cannot be cleaned up
+  from inside the process — that is what `le fix-terminal` is for.
+
+### Changed
+- **Stop output names the port.** `le stop --dir ~/work --dry-run` used to print
+  `would stop node (pid 100) — TERM` for each match, leaving two same-named
+  processes distinguishable only by PID — while `--json` had carried the ports
+  all along. The preview, the ✓/✗ result lines and the restart failure line now
+  read `would stop node (pid 100) on 3000 — TERM`, the same phrasing
+  `le watch-all` uses.
+- **Rows that share a name are told apart.** Naming processes after their
+  bundle (0.1.20) turned "Editor language service ×3" into "Antigravity IDE
+  ×3" — more meaningful, equally indistinguishable. A colliding identity now
+  gains its helper binary (`Antigravity IDE · Electron`,
+  `· language_server`); a unique one is left alone however exotic its binary,
+  and two rows running the same binary also stay clean, since the port column
+  already separates them. Applies to both the TUI and `le list`.
+- The header counts **stoppable** listeners alongside the risk pulse. On a
+  normal machine "9 high" is mostly helpers `le` refuses to touch, and "3
+  stoppable" is the honest summary. Omitted when everything is stoppable.
+
 ## [0.1.20] - 2026-08-09
 
 ### Added
@@ -385,7 +425,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.20...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.21...HEAD
+[0.1.21]: https://github.com/alikatgh/le-cli/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/alikatgh/le-cli/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/alikatgh/le-cli/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/alikatgh/le-cli/compare/v0.1.17...v0.1.18

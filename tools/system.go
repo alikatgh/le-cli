@@ -2,7 +2,6 @@ package tools
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 )
 
@@ -14,7 +13,7 @@ import (
 // failure it surfaces the command's own output (or the exec error) rather than
 // a bare "exit status 1".
 func runSystem(desc, exe string, args ...string) error {
-	out, err := exec.Command(exe, args...).CombinedOutput()
+	out, err := runCombined(exe, args...)
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
 		if msg == "" {

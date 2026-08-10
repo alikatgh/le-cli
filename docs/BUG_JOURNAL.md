@@ -14,6 +14,43 @@ both when a fix lands on shared behavior.
 
 Generalized bug shapes. Grep here before reproducing anything.
 
+- **What a fuzz test can do is not the keys it presses — it is every action
+  REACHABLE from them.** `o` (open a browser) was absent from the key list and
+  the browser still opened 19 times per run: `tab` enters pane focus, `enter`
+  runs the focused field's action, and both are in the list. Two navigation
+  keys compose into a launcher. No reading of the key list finds this; only
+  guarding at the binary boundary does, which is why the boundary is the right
+  layer. Corollary for reviewers: "I checked which keys the test presses" is
+  not an audit. (LE-CLI-016)
+- **A terminal mode must be reset on the stream it was SET on.** The mouse
+  reset first went to `os.Stderr` while Bubble Tea writes to `os.Stdout` — so
+  `le 2>run.log` would have written the recovery sequence into the log file and
+  left the terminal exactly as wedged. Match the stream, do not assume the two
+  are interchangeable just because both are usually the same tty. (LE-CLI-016)
+- **Stubbing a side effect AT THE CALL SITE is the fix that gets forgotten.
+  Neuter it for the whole test binary instead.** LE-CLI-015 stubbed the one
+  persistence path a fuzz test touched (`favorites`) and left `o`/`F`/`T` —
+  which shell out to `open` — live in the same key list. One `go test` run
+  therefore fired 101 real desktop launches; a session of ~20 runs opened ~876
+  Terminal login shells, hundreds of Finder windows and dozens of Chrome tabs
+  on the developer's live desktop. A `_test.go` file whose `init()` disables
+  every launcher hook is compiled only into the test binary, runs before any
+  test, and cannot be opted out of by a new test that does not know it exists.
+  Prefer that shape for ANY hook that touches the world outside the process.
+  (LE-CLI-016)
+- **`WithMouseCellMotion` puts the TERMINAL into a mode your program owns but
+  does not always restore.** Bubble Tea disables mouse reporting when `Run`
+  returns or panics — not when the process is killed. The terminal then reports
+  every mouse MOVE as input forever: the prompt fills with `;62;38M65;…`, and
+  because the byte-encoded modes map coordinates onto printable ASCII, a mouse
+  sweep can "type" real letters into whatever reads stdin next. Restore in a
+  `defer` for the unwinding paths — but do NOT claim that covers `kill -9`: a
+  defer runs on neither SIGKILL nor Go's default SIGHUP death. Global terminal
+  state needs an out-of-process escape hatch (`le fix-terminal`) as well.
+  Corollary: **when a comment names a failure mode, go read that failure mode.**
+  The first cut of this fix asserted the defer handled SIGKILL; bubbletea's
+  source (`tea.go:286`) showed it already handles SIGINT/SIGTERM and that the
+  defer only closes the error-return path. (LE-CLI-016)
 - **A UI test that presses keys presses the ones with SIDE EFFECTS too.** A
   randomised key-sequence test included `f` (pin a port), which persists — so
   it wrote six synthetic ports into the developer's real
@@ -150,6 +187,30 @@ Generalized bug shapes. Grep here before reproducing anything.
 ---
 
 ## Chronological log
+### 2026-08-10 — the dry-run preview never told you which port (LE-CLI-017)
+- **Where:** `cmd/cmd.go` — `previewMatched`, `stopMatched`, `runRestart`; new `portSuffix`. Tests: `cmd/dispatch_stop_test.go` (new).
+- **Symptom:** `le stop --dir ~/work --dry-run` printed `would stop node (pid 100) — TERM` twice. Two same-named processes, and the only thing separating them was a PID — while the `--json` output beside it had carried `Ports` all along.
+- **Found by:** writing the test for a different contract (`--dry-run` must never call `kill.Stop`). The port assertion was added as a throwaway sanity check and was the thing that failed.
+- **Fix:** `portSuffix` renders ` on 3000, 5432` (empty when the row has no ports) and is used by the preview, the ✓/✗ result lines and the restart failure line. Phrasing matches `watch-all`, so the two agree.
+- **Lesson:** when two renderers of the same data disagree, the poorer one is the bug — and text-vs-JSON is exactly where that drift hides, because only one of them is read during development. Third instance of this family after LE-CLI-012 (data collected, never rendered) and LE-CLI-014 (identity that doesn't distinguish).
+
+### 2026-08-10 — swept the same guard across every package that touches the machine (LE-CLI-016b)
+- **Where:** `tools/exec_hooks.go` + `tools/exec_hooks_guard_test.go` (new), `kill/exec_hooks_guard_test.go` (new), `tools/system_test.go`.
+- **Why:** LE-CLI-016 was one instance of a class. `tools/` runs `killall Dock`, `killall Finder`, `pmset displaysleepnow` and `open`; `kill/` runs `syscall.Kill`, `launchctl bootout`, `brew services stop`, `docker stop`. Neither had a package-wide guard — `kill/`'s hooks were vars but every stub was per-test, which is exactly the arrangement `ui/` had before it opened 876 windows.
+- **Shape:** an `init()` in a `_test.go` file per package. `tools` neuters to a recorder (a test wanting an invocation reads it back); `kill` neuters to an **error**, because Stop branches on these errors and a fake success would let a test assert "stopped cleanly" down a path that shells out in production.
+- **Each guard has a canary** that fails if the guard is ever removed — probing with `/usr/bin/true` (which the real impl would succeed on) and `termProcess(0)` (which would signal the test binary's own process group). Both verified non-vacuous by renaming the `init` away.
+- **Bonus:** recording invocations made `system.go`'s real contract testable for the first time — "the SAME command the app runs" lives entirely in the argv, and asserting it previously meant restarting Finder.
+- **Audited and cleared, so nobody re-audits them:** `scan/` already indirects through `runCmd`; `intel/`'s direct `exec.Command`s are all read-only (`brew services list`, `launchctl list`, `docker ps`) and mutate nothing — they make tests environment-dependent, not dangerous. `tools/renderQR` (qrencode, draws on stdout, no-ops when absent) and `KeepAwake` (blocks, so a test that reached it hangs loudly) are exempt ON PURPOSE, with the reasoning in `tools/exec_hooks.go`. `startForward` IS guarded — a real `kubectl port-forward` can bind a local port against a live cluster.
+- **Not found:** a 400-seed × 150-step sweep of the TUI invariants, over the realistic AND degenerate size sets with the full key map, found no violation. Recorded so the next person does not re-run it hoping; CI already runs `-race`.
+
+### 2026-08-10 — the fuzz test that opened ~876 Terminal windows (LE-CLI-016)
+- **Where:** `ui/invariants_test.go:128`, `ui/invariants_degenerate_test.go:38` (key lists), `ui/ui.go:181,193` (`revealPath`, `openTerminalAt`), `ui/ui.go:1339` (`Run`). Fixed by `ui/launchers_guard_test.go` (new).
+- **Symptom:** hundreds of empty Terminal windows, hundreds of Finder windows at Macintosh HD, and dozens of Chrome tabs on localhost ports appeared on the live desktop; `last` shows 876 tty logins in bursts of 108–178/min at 01:14–01:47.
+- **Cause:** the randomised key tests press `F` and `T`, which call `revealPath`/`openTerminalAt` — real `exec.Command("open", …)`. LE-CLI-015 stubbed only `favorites`, the side effect it happened to hit. Measured: **101 real launches per `go test` run**; ~20 runs in one session ≈ the 876 observed.
+- **The part that matters:** `o` was NOT in the key list, yet the browser opened 19 times per run. `openURL` has one call site (`case "o"`), reached via `tab` → pane focus → `enter` → `runPaneField()`. Two navigation keys compose into the launcher. Auditing the key list would never have found it — see the pattern bullet on reachability.
+- **Fix:** `init()` in a `_test.go` file neuters all three hooks for the whole test binary — compiled only into tests, unopt-out-able, zero cost to the shipped binary. Also `Run` now disables mouse modes 1000/1002/1003/1006/1015 in a `defer` (see below).
+- **Lesson:** stub the WORLD once at the binary boundary, not the call site — a per-test stub only protects the tests that remembered it.
+
 ### 2026-08-09 — randomised TUI invariant test, and the config it trashed (LE-CLI-015)
 - **Where:** `ui/invariants_test.go` (new).
 - **Why:** three cursor mechanics landed in one day (pane focus, grouping with folded headers, content-sized columns) and they all mutate the same state. Unit tests cover each alone; this drives them together with random key sequences, background scans, and resizes, asserting cursor range, `selected()`/`items[cursor]` agreement, `viewIdx` range, pane focus only on rows, and a non-empty render.
