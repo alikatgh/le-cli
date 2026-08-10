@@ -26,6 +26,7 @@ var degenerateSizes = []struct{ w, h int }{
 	{1, 1},
 	{1, 60},
 	{200, 1},
+	{80, 0}, // positive width, zero height — a distinct path from 0x0
 	{20, 3},
 	{40, 5},
 	{80, 9},  // exactly detailHeight — the list gets nothing
@@ -37,7 +38,7 @@ func TestDegenerateTerminalSizesHoldTheInvariants(t *testing.T) {
 
 	keys := []string{
 		"j", "k", "g", "G", "tab", "esc", "enter", "z", "Z", "f", "c", "x", "n",
-		"1", "2", "3", "r", "?", "F", "T", "left", "right",
+		"1", "2", "3", "r", "?", "o", "F", "T", "left", "right",
 	}
 	// #nosec G404 -- deterministic PRNG is the requirement, not a weakness.
 	rng := rand.New(rand.NewSource(7))

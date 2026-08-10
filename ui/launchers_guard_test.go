@@ -6,7 +6,8 @@ package ui
 // tab, `open -R` a Finder window, `open -a Terminal` a whole new login shell.
 // Individual tests that exercise those actions stub them and assert on the
 // captured argument. The randomised key-sequence tests do NOT stub anything —
-// they press every key in the map, including "o", "F" and "T", 120 times per
+// they press every key in the map, including "F" and "T" — and reach "o"'s
+// action through tab+enter without pressing "o" at all — 120 times per
 // case across 30 cases.
 //
 // That combination once fired several hundred real `open` calls: ~800 Terminal

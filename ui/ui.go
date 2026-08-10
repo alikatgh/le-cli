@@ -1369,7 +1369,15 @@ func Run(opts Options) error {
 	//
 	// 1000 = press/release, 1002 = cell motion, 1003 = all motion, 1006 = SGR
 	// encoding, 1015 = urxvt encoding. Disabling is idempotent.
-	defer fmt.Fprint(os.Stderr, ResetTerminal)
+	//
+	// os.Stdout, NOT os.Stderr: Bubble Tea writes to stdout by default, so
+	// that is the stream the modes were SET on, and a reset has to go back to
+	// the same place. Sent to stderr, `le 2>run.log` would write the recovery
+	// sequence into the log file and leave the terminal exactly as wedged as
+	// before — the one situation this line exists for.
+	// Write error discarded: if stdout is already broken there is nothing left
+	// to recover, and the terminal state is the caller's problem either way.
+	defer func() { _, _ = fmt.Fprint(os.Stdout, ResetTerminal) }()
 	_, err := p.Run()
 	return err
 }

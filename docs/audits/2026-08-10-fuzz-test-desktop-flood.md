@@ -60,6 +60,29 @@ keys := []string{
 `F` and `T` are in that list. Unstubbed. So every `F` opened a real Finder
 window and every `T` opened a real Terminal window — at machine speed.
 
+**And `o` is not in that list, yet the browser opened 19 times per run.** That
+discrepancy is the most useful thing in this whole postmortem, so it is worth
+being precise about. `openURL` has exactly one call site, `case "o"` — a key
+the fuzz test never presses. It was reached anyway:
+
+```go
+// ui/ui.go — tab enters pane focus, enter runs the focused field's action
+if m.paneFocus {
+    switch msg.String() {
+    case "enter":
+        return m.runPaneField(), nil
+```
+
+`tab` and `enter` are both in the key list. Two harmless-looking navigation
+keys compose into the browser-opening action, and no amount of reading the key
+list would have shown that. **Auditing the keys a fuzz test presses is not
+enough; what matters is the set of actions reachable from them, which is the
+whole state machine.** That is precisely why the guard belongs at the binary
+boundary rather than at the call sites you thought to enumerate.
+
+`o` has since been added to both key lists — the direct path deserves fuzzing
+too, and it is safe to fuzz now.
+
 Instrumented count for a single `go test ./ui/` run:
 
 ```

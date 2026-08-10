@@ -51,21 +51,15 @@ func TestFixTerminalPrintsNothingButEscapes(t *testing.T) {
 		t.Fatalf("fix-terminal returned %v, want nil", err)
 	}
 
-	got := out.String()
-	if strings.ContainsAny(got, "\n\r") {
-		t.Errorf("output contains a line break: %q", got)
-	}
-	// Every byte must belong to a CSI ? … l/h sequence.
-	for _, chunk := range strings.Split(strings.TrimPrefix(got, "\x1b"), "\x1b") {
-		if chunk == "" {
-			continue
-		}
-		if !strings.HasPrefix(chunk, "[?") {
-			t.Errorf("non-CSI-? chunk %q in output %q", chunk, got)
-		}
-		if last := chunk[len(chunk)-1]; last != 'l' && last != 'h' {
-			t.Errorf("chunk %q does not end in a mode set/reset (l/h)", chunk)
-		}
+	// An exact comparison, not a per-chunk shape check. The shape check this
+	// replaces accepted "\x1b[?1000lXh" — right prefix, right final byte, a
+	// stray X printed into the user's terminal in between. The literal is
+	// spelled out rather than taken from ui.ResetTerminal so the test still
+	// fails if that constant is edited wrongly.
+	want := "\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l" +
+		"\x1b[?2004l\x1b[?25h\x1b[?1049l"
+	if got := out.String(); got != want {
+		t.Errorf("output = %q, want exactly the recovery sequences %q", got, want)
 	}
 }
 

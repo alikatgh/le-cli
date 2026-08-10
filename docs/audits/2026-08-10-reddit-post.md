@@ -23,7 +23,7 @@ tiled with black rectangles.
 
 Separately, my shell prompt kept filling up by itself with this:
 
-```
+```text
 ;62;38M65;62;38M65;62;38M65;62;38M65;62;38M65;62;38M…
 ```
 
@@ -37,7 +37,7 @@ No cron job. No LaunchAgent. Nothing in `.zshrc`. Nothing in shell history.
 
 What cracked it was `last`, counting tty logins per minute:
 
-```
+```text
 178  01:47      113  01:15       73  01:22
 175  01:42      108  01:40       72  01:39
 122  01:14       35  01:43
@@ -52,9 +52,9 @@ working on my Go TUI. Bursts of 100-180 a minute is not a human. That's a
 The TUI has three keys that leave the process:
 
 ```go
-openURL        = func(url string) error  { exec.Command("open", url).Start() }                    // o
-revealPath     = func(path string) error { exec.Command("open", "-R", path).Start() }             // F
-openTerminalAt = func(dir string) error  { exec.Command("open", "-a", "Terminal", dir).Start() }  // T
+openURL        = func(url string) error  { return exec.Command("open", url).Start() }                    // o
+revealPath     = func(path string) error { return exec.Command("open", "-R", path).Start() }             // F
+openTerminalAt = func(dir string) error  { return exec.Command("open", "-a", "Terminal", dir).Start() }  // T
 ```
 
 They're package-level `var`s specifically so tests can swap them out, and the
@@ -77,9 +77,26 @@ keys := []string{
 Every `T` opened a real Terminal window. At machine speed, in a loop, for as
 long as the test ran.
 
+Now look again: **`o` is not in that list — and the browser still opened 19
+times per run.** That bit is the actually interesting part. `openURL` has one
+call site, `case "o"`, a key the fuzzer never presses. It got there like this:
+
+```go
+if m.paneFocus {          // entered by "tab"
+    switch msg.String() {
+    case "enter":         // also in the key list
+        return m.runPaneField(), nil   // runs the focused field's action
+```
+
+`tab` then `enter`. Two navigation keys nobody would flag, composing into the
+browser-opening action. Reading the key list would never have told me that —
+what matters isn't the keys the fuzzer presses, it's the set of actions
+*reachable* from them, which is the entire state machine. Which is exactly why
+stubbing "the dangerous call sites you thought of" is the wrong layer.
+
 I instrumented it to get the actual number for one `go test ./ui/`:
 
-```
+```text
 BLAST RADIUS: browser=19 finder=39 terminal=43 total=101
 ```
 
@@ -92,7 +109,8 @@ wrote six junk entries into my real config. I fixed it by stubbing the config
 dir and wrote a note in the bug journal titled *"a UI test that presses keys
 presses the ones with SIDE EFFECTS too."*
 
-Then I left `o`, `F` and `T` in the same list. Directly below that comment.
+Then I left `F` and `T` in the same list, directly below that comment — and
+left `o` reachable through it without even being in it.
 
 ### The fix that actually holds
 
@@ -159,7 +177,7 @@ So the defer stays — it's one idempotent write and it closes the error-return
 path — but it was never the interesting half. `kill -9` can only be cleaned up
 by a **second** process, so that's what I shipped:
 
-```
+```sh
 le fix-terminal
 ```
 

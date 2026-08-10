@@ -14,6 +14,19 @@ both when a fix lands on shared behavior.
 
 Generalized bug shapes. Grep here before reproducing anything.
 
+- **What a fuzz test can do is not the keys it presses — it is every action
+  REACHABLE from them.** `o` (open a browser) was absent from the key list and
+  the browser still opened 19 times per run: `tab` enters pane focus, `enter`
+  runs the focused field's action, and both are in the list. Two navigation
+  keys compose into a launcher. No reading of the key list finds this; only
+  guarding at the binary boundary does, which is why the boundary is the right
+  layer. Corollary for reviewers: "I checked which keys the test presses" is
+  not an audit. (LE-CLI-016)
+- **A terminal mode must be reset on the stream it was SET on.** The mouse
+  reset first went to `os.Stderr` while Bubble Tea writes to `os.Stdout` — so
+  `le 2>run.log` would have written the recovery sequence into the log file and
+  left the terminal exactly as wedged. Match the stream, do not assume the two
+  are interchangeable just because both are usually the same tty. (LE-CLI-016)
 - **Stubbing a side effect AT THE CALL SITE is the fix that gets forgotten.
   Neuter it for the whole test binary instead.** LE-CLI-015 stubbed the one
   persistence path a fuzz test touched (`favorites`) and left `o`/`F`/`T` —
@@ -193,7 +206,8 @@ Generalized bug shapes. Grep here before reproducing anything.
 ### 2026-08-10 — the fuzz test that opened ~876 Terminal windows (LE-CLI-016)
 - **Where:** `ui/invariants_test.go:128`, `ui/invariants_degenerate_test.go:38` (key lists), `ui/ui.go:181,193` (`revealPath`, `openTerminalAt`), `ui/ui.go:1339` (`Run`). Fixed by `ui/launchers_guard_test.go` (new).
 - **Symptom:** hundreds of empty Terminal windows, hundreds of Finder windows at Macintosh HD, and dozens of Chrome tabs on localhost ports appeared on the live desktop; `last` shows 876 tty logins in bursts of 108–178/min at 01:14–01:47.
-- **Cause:** the randomised key tests press `o`/`F`/`T`, which call `openURL`/`revealPath`/`openTerminalAt` — real `exec.Command("open", …)`. LE-CLI-015 stubbed only `favorites`, the side effect it happened to hit. Measured: **101 real launches per `go test` run**; ~20 runs in one session ≈ the 876 observed.
+- **Cause:** the randomised key tests press `F` and `T`, which call `revealPath`/`openTerminalAt` — real `exec.Command("open", …)`. LE-CLI-015 stubbed only `favorites`, the side effect it happened to hit. Measured: **101 real launches per `go test` run**; ~20 runs in one session ≈ the 876 observed.
+- **The part that matters:** `o` was NOT in the key list, yet the browser opened 19 times per run. `openURL` has one call site (`case "o"`), reached via `tab` → pane focus → `enter` → `runPaneField()`. Two navigation keys compose into the launcher. Auditing the key list would never have found it — see the pattern bullet on reachability.
 - **Fix:** `init()` in a `_test.go` file neuters all three hooks for the whole test binary — compiled only into tests, unopt-out-able, zero cost to the shipped binary. Also `Run` now disables mouse modes 1000/1002/1003/1006/1015 in a `defer` (see below).
 - **Lesson:** stub the WORLD once at the binary boundary, not the call site — a per-test stub only protects the tests that remembered it.
 

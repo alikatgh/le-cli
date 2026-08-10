@@ -127,7 +127,7 @@ func TestRandomKeySequencesHoldTheInvariants(t *testing.T) {
 
 	keys := []string{
 		"j", "k", "g", "G", "tab", "esc", "enter", "z", "Z", "f", "c", "x", "n",
-		"1", "2", "3", "4", "5", "6", "7", "r", "?", "F", "T", "left", "right",
+		"1", "2", "3", "4", "5", "6", "7", "r", "?", "o", "F", "T", "left", "right",
 	}
 	sizes := []struct{ w, h int }{{80, 24}, {120, 40}, {200, 60}, {60, 12}, {130, 30}}
 	counts := []int{0, 1, 2, 3, 17, 60}
