@@ -7,8 +7,10 @@ package ui
 // Individual tests that exercise those actions stub them and assert on the
 // captured argument. The randomised key-sequence tests do NOT stub anything —
 // they press every key in the map, including "F" and "T" — and reach "o"'s
-// action through tab+enter without pressing "o" at all — 120 times per
-// case across 30 cases.
+// action through enter+enter (or tab+enter) without pressing "o" at all — 120
+// times per case across 30 cases. That path got SHORTER when enter on a row
+// became a second door into pane focus, which is exactly why the guard is here
+// and not at the call sites: reachability changes, the boundary doesn't.
 //
 // That combination once fired several hundred real `open` calls: ~800 Terminal
 // windows, hundreds of Finder windows at Macintosh HD, and dozens of Chrome
