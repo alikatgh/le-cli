@@ -27,6 +27,16 @@ Generalized bug shapes. Grep here before reproducing anything.
   `le 2>run.log` would have written the recovery sequence into the log file and
   left the terminal exactly as wedged. Match the stream, do not assume the two
   are interchangeable just because both are usually the same tty. (LE-CLI-016)
+- **A pty harness that does not ANSWER the terminal's queries verifies
+  nothing.** `le` under a bare pty emitted 12 bytes and then stopped: lipgloss
+  asks for the background colour (OSC 11 `\e]11;?`) and bubbletea asks for the
+  cursor position (DSR `\e[6n`), and both BLOCK on a reply a real terminal
+  sends and a raw pty never does. The frame was empty — so every `--expect`
+  matched nothing and the harness would have reported a clean pass on a TUI
+  that never rendered a single row. Assert on a positive marker you have SEEN
+  in a real frame, never on the absence of a symptom, and treat "the capture is
+  empty" as a harness failure rather than a quiet success.
+  (`scripts/tui_keys.py`)
 - **Stubbing a side effect AT THE CALL SITE is the fix that gets forgotten.
   Neuter it for the whole test binary instead.** LE-CLI-015 stubbed the one
   persistence path a fuzz test touched (`favorites`) and left `o`/`F`/`T` —

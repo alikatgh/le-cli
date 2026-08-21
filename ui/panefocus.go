@@ -18,8 +18,8 @@ import (
 //   - no way to act on a row's SECOND port — the "+1"/"+2" extras in the
 //     table were unreachable.
 //
-// Tab moves focus in, j/k step between fields, Enter runs the focused field's
-// action, Tab/esc returns to the table.
+// Tab or Enter on a row moves focus in, j/k step between fields, Enter runs
+// the focused field's action, Tab/esc returns to the table.
 
 type fieldKind int
 
@@ -190,7 +190,7 @@ func (m model) portsCell(r Row) string {
 func (m model) paneHint() string {
 	f, ok := m.focusedField()
 	if !ok {
-		return dimSt.Render("tab  act on a field")
+		return dimSt.Render("tab/⏎  act on a field")
 	}
 	return keySt.Render("j/k") + dimSt.Render(" field  ") +
 		lipgloss.NewStyle().Foreground(brand).Render(f.hint) +

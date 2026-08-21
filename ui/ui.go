@@ -485,10 +485,15 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "enter", "right", "left", " ":
-		// Only meaningful on a group header; on a row these keys stay free
-		// for the pane-focus handler above and for future bindings.
+		// On a group header these fold/unfold the group. Enter on a plain
+		// row drops focus into the detail pane — the same entry as tab, so
+		// the row you're on becomes the thing you act on, like clicking a
+		// row in the app. right/left/space stay group-only.
 		if owner, ok := m.selectedGroup(); ok {
 			return m.toggleGroup(owner), nil
+		}
+		if msg.String() == "enter" {
+			return m.enterPaneFocus(), nil
 		}
 		return m, nil
 	case "tab":
@@ -1233,7 +1238,7 @@ func (m model) helpView() string {
 		{"x or s", "stop the selected listener (with confirm)"},
 		{"o", "open localhost:<port> in the browser (http/https auto-detected)"},
 		{"z", "group the list by owner — folds the owners with nothing you can act on; ⏎ folds one, Z folds/unfolds all (persist with `group = true` in config)"},
-		{"tab", "focus the detail pane — j/k step between fields, ⏎ acts on one (opens a SPECIFIC port, reveals the binary vs the folder), tab/esc back"},
+		{"tab or ⏎", "focus the detail pane — j/k step between fields, ⏎ acts on one (opens a SPECIFIC port, reveals the binary vs the folder), tab/esc back"},
 		{"F", "reveal the folder in Finder — or the app bundle itself, for a helper with no useful cwd"},
 		{"T", "open a NEW terminal window in the folder (macOS; c → d copies a cd for this shell)"},
 		{"c", "copy… → u url · r curl · l lsof · s stop · p ps · i inspect · d cd · a one-liner (OSC 52 — works over SSH)"},

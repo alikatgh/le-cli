@@ -838,6 +838,28 @@ func focused(t *testing.T, rows []Row) tea.Model {
 	return m
 }
 
+// Enter on a plain row is the second door into the pane: the app opens a
+// row's actions by clicking it, and ⏎ is the keyboard shape of that click.
+// It must land on the first field, not just flip the flag.
+func TestEnterOnRowEntersPaneFocus(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: multiPortRow(), at: time.Now()})
+	m, _ = m.Update(key("enter"))
+	mm := m.(model)
+	if !mm.paneFocus {
+		t.Fatal("enter on a row should move focus into the pane")
+	}
+	if mm.paneIdx != 0 {
+		t.Errorf("paneIdx = %d, want the first field", mm.paneIdx)
+	}
+	// And esc still gets back out — enter must not be a one-way door.
+	m, _ = m.Update(key("esc"))
+	if m.(model).paneFocus {
+		t.Error("esc should return focus to the table")
+	}
+}
+
 func TestTabTogglesPaneFocus(t *testing.T) {
 	m := focused(t, sampleRows())
 	m, _ = m.Update(key("tab"))
