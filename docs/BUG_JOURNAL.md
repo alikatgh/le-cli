@@ -27,6 +27,17 @@ Generalized bug shapes. Grep here before reproducing anything.
   `le 2>run.log` would have written the recovery sequence into the log file and
   left the terminal exactly as wedged. Match the stream, do not assume the two
   are interchangeable just because both are usually the same tty. (LE-CLI-016)
+- **A one-line UI element with a priority chain needs an EXIT CONDITION for
+  whatever wins it.** The TUI footer renders a status message *instead of* the
+  key hints. The flash had ~40 setters and four clearers, so the first
+  successful action took the hotkey line for the rest of the session and the
+  affordance was simply gone — no error, nothing to grep, and every test still
+  green because tests assert on `m.flash`, which was correct. The user
+  described it as "I clicked things and lost my hotkeys." When two things
+  compete for one line, ask what brings the loser back; if the answer is
+  "another user action", the loser is gone. Arm the exit in the ONE funnel all
+  state passes through (`Update`), not at the N assignment sites — the site
+  added next year is the one that forgets. (LE-CLI-018)
 - **A pty harness that does not ANSWER the terminal's queries verifies
   nothing.** `le` under a bare pty emitted 12 bytes and then stopped: lipgloss
   asks for the background colour (OSC 11 `\e]11;?`) and bubbletea asks for the
@@ -197,6 +208,13 @@ Generalized bug shapes. Grep here before reproducing anything.
 ---
 
 ## Chronological log
+### 2026-08-21 — one status message ate the hotkey footer for the whole session (LE-CLI-018)
+- **Where:** `ui/ui.go` — `footerView` (the priority chain), new `flashExpiredMsg`/`flashTTL`/`flashGen` and the `Update`→`update` wrapper. Tests: `ui/ui_test.go`.
+- **Symptom:** reported from a screenshot — "I started to click things and I lost hotkeys that were present at the beginning." The footer showed `revealed /Library/Frameworks/…/Python` where `j/k move · z group · / filter · …` had been, and never went back.
+- **Cause:** `footerView` renders the flash *instead of* the key hints (one line, and flash wins), and `m.flash` was set at ~40 sites but cleared at only four — confirm-yes, `/`, `r`, and entering pane focus. No timer, no clear on movement, and a successful scan leaves it alone. So the first successful `F`/`o`/`c`/`t`/`f`/`z` took the line for the rest of the session.
+- **Fix:** flashes expire after `flashTTL`. Armed centrally in `Update`, which compares `flash` before and after delegating to `update` — so no assignment site has to remember anything, and the 41st site is covered too. A `flashGen` counter makes a tick scheduled for a message that has since been replaced land stale and be ignored.
+- **Lesson:** when a single line has a priority chain, the *loser* is a feature that silently disappears — and the winner needs an exit condition. Also: both tests were verified non-vacuous by neutering the fix and watching them go red first, which is now the rule after the pty harness that passed against an empty frame.
+
 ### 2026-08-10 — the dry-run preview never told you which port (LE-CLI-017)
 - **Where:** `cmd/cmd.go` — `previewMatched`, `stopMatched`, `runRestart`; new `portSuffix`. Tests: `cmd/dispatch_stop_test.go` (new).
 - **Symptom:** `le stop --dir ~/work --dry-run` printed `would stop node (pid 100) — TERM` twice. Two same-named processes, and the only thing separating them was a PID — while the `--json` output beside it had carried `Ports` all along.

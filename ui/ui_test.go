@@ -815,6 +815,72 @@ func TestDetailPaneAdvertisesReveal(t *testing.T) {
 	}
 }
 
+// --- status message expiry ---
+
+// The footer is ONE line and the flash outranks the key hints on it, so a
+// flash that never expires silently costs the reader their keyboard reference
+// for the rest of the session. Through 0.1.22 nothing cleared it on a timer,
+// on cursor movement, or on a successful scan. (LE-CLI-018)
+func TestFlashExpiresAndTheKeyHintsComeBack(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+
+	m, cmd := m.Update(key("t")) // theme cycle: sets a flash, touches nothing else
+	mm := m.(model)
+	if mm.flash == "" {
+		t.Fatal("t should set a status message")
+	}
+	if cmd == nil {
+		t.Fatal("setting a flash must arm an expiry — without a command it never clears")
+	}
+	if mm.flashGen == 0 {
+		t.Error("a new flash should bump the generation")
+	}
+	if strings.Contains(mm.footerView(), "q quit") {
+		t.Error("precondition: the flash should be holding the footer")
+	}
+
+	// Movement and a fresh scan must NOT be what clears it — that was the
+	// shape of the bug report ("I clicked things and lost the hotkeys").
+	m, _ = m.Update(key("j"))
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	if m.(model).flash == "" {
+		t.Error("the message should survive long enough to be read")
+	}
+
+	m, _ = m.Update(flashExpiredMsg{gen: m.(model).flashGen})
+	mm = m.(model)
+	if mm.flash != "" {
+		t.Fatalf("flash = %q, want cleared once its timer fires", mm.flash)
+	}
+	if !strings.Contains(mm.footerView(), "q quit") {
+		t.Error("the key hints must return once the message expires")
+	}
+}
+
+// The generation counter earns its keep here: a tick scheduled for a message
+// that has since been REPLACED must not blank the newer one early.
+func TestStaleFlashTickLeavesTheCurrentMessage(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+
+	m, _ = m.Update(key("t"))
+	stale := m.(model).flashGen
+
+	m, _ = m.Update(key("t")) // second message replaces the first
+	current := m.(model).flash
+	if current == "" || m.(model).flashGen == stale {
+		t.Fatal("precondition: a second flash should replace the first and bump the generation")
+	}
+
+	m, _ = m.Update(flashExpiredMsg{gen: stale}) // the first message's timer, arriving late
+	if got := m.(model).flash; got != current {
+		t.Errorf("stale tick cleared the current message (%q -> %q)", current, got)
+	}
+}
+
 // --- detail-pane field focus ---
 
 // multiPortRow is the case row-level actions could never serve: the table
