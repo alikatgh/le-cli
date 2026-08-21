@@ -5,6 +5,21 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.23] - 2026-08-21
+
+### Fixed
+- **A status message no longer eats the hotkey footer for the rest of the
+  session.** The footer is one line, and a status message renders *instead of*
+  the key hints — so the first successful `F`, `o`, `c`, `t`, `f` or `z`
+  replaced `j/k move · z group · / filter · …` with something like
+  `revealed /Library/Frameworks/…/Python`, and nothing ever brought the hints
+  back: the message was set in ~40 places and cleared in four, with no timer,
+  no clear on cursor movement, and none from a successful background scan.
+  Messages now retire after four seconds — long enough to read a revealed
+  path, short enough that the hints feel like they returned on their own. The
+  expiry is armed centrally rather than at each assignment site, so a message
+  added later cannot reintroduce this.
+
 ## [0.1.22] - 2026-08-21
 
 ### Changed
@@ -437,7 +452,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.22...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.23...HEAD
+[0.1.23]: https://github.com/alikatgh/le-cli/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/alikatgh/le-cli/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/alikatgh/le-cli/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/alikatgh/le-cli/compare/v0.1.19...v0.1.20
