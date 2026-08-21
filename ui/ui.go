@@ -73,6 +73,19 @@ type stopResultMsg struct {
 	err error
 }
 
+// flashExpiredMsg retires a status message that has had its time on screen.
+// gen pins WHICH message it was scheduled for: setting a new flash bumps the
+// generation, so a tick still in flight for the message that got replaced
+// lands stale and is ignored instead of blanking the newer one early.
+type flashExpiredMsg struct{ gen int }
+
+// How long a status message holds the footer. The footer is one line and the
+// flash outranks the key hints on it, so a flash that never expires costs the
+// reader their keyboard reference for the rest of the session — which is
+// exactly what shipped through 0.1.22. Long enough to read a revealed path,
+// short enough that the hints feel like they came back on their own.
+const flashTTL = 4 * time.Second
+
 type model struct {
 	all       []Row
 	view      []Row
@@ -89,6 +102,7 @@ type model struct {
 	paneIdx   int  // which pane field is focused
 	flash     string
 	flashErr  bool
+	flashGen  int // bumped per flash; see flashExpiredMsg
 	help      bool
 	loading   bool
 	lastScan  time.Time
@@ -138,6 +152,10 @@ func scanCmd() tea.Cmd {
 
 func (m model) tickCmd() tea.Cmd {
 	return tea.Tick(m.interval, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+func flashExpireCmd(gen int) tea.Cmd {
+	return tea.Tick(flashTTL, func(time.Time) tea.Msg { return flashExpiredMsg{gen: gen} })
 }
 
 func stopCmd(r Row) tea.Cmd {
@@ -278,7 +296,26 @@ func stopCommand(r Row) (string, bool) {
 	}
 }
 
+// Update wraps the real handler for one reason: it is the single funnel every
+// state change passes through, so it can notice a status message being SET
+// without each of the ~40 assignment sites having to remember to schedule its
+// own expiry. Per-site bookkeeping is correct the day it is written and wrong
+// three features later — the 41st site would be the one that sticks forever.
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	prev := m.flash
+	next, cmd := m.update(msg)
+	nm, ok := next.(model)
+	// Only a NEW, non-empty message arms a timer. Clearing one doesn't: the
+	// tick already in flight for it will fire, match, and clear an
+	// already-empty string, which costs nothing.
+	if !ok || nm.flash == prev || nm.flash == "" {
+		return next, cmd
+	}
+	nm.flashGen++
+	return nm, tea.Batch(cmd, flashExpireCmd(nm.flashGen))
+}
+
+func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
@@ -317,6 +354,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		return m, tea.Batch(scanCmd(), m.tickCmd())
+
+	case flashExpiredMsg:
+		// Stale ticks are the whole reason for the generation: this one was
+		// scheduled for a message that has since been replaced, so the
+		// message on screen is not the one it was sent to retire.
+		if msg.gen == m.flashGen {
+			m.flash, m.flashErr = "", false
+		}
+		return m, nil
 
 	case stopResultMsg:
 		if msg.err != nil {
