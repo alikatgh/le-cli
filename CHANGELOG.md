@@ -5,6 +5,18 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.22] - 2026-08-21
+
+### Changed
+- **⏎ on a row opens that row's actions.** The detail pane's per-field focus
+  was reachable only by `tab`, which nothing on screen suggested — so the
+  obvious key for "act on the thing I selected" did nothing at all, and the
+  pane read as decoration. Enter on a row now moves focus into the pane and
+  lands on its first field, the keyboard shape of clicking a row in the mac
+  app; `j`/`k` step between fields, ⏎ runs the focused one, `tab`/`esc` back
+  out. On a group header ⏎ still folds the group, and `→`/`←`/space stay
+  group-only.
+
 ## [0.1.21] - 2026-08-09
 
 ### Added
@@ -425,7 +437,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.21...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.22...HEAD
+[0.1.22]: https://github.com/alikatgh/le-cli/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/alikatgh/le-cli/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/alikatgh/le-cli/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/alikatgh/le-cli/compare/v0.1.18...v0.1.19
