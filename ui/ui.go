@@ -97,22 +97,27 @@ type model struct {
 	confirm   bool
 	confirmed Row // the row pinned when the confirm dialog opened
 	copyMenu  bool
-	copyRow   Row  // the row pinned when the copy picker opened
-	paneFocus bool // focus is inside the detail pane (see panefocus.go)
-	paneIdx   int  // which pane field is focused
-	flash     string
-	flashErr  bool
-	flashGen  int // bumped per flash; see flashExpiredMsg
-	help      bool
-	loading   bool
-	lastScan  time.Time
-	interval  time.Duration
-	sortCol   int
-	sortAsc   bool
-	favs      map[string]bool // pinned ports — sort to the top, render a *
-	grouped   bool            // group the list by owner (see group.go)
-	collapsed map[string]bool // per-owner fold state, only while grouped
-	items     []listItem      // the rendered lines; the cursor indexes THESE
+	copyRow   Row // the row pinned when the copy picker opened
+	// Right-click action menu: the terminal's context menu. Same pinning
+	// rule as the copy picker — every action targets the row that was
+	// clicked, not wherever the cursor sits when the key lands.
+	actionMenu bool
+	actionRow  Row
+	paneFocus  bool // focus is inside the detail pane (see panefocus.go)
+	paneIdx    int  // which pane field is focused
+	flash      string
+	flashErr   bool
+	flashGen   int // bumped per flash; see flashExpiredMsg
+	help       bool
+	loading    bool
+	lastScan   time.Time
+	interval   time.Duration
+	sortCol    int
+	sortAsc    bool
+	favs       map[string]bool // pinned ports — sort to the top, render a *
+	grouped    bool            // group the list by owner (see group.go)
+	collapsed  map[string]bool // per-owner fold state, only while grouped
+	items      []listItem      // the rendered lines; the cursor indexes THESE
 }
 
 // New builds the initial model from launch options.
@@ -405,6 +410,37 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Right-click action menu captures keys first: the terminal's context
+	// menu. Every entry reuses the plain key vocabulary (o / c / x / f / F /
+	// T), so the menu is a legend for keys that already worked — 'c' chains
+	// into the copy picker. Unrecognized keys keep it open, like the picker.
+	if m.actionMenu {
+		r := m.actionRow
+		switch msg.String() {
+		case "o":
+			m.doOpen(r)
+			m.actionMenu = false
+		case "c":
+			m.actionMenu = false
+			m.copyMenu, m.copyRow, m.flash = true, r, ""
+		case "x", "s":
+			m.actionMenu = false
+			m.requestStop(r)
+		case "f":
+			m.actionMenu = false
+			m.togglePin(r)
+		case "F":
+			m.doReveal(r)
+			m.actionMenu = false
+		case "T":
+			m.doTerminal(r)
+			m.actionMenu = false
+		case "esc", "q":
+			m.actionMenu = false
+		}
+		return m, nil
+	}
+
 	// Copy picker captures keys next: pick which value of the pinned row to
 	// yank. Mirrors the app's Copy URL / Copy curl / Copy lsof / Copy stop.
 	if m.copyMenu {
@@ -588,82 +624,27 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.clamp()
 	case "x", "s":
 		if r, ok := m.selected(); ok {
-			if r.P.StopKind == intel.StopAvoid {
-				m.flash, m.flashErr = "won't auto-stop "+r.P.Identity+" — inspect it first", true
-			} else {
-				m.confirm, m.confirmed = true, r // pin the row now; see the y/enter handler
-			}
+			m.requestStop(r)
 		}
 	case "o":
 		if r, ok := m.selected(); ok {
-			// Blocking probe is fine on a keypress (≤350ms, then cached):
-			// vite --https / caddy need https:// or the page won't load.
-			if url, ok := blockingURLFor(r); !ok {
-				m.flash, m.flashErr = "no port to open for "+r.P.Identity, true
-			} else if err := openURL(url); err != nil {
-				m.flash, m.flashErr = "couldn't open browser: "+err.Error(), true
-			} else {
-				m.flash, m.flashErr = "opened "+url, false
-			}
+			m.doOpen(r)
 		}
 	case "c":
 		if r, ok := m.selected(); ok {
 			m.copyMenu, m.copyRow, m.flash = true, r, ""
 		}
 	case "F":
-		// Parity with the app's Reveal: the detail pane told you WHERE the
-		// thing is, but you couldn't get to it — which is most of what you
-		// want on an "avoid — inspect first" row.
 		if r, ok := m.selected(); ok {
-			target, has := revealTarget(r)
-			switch {
-			case !has:
-				m.flash, m.flashErr = "nothing to reveal for "+r.P.Identity+" — no folder or resolvable binary", true
-			case revealPath(target) != nil:
-				m.flash, m.flashErr = "couldn't reveal "+target, true
-			default:
-				m.flash, m.flashErr = "revealed "+target, false
-			}
+			m.doReveal(r)
 		}
 	case "T":
 		if r, ok := m.selected(); ok {
-			if r.L.Cwd == "" {
-				m.flash, m.flashErr = "no working directory for "+r.P.Identity, true
-			} else if err := openTerminalAt(r.L.Cwd); err != nil {
-				m.flash, m.flashErr = err.Error(), true
-			} else {
-				m.flash, m.flashErr = "opened a terminal in "+r.L.Cwd, false
-			}
+			m.doTerminal(r)
 		}
 	case "f":
 		if r, ok := m.selected(); ok {
-			if len(r.L.Ports) == 0 {
-				m.flash, m.flashErr = "no port to pin for "+r.P.Identity, true
-				break
-			}
-			port := r.L.Ports[0]
-			if m.favs == nil {
-				m.favs = map[string]bool{}
-			}
-			pinned := !m.favs[port]
-			if pinned {
-				m.favs[port] = true
-			} else {
-				delete(m.favs, port)
-			}
-			if err := saveFavorites(m.favs); err != nil {
-				m.flash, m.flashErr = "couldn't save favorites: "+err.Error(), true
-			} else if pinned {
-				m.flash, m.flashErr = "pinned :"+port+" to the top (f again to unpin)", false
-			} else {
-				m.flash, m.flashErr = "unpinned :"+port, false
-			}
-			// Re-partition and keep the cursor on the row that was toggled —
-			// it just moved.
-			m.sortView()
-			m.buildItems() // pinning can un-collapse a group, changing line count
-			m.focusRowByPID(r.L.PID)
-			m.clamp()
+			m.togglePin(r)
 		}
 	}
 	return m, nil
@@ -705,6 +686,85 @@ func shellSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// The row actions, shared by the key vocabulary and the right-click action
+// menu so both routes run the exact same code. Each takes the row EXPLICITLY:
+// the menu acts on the row pinned at click time, the keys on the selection.
+
+func (m *model) doOpen(r Row) {
+	// Blocking probe is fine on a keypress (≤350ms, then cached):
+	// vite --https / caddy need https:// or the page won't load.
+	if url, ok := blockingURLFor(r); !ok {
+		m.flash, m.flashErr = "no port to open for "+r.P.Identity, true
+	} else if err := openURL(url); err != nil {
+		m.flash, m.flashErr = "couldn't open browser: "+err.Error(), true
+	} else {
+		m.flash, m.flashErr = "opened "+url, false
+	}
+}
+
+// doReveal: parity with the app's Reveal — the detail pane told you WHERE the
+// thing is, but you couldn't get to it, which is most of what you want on an
+// "avoid — inspect first" row.
+func (m *model) doReveal(r Row) {
+	target, has := revealTarget(r)
+	switch {
+	case !has:
+		m.flash, m.flashErr = "nothing to reveal for "+r.P.Identity+" — no folder or resolvable binary", true
+	case revealPath(target) != nil:
+		m.flash, m.flashErr = "couldn't reveal "+target, true
+	default:
+		m.flash, m.flashErr = "revealed "+target, false
+	}
+}
+
+func (m *model) doTerminal(r Row) {
+	if r.L.Cwd == "" {
+		m.flash, m.flashErr = "no working directory for "+r.P.Identity, true
+	} else if err := openTerminalAt(r.L.Cwd); err != nil {
+		m.flash, m.flashErr = err.Error(), true
+	} else {
+		m.flash, m.flashErr = "opened a terminal in "+r.L.Cwd, false
+	}
+}
+
+func (m *model) togglePin(r Row) {
+	if len(r.L.Ports) == 0 {
+		m.flash, m.flashErr = "no port to pin for "+r.P.Identity, true
+		return
+	}
+	port := r.L.Ports[0]
+	if m.favs == nil {
+		m.favs = map[string]bool{}
+	}
+	pinned := !m.favs[port]
+	if pinned {
+		m.favs[port] = true
+	} else {
+		delete(m.favs, port)
+	}
+	if err := saveFavorites(m.favs); err != nil {
+		m.flash, m.flashErr = "couldn't save favorites: "+err.Error(), true
+	} else if pinned {
+		m.flash, m.flashErr = "pinned :"+port+" to the top (f again to unpin)", false
+	} else {
+		m.flash, m.flashErr = "unpinned :"+port, false
+	}
+	// Re-partition and keep the cursor on the row that was toggled — it just
+	// moved.
+	m.sortView()
+	m.buildItems() // pinning can un-collapse a group, changing line count
+	m.focusRowByPID(r.L.PID)
+	m.clamp()
+}
+
+func (m *model) requestStop(r Row) {
+	if r.P.StopKind == intel.StopAvoid {
+		m.flash, m.flashErr = "won't auto-stop "+r.P.Identity+" — inspect it first", true
+	} else {
+		m.confirm, m.confirmed = true, r // pin the row now; see the y/enter handler
+	}
+}
+
 // onMouse handles wheel scrolling and click-to-select. The table's first data
 // row is at screen Y=2 (Y0 header, Y1 column header).
 func (m model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
@@ -720,6 +780,9 @@ func (m model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && !m.filtering && !m.confirm {
+		// A left click anywhere dismisses the action menu — same instinct as
+		// clicking outside a context menu.
+		m.actionMenu = false
 		// Only accept a click that lands on an actually-rendered row. Bounding
 		// on len(m.view) instead of the visible window let a click in the empty
 		// space below the last visible row select an off-screen row.
@@ -730,6 +793,29 @@ func (m model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if idx := m.offset + (msg.Y - 2); msg.Y >= 2 && idx >= m.offset && idx < end {
 			m.cursor = idx
 			m.clamp()
+		}
+	}
+	// Right-click: the terminal's context menu. Select the row under the
+	// pointer AND pin it for the action footer — exactly the app's gesture.
+	// Right-clicking a different row just moves the menu there.
+	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonRight && !m.filtering && !m.confirm && !m.copyMenu {
+		end := m.offset + m.listHeight()
+		if end > len(m.items) {
+			end = len(m.items)
+		}
+		if idx := m.offset + (msg.Y - 2); msg.Y >= 2 && idx >= m.offset && idx < end {
+			m.cursor = idx
+			m.clamp()
+			if r, ok := m.selected(); ok {
+				m.actionMenu, m.actionRow, m.flash = true, r, ""
+			} else {
+				// A group header is a line but not a listener: close the
+				// menu rather than leaving it pinned to the previous row
+				// while the cursor visibly sits on the header.
+				m.actionMenu = false
+			}
+		} else {
+			m.actionMenu = false
 		}
 	}
 	return m, nil
@@ -1243,6 +1329,13 @@ func (m model) footerView() string {
 			fmt.Sprintf("⚠ Stop %s?  → %s   ", r.P.Identity, stopShort(r.P)))
 		return q + keySt.Render("y") + dimSt.Render(" yes  ") + keySt.Render("n") + dimSt.Render(" no")
 	}
+	if m.actionMenu {
+		label := lipgloss.NewStyle().Foreground(yellow).Render(m.actionRow.P.Identity + ":  ")
+		opt := func(k, desc string) string { return keySt.Render(k) + dimSt.Render(" "+desc+"  ") }
+		return label + opt("o", "open") + opt("c", "copy…") + opt("x", "stop") + opt("f", "pin") +
+			opt("F", "reveal") + opt("T", "terminal") +
+			keySt.Render("esc") + dimSt.Render(" cancel")
+	}
 	if m.copyMenu {
 		label := lipgloss.NewStyle().Foreground(yellow).Render("copy " + m.copyRow.P.Identity + ":  ")
 		opt := func(k, desc string) string { return keySt.Render(k) + dimSt.Render(" "+desc+"  ") }
@@ -1289,6 +1382,7 @@ func (m model) helpView() string {
 		{"T", "open a NEW terminal window in the folder (macOS; c → d copies a cd for this shell)"},
 		{"c", "copy… → u url · r curl · l lsof · s stop · p ps · i inspect · d cd · a one-liner (OSC 52 — works over SSH)"},
 		{"f", "pin/unpin the port — pinned ports (*) stay at the top, saved in ~/.config/le/favorites"},
+		{"right-click", "action menu for the row under the pointer — o / c / x / f / F / T, esc or a left click dismisses"},
 		{"r", "refresh now"},
 		{"t", "cycle theme (persist via config: theme = <name>)"},
 		{"?", "toggle this help"},

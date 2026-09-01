@@ -1364,3 +1364,152 @@ func TestHeaderOmitsStoppableCountWhenItSaysNothing(t *testing.T) {
 		t.Errorf("all-stoppable list should not restate the total:\n%s", got)
 	}
 }
+
+// --- Right-click action menu: the terminal's context menu. ---
+
+func rightClick(y int) tea.MouseMsg {
+	return tea.MouseMsg{Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonRight}
+}
+
+func TestRightClickSelectsRowAndOpensActionMenu(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+
+	// Y=3 is the second data row (rows start at Y=2).
+	m, _ = m.Update(rightClick(3))
+	mm := m.(model)
+	if mm.cursor != 1 {
+		t.Fatalf("right-click Y=3 => cursor %d, want 1", mm.cursor)
+	}
+	if !mm.actionMenu {
+		t.Fatal("right-click on a row must open the action menu")
+	}
+	// Default sort is numeric by port: 3000(101), 5000(103), 27017(102) —
+	// so Y=3 (second row) is PID 103.
+	if mm.actionRow.L.PID != 103 {
+		t.Fatalf("action menu pinned PID %d, want 103 (the clicked row)", mm.actionRow.L.PID)
+	}
+	if f := mm.footerView(); !strings.Contains(f, "open") || !strings.Contains(f, "stop") {
+		t.Fatalf("footer must advertise the menu actions, got %q", f)
+	}
+}
+
+func TestActionMenuEscAndLeftClickDismiss(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+
+	m, _ = m.Update(rightClick(2))
+	if !m.(model).actionMenu {
+		t.Fatal("setup: menu should be open")
+	}
+	m, _ = m.Update(key("esc"))
+	if m.(model).actionMenu {
+		t.Fatal("esc must close the action menu")
+	}
+
+	m, _ = m.Update(rightClick(2))
+	m, _ = m.Update(tea.MouseMsg{Y: 3, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if m.(model).actionMenu {
+		t.Fatal("a left click must dismiss the action menu, like clicking outside a context menu")
+	}
+}
+
+func TestActionMenuChainsIntoCopyPicker(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+
+	m, _ = m.Update(rightClick(3))
+	m, _ = m.Update(key("c"))
+	mm := m.(model)
+	if mm.actionMenu {
+		t.Fatal("'c' must close the action menu")
+	}
+	if !mm.copyMenu {
+		t.Fatal("'c' must open the copy picker")
+	}
+	if mm.copyRow.L.PID != 103 {
+		t.Fatalf("copy picker pinned PID %d, want 103 (carried from the action menu)", mm.copyRow.L.PID)
+	}
+}
+
+func TestActionMenuStopPinsClickedRowNotCursor(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+
+	m, _ = m.Update(rightClick(2)) // PID 101, StopTerm — stoppable
+	m, _ = m.Update(key("x"))
+	mm := m.(model)
+	if mm.actionMenu {
+		t.Fatal("'x' must close the action menu")
+	}
+	if !mm.confirm {
+		t.Fatal("'x' from the menu must open the stop confirm")
+	}
+	if mm.confirmed.L.PID != 101 {
+		t.Fatalf("confirm pinned PID %d, want 101 (the right-clicked row)", mm.confirmed.L.PID)
+	}
+}
+
+func TestRightClickBelowRowsDoesNotOpenMenu(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+
+	m, _ = m.Update(rightClick(30))
+	if m.(model).actionMenu {
+		t.Fatal("right-click below the rendered rows must not open the menu")
+	}
+}
+
+func TestRightClickAnotherRowMovesMenu(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+
+	m, _ = m.Update(rightClick(2))
+	m, _ = m.Update(rightClick(4))
+	mm := m.(model)
+	if !mm.actionMenu {
+		t.Fatal("second right-click must keep the menu open")
+	}
+	if mm.actionRow.L.PID != 102 {
+		t.Fatalf("menu pinned PID %d, want 102 (the newly clicked row at Y=4, port-sorted last)", mm.actionRow.L.PID)
+	}
+}
+
+func TestRightClickGroupHeaderClosesMenu(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+
+	// Group FIRST (the open menu swallows plain keys, copy-picker style),
+	// then open the menu on a data row, then right-click a header line.
+	m, _ = m.Update(key("z"))
+	mm := m.(model)
+	headerY, rowY := -1, -1
+	for i, it := range mm.items {
+		y := 2 + i - mm.offset
+		if it.header && headerY < 0 {
+			headerY = y
+		}
+		if !it.header && rowY < 0 {
+			rowY = y
+		}
+	}
+	if headerY < 2 || rowY < 2 {
+		t.Fatalf("grouped sample rows must render both a header and a row (headerY=%d rowY=%d)", headerY, rowY)
+	}
+
+	m, _ = m.Update(rightClick(rowY))
+	if !m.(model).actionMenu {
+		t.Fatal("setup: right-click on a data row should open the menu")
+	}
+	m, _ = m.Update(rightClick(headerY))
+	if m.(model).actionMenu {
+		t.Fatal("right-click on a group header must close the action menu, not leave it pinned to the previous row")
+	}
+}
