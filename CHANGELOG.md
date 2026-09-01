@@ -5,6 +5,8 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.24] - 2026-09-01
+
 ### Added
 - **Right-click a row for its actions.** `le` already put the terminal into
   mouse-reporting mode — click-to-select and wheel scroll worked, but
@@ -465,7 +467,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.23...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.24...HEAD
+[0.1.24]: https://github.com/alikatgh/le-cli/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/alikatgh/le-cli/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/alikatgh/le-cli/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/alikatgh/le-cli/compare/v0.1.20...v0.1.21
