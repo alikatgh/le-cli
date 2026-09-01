@@ -808,6 +808,11 @@ func (m model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.clamp()
 			if r, ok := m.selected(); ok {
 				m.actionMenu, m.actionRow, m.flash = true, r, ""
+			} else {
+				// A group header is a line but not a listener: close the
+				// menu rather than leaving it pinned to the previous row
+				// while the cursor visibly sits on the header.
+				m.actionMenu = false
 			}
 		} else {
 			m.actionMenu = false

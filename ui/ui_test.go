@@ -1480,3 +1480,36 @@ func TestRightClickAnotherRowMovesMenu(t *testing.T) {
 		t.Fatalf("menu pinned PID %d, want 102 (the newly clicked row at Y=4, port-sorted last)", mm.actionRow.L.PID)
 	}
 }
+
+func TestRightClickGroupHeaderClosesMenu(t *testing.T) {
+	var m tea.Model = New(Options{})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+
+	// Group FIRST (the open menu swallows plain keys, copy-picker style),
+	// then open the menu on a data row, then right-click a header line.
+	m, _ = m.Update(key("z"))
+	mm := m.(model)
+	headerY, rowY := -1, -1
+	for i, it := range mm.items {
+		y := 2 + i - mm.offset
+		if it.header && headerY < 0 {
+			headerY = y
+		}
+		if !it.header && rowY < 0 {
+			rowY = y
+		}
+	}
+	if headerY < 2 || rowY < 2 {
+		t.Fatalf("grouped sample rows must render both a header and a row (headerY=%d rowY=%d)", headerY, rowY)
+	}
+
+	m, _ = m.Update(rightClick(rowY))
+	if !m.(model).actionMenu {
+		t.Fatal("setup: right-click on a data row should open the menu")
+	}
+	m, _ = m.Update(rightClick(headerY))
+	if m.(model).actionMenu {
+		t.Fatal("right-click on a group header must close the action menu, not leave it pinned to the previous row")
+	}
+}
