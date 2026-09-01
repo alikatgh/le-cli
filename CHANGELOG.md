@@ -5,6 +5,19 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+- **Right-click a row for its actions.** `le` already put the terminal into
+  mouse-reporting mode — click-to-select and wheel scroll worked, but
+  right-click did nothing, the one gesture people try without being taught.
+  It now selects the row under the pointer and opens an action menu in the
+  footer: `o` open · `c` copy… · `x` stop · `f` pin · `F` reveal ·
+  `T` terminal · `esc` cancel. Every entry runs the same code as the bare
+  key, so the menu doubles as a legend for keys that already worked, and `c`
+  chains into the existing copy picker. The clicked row is pinned, so a
+  background rescan shifting the list can't redirect an action to a
+  neighbour. A left click dismisses it, right-clicking another row moves it,
+  and right-clicking a group header or empty space closes it.
+
 ## [0.1.23] - 2026-08-21
 
 ### Fixed
