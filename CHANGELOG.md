@@ -5,6 +5,13 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+- **The Windows zips carry a build-provenance attestation.** 0.1.25's did
+  not: the release workflow attested `*.tar.gz` only, a glob written before
+  zips existed, so `gh attestation verify le_*.zip --repo alikatgh/le-cli`
+  returned 404 for the very binaries a Windows user would most want to
+  check. Every archive is attested from the next release on.
+
 ## [0.1.25] - 2026-09-03
 
 ### Added

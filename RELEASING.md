@@ -27,7 +27,7 @@ first, tag second:
 After the release publishes: update the tap with the real `checksums.txt`
 values (cross-check every URL↔sha pair), `brew upgrade`, and verify the new
 behavior on the *installed* binary — plus
-`gh attestation verify <tarball> --repo alikatgh/le-cli`.
+`gh attestation verify <archive> --repo alikatgh/le-cli` — one of EACH archive type (tarball and zip), not just the one you happen to run.
 
 ## Automated (GitHub Actions)
 

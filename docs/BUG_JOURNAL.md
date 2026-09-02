@@ -215,6 +215,13 @@ Generalized bug shapes. Grep here before reproducing anything.
 ---
 
 ## Chronological log
+### 2026-09-03 — the Windows zips shipped without a provenance attestation (LE-CLI-020)
+- **Where:** `.github/workflows/release.yml`, the attest step's `subject-path`.
+- **Symptom:** `gh attestation verify le_0.1.25_windows_amd64.zip --repo alikatgh/le-cli` → HTTP 404. The tarballs verified fine.
+- **Cause:** `subject-path: 'dist/*.tar.gz'` — written when every archive was a tarball. Adding a zip format override in goreleaser produced artifacts the attest glob never saw, and nothing checks that every uploaded asset has an attestation.
+- **Fix:** `dist/*.tar.gz` + `dist/*.zip`. Not retroactive: provenance is signed at build time, so 0.1.25's zips stay unattested and the fix lands with 0.1.26.
+- **Lesson:** RELEASING.md's post-release check said "verify `<tarball>`" — singular, and the platform whose users could least afford to skip it was the one not covered. Verify EVERY asset type after a release, and when you add an artifact format, grep the pipeline for the old one's extension.
+
 ### 2026-08-30 — `le open` on Linux launched a macOS binary (LE-CLI-019)
 - **Where:** `tools/exit_open.go` `OpenWhenReady` → now `browserCommand` in `tools/platform_{darwin,other,windows}.go`.
 - **Symptom:** on Linux, `le open 3000` waited for the port and then failed every time with `port is ready but couldn't open http://localhost:3000/: exec: "/usr/bin/open": no such file`.
