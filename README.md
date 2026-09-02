@@ -51,7 +51,7 @@ one that gets signalled.
 ## Install
 
 No Go toolchain needed — every path below ships a prebuilt binary
-(macOS + Linux, amd64 + arm64).
+(macOS, Linux and Windows; amd64 + arm64).
 
 One line, no package manager — downloads the latest release, verifies its
 checksum, installs it ([read the script](install.sh) first if you sensibly
@@ -81,6 +81,14 @@ Homebrew (also installs man pages and shell completions):
 brew install alikatgh/tap/le
 ```
 
+Windows — grab `le_<version>_windows_amd64.zip` (or `_arm64`) from the
+[Releases page](https://github.com/alikatgh/le-cli/releases), unzip, and put
+`le.exe` somewhere on your `PATH`. It runs in Windows Terminal, PowerShell
+and cmd; nothing to install alongside it. Two things work differently there,
+both on purpose — the DIR column is empty and a windowless console server
+can't be stopped gracefully — see
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md#platforms) for the why.
+
 From source (Go 1.24+):
 
 ```sh
@@ -89,7 +97,8 @@ go install github.com/alikatgh/le-cli@latest   # installs as `le-cli`; rename to
 git clone https://github.com/alikatgh/le-cli && cd le-cli && go build -o le .
 ```
 
-Needs `lsof` and `ps` (preinstalled on macOS; available on every Linux).
+Needs `lsof` and `ps` on macOS and Linux (preinstalled on macOS; available
+on every Linux), and `netstat` + PowerShell on Windows (both built in).
 Homebrew and Docker detection are best-effort — missing tools are skipped.
 
 ## Use

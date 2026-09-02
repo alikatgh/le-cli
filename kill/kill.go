@@ -8,9 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/alikatgh/le-cli/intel"
 	"github.com/alikatgh/le-cli/scan"
@@ -23,21 +21,33 @@ import (
 // scan.go captured under the same locale — otherwise stillSame would compare
 // a C-locale re-read against a differently-localized capture and falsely
 // report a recycled PID.
+//
+// The real implementations are named (execCombined, execOutput) rather than
+// written inline so a test that needs genuine READ-ONLY execution — the live
+// stillSame check against our own PID — can opt back into it, while the
+// test-binary guard keeps termProcess neutered throughout.
+//
+// termProcess, and the two identity re-reads stillSame relies on, are the
+// platform seam: term_unix.go signals with SIGTERM and re-reads via ps;
+// term_windows.go uses taskkill and re-reads Win32_Process.
 var (
-	runCombined = func(name string, args ...string) (string, error) {
-		cmd := exec.Command(name, args...)
-		cmd.Env = append(os.Environ(), "LC_ALL=C") // stable English errors, like runOutput (LE-394)
-		out, err := cmd.CombinedOutput()
-		return string(out), err
-	}
-	runOutput = func(name string, args ...string) (string, error) {
-		cmd := exec.Command(name, args...)
-		cmd.Env = append(os.Environ(), "LC_ALL=C")
-		out, err := cmd.Output()
-		return string(out), err
-	}
-	termProcess = func(pid int) error { return syscall.Kill(pid, syscall.SIGTERM) }
+	runCombined = execCombined
+	runOutput   = execOutput
 )
+
+func execCombined(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	cmd.Env = append(os.Environ(), "LC_ALL=C") // stable English errors, like runOutput (LE-394)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func execOutput(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	out, err := cmd.Output()
+	return string(out), err
+}
 
 // Stop runs the recommended action for a listener. It returns a short result
 // message, or an error if the PID was recycled or the action failed.
@@ -106,9 +116,9 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 		return "", fmt.Errorf("no safe automatic stop — inspect this process first")
 	default:
 		if err := termProcess(l.PID); err != nil {
-			return "", fmt.Errorf("kill -TERM %d: %w", l.PID, err)
+			return "", fmt.Errorf("%s: %w", termCommand(l.PID), err)
 		}
-		return "sent SIGTERM to " + strconv.Itoa(l.PID), nil
+		return termResult(l.PID), nil
 	}
 }
 
@@ -177,7 +187,7 @@ func dockerGuardOK(scanArgID, curID string, lookupOK bool) bool {
 // command line, refusing anything short of an exact match (see below).
 func stillSame(l scan.Listener) bool {
 	if l.StartTime != "" {
-		out, err := runOutput("ps", "-p", strconv.Itoa(l.PID), "-o", "lstart=")
+		out, err := readStartTime(l.PID)
 		if err != nil {
 			return false
 		}
@@ -189,7 +199,7 @@ func stillSame(l scan.Listener) bool {
 		// recycled PID. Collapse runs of whitespace the same way here.
 		return normalizeWS(out) == normalizeWS(l.StartTime)
 	}
-	out, err := runOutput("ps", "-ww", "-p", strconv.Itoa(l.PID), "-o", "command=")
+	out, err := readCommandLine(l.PID)
 	if err != nil {
 		return false
 	}

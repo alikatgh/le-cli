@@ -692,6 +692,7 @@ func TestRevealKeyWithoutTargetExplainsItself(t *testing.T) {
 // helper's cwd is a container path and its binary is the actual answer to
 // "what is this?". Verified against a real path so the on-disk check passes.
 func TestRevealTargetPrefersBinaryForAppHelper(t *testing.T) {
+	skipWithoutUnixShell(t)
 	helper := Row{
 		L: scan.Listener{PID: 9, CommandLine: "/bin/sh --serve", Cwd: "/tmp"},
 		P: intel.Profile{Identity: "App helper", StopKind: intel.StopAvoid},
@@ -708,6 +709,19 @@ func TestRevealTargetPrefersBinaryForAppHelper(t *testing.T) {
 	}
 	if got, ok := revealTarget(normal); !ok || got != "/code/web" {
 		t.Errorf("revealTarget = (%q, %v), want (/code/web, true)", got, ok)
+	}
+}
+
+// skipWithoutUnixShell marks the tests whose fixtures use /bin/sh as a
+// stat-able binary: with no such file, paneFields omits the cmd field and
+// every index those tests assert shifts by one. The behaviour they pin is
+// platform-neutral and covered on ubuntu and macOS; what is unix-only is the
+// fixture. executablePath's own Windows handling is exercised by
+// TestExecutablePathHandlesSpacesAndGivesUp, which builds a real temp path.
+func skipWithoutUnixShell(t *testing.T) {
+	t.Helper()
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("fixture needs /bin/sh on disk (not Windows)")
 	}
 }
 
@@ -965,6 +979,7 @@ func TestPaneFocusOpensSpecificPort(t *testing.T) {
 // The other gain: binary and folder are separate targets, where the row-level
 // F key has to pick one.
 func TestPaneFocusRevealsBinaryAndFolderSeparately(t *testing.T) {
+	skipWithoutUnixShell(t)
 	var revealed []string
 	orig := revealPath
 	revealPath = func(p string) error { revealed = append(revealed, p); return nil }
@@ -986,6 +1001,7 @@ func TestPaneFocusRevealsBinaryAndFolderSeparately(t *testing.T) {
 }
 
 func TestPaneFocusStopFieldRespectsAvoid(t *testing.T) {
+	skipWithoutUnixShell(t)
 	var copied string
 	orig := copyToClipboard
 	copyToClipboard = func(s string) error { copied = s; return nil }
@@ -1019,6 +1035,7 @@ func TestPaneFocusStopFieldRespectsAvoid(t *testing.T) {
 }
 
 func TestPaneCursorWraps(t *testing.T) {
+	skipWithoutUnixShell(t)
 	m := focused(t, multiPortRow()) // 5 fields: 2 ports, cmd, dir, stop
 	if got := m.(model).paneIdx; got != 0 {
 		t.Fatalf("paneIdx = %d, want 0", got)

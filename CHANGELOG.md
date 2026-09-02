@@ -5,6 +5,31 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-09-03
+
+### Added
+- **Windows.** `le.exe` for amd64 and arm64, as zips on every release.
+  Listeners come from `netstat -ano` and process identity — command line,
+  owner, CPU, memory and the start time the PID-recycle guard depends on —
+  from one `Win32_Process` query, so the table, the detail pane, `le list`,
+  `--json`, `le stop`, `le wait`, `le ready`, `le hold`, `le watch` and
+  `le open` all work. Two things are deliberately different, and both are
+  written down in docs/COMPATIBILITY.md: the DIR column is empty (Windows
+  keeps another process's working directory behind privileged reads, so
+  `--dir` matches nothing there), and the graceful stop is `taskkill /PID`,
+  which a windowless console server cannot honour — `le` then refuses and
+  prints the `taskkill /F` command instead of escalating to a hard kill on
+  its own. The mac-only housekeeping commands (`restart-dock`,
+  `restart-finder`, `sleep-display`, `keep-awake`) are no longer registered
+  off macOS; `flush-dns` runs the native command on every platform. CI now
+  runs the suite on windows-latest, where three live tests exercise the real
+  netstat / Win32_Process / taskkill chain.
+
+### Fixed
+- **`le open` on Linux never worked.** It launched `/usr/bin/open`, which is
+  macOS's launcher and does not exist on Linux, so the port was waited for
+  and then "couldn't open" every time. Now `xdg-open`.
+
 ## [0.1.24] - 2026-09-01
 
 ### Added
@@ -467,7 +492,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.24...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.25...HEAD
+[0.1.25]: https://github.com/alikatgh/le-cli/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/alikatgh/le-cli/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/alikatgh/le-cli/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/alikatgh/le-cli/compare/v0.1.21...v0.1.22

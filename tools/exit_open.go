@@ -4,17 +4,24 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/alikatgh/le-cli/scan"
 )
 
-// WatchPID blocks until process pid exits, polling kill(pid,0) once a second —
-// the CLI half of the app's Notify-on-exit tool. It honours the same ESRCH/EPERM
-// distinction as ExitWatcher: ESRCH means truly gone, EPERM means alive but
-// owned by another user (so we can't reliably observe it). A positive timeout
-// bounds the wait.
+// The two answers a liveness probe can give besides "alive". probeProcess
+// (probe_unix.go / probe_windows.go) maps the platform's own errors onto
+// these so WatchPID's logic is written once.
+var (
+	errProcessGone      = errors.New("process is gone")
+	errProcessForbidden = errors.New("process belongs to another user")
+)
+
+// WatchPID blocks until process pid exits, probing once a second — the CLI
+// half of the app's Notify-on-exit tool. It honours the same gone/forbidden
+// distinction as ExitWatcher: gone means truly gone, forbidden means alive
+// but owned by another user (so we can't reliably observe it). A positive
+// timeout bounds the wait.
 func WatchPID(pid int, timeout time.Duration) error {
 	var deadline time.Time
 	if timeout > 0 {
@@ -22,15 +29,15 @@ func WatchPID(pid int, timeout time.Duration) error {
 	}
 	first := true
 	for {
-		err := syscall.Kill(pid, 0)
+		err := probeProcess(pid)
 		switch {
-		case errors.Is(err, syscall.ESRCH):
+		case errors.Is(err, errProcessGone):
 			if first {
 				return fmt.Errorf("pid %d is not running", pid)
 			}
 			fmt.Printf("pid %d has exited\n", pid)
 			return nil
-		case errors.Is(err, syscall.EPERM):
+		case errors.Is(err, errProcessForbidden):
 			return fmt.Errorf("can't watch pid %d — it's owned by another user, so the OS won't report when it exits", pid)
 		}
 		// nil (alive) or any other errno (inconclusive) → keep polling.
@@ -57,9 +64,11 @@ func OpenWhenReady(port, path string, timeout time.Duration) error {
 	}
 	url := scan.Scheme(port) + "://localhost:" + port + "/" + strings.TrimPrefix(path, "/")
 	// Routed through the runToCompletion hook so the test binary can neuter it
-	// — see exec_hooks.go. Injection safety is unchanged: /usr/bin/open is a
-	// fixed path and url is a discrete exec argument, never a shell string.
-	if err := runToCompletion("/usr/bin/open", url); err != nil {
+	// — see exec_hooks.go. Injection safety is unchanged: the launcher is a
+	// fixed command per platform (platform_*.go) and url is a discrete exec
+	// argument, never a shell string.
+	exe, args := browserCommand(url)
+	if err := runToCompletion(exe, args...); err != nil {
 		return fmt.Errorf("port is ready but couldn't open %s: %w", url, err)
 	}
 	fmt.Println("opened " + url)

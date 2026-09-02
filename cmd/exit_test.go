@@ -55,7 +55,7 @@ func TestUsagePreservesMessage(t *testing.T) {
 // the exit code le would have used.
 func runRoot(t *testing.T, args ...string) int {
 	t.Helper()
-	root := newRoot("test")
+	root := newRoot("test", false)
 	root.SetOut(io.Discard)
 	root.SetErr(io.Discard)
 	root.SetArgs(args)
@@ -102,7 +102,7 @@ func TestInvalidPortExitsTwo(t *testing.T) {
 // silently falls into "Additional Commands", which is exactly the flat list
 // the groups were added to fix.
 func TestEveryCommandIsGrouped(t *testing.T) {
-	root := newRoot("test")
+	root := newRoot("test", false)
 	// version is deliberately ungrouped; cobra adds help/completion itself.
 	ungrouped := map[string]bool{"version": true, "help": true, "completion": true}
 	groups := map[string]bool{}
@@ -126,7 +126,7 @@ func TestEveryCommandIsGrouped(t *testing.T) {
 // The exit-code contract has to be discoverable where script authors look:
 // `le --help` and the man pages generated from these same Long strings.
 func TestExitCodesDocumentedInHelp(t *testing.T) {
-	root := newRoot("test")
+	root := newRoot("test", false)
 	want := []string{"le", "wait", "ready", "watch", "open"}
 	for _, name := range want {
 		t.Run(name, func(t *testing.T) {

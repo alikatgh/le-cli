@@ -11,7 +11,7 @@ import (
 // fails to fix the thing it exists to fix — so they are asserted literally
 // rather than by comparing against the same constant the code uses.
 func TestFixTerminalWritesTheRecoverySequences(t *testing.T) {
-	root := newRoot("test")
+	root := newRoot("test", false)
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -42,7 +42,7 @@ func TestFixTerminalWritesTheRecoverySequences(t *testing.T) {
 // whatever the user is looking at, and this command runs on a terminal that is
 // already in a bad state.
 func TestFixTerminalPrintsNothingButEscapes(t *testing.T) {
-	root := newRoot("test")
+	root := newRoot("test", false)
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -66,7 +66,7 @@ func TestFixTerminalPrintsNothingButEscapes(t *testing.T) {
 // The point of the command is being findable by someone whose terminal is
 // already broken; unregistered, it does not exist.
 func TestFixTerminalIsRegisteredOnRoot(t *testing.T) {
-	for _, c := range newRoot("test").Commands() {
+	for _, c := range newRoot("test", false).Commands() {
 		if strings.Fields(c.Use)[0] == "fix-terminal" {
 			if c.Short == "" {
 				t.Error("fix-terminal has no Short — it will be invisible in --help")

@@ -5,6 +5,14 @@ name: ci
 # macOS is in the matrix on purpose: le's own ps/lsof parsing is
 # macOS-first, and release.yml's Linux-only test run never actually
 # exercises this code on the platform it's designed for.
+#
+# Windows is in the matrix for the mirror-image reason: nobody develops le on
+# Windows, so this job is the ONLY place the netstat / Win32_Process / taskkill
+# glue ever runs for real. The parsers behind it are untagged and tested
+# everywhere; what this runner adds is the spawning (scan/scan_live_test.go,
+# kill/stillsame_live_test.go, tools/exit_open_test.go). The cross job below
+# is the fast half of that signal: a Windows compile break shows up on ubuntu
+# in seconds instead of after the windows-latest queue.
 
 on:
   push:
@@ -18,9 +26,18 @@ concurrency:
 jobs:
   test:
     strategy:
+      # Each OS reports on its own. With fail-fast, one platform's failure
+      # cancels the others mid-run and hides their result — which is exactly
+      # the information a three-OS matrix exists to produce.
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # The gofmt and man-page steps are bash; the windows runner would
+        # otherwise hand them to pwsh and fail on the first $(...).
+        shell: bash
     steps:
       - uses: actions/checkout@v7
 
@@ -29,6 +46,11 @@ jobs:
           go-version: '1.24'
 
       - name: gofmt
+        # Not on Windows: actions/checkout there honours core.autocrlf, so
+        # every .go file arrives with CRLF endings and gofmt -l lists the
+        # entire tree. Formatting is a property of the source, not the OS;
+        # ubuntu and macOS check it. (Same reason the man-page step skips.)
+        if: runner.os != 'Windows'
         run: |
           fmt="$(gofmt -l .)"
           if [ -n "$fmt" ]; then
@@ -50,6 +72,10 @@ jobs:
       # gendocs pins its date (internal/gendocs/main.go), so a dirty tree means
       # real content drift, never just a month rollover.
       - name: man pages are up to date
+        # Not on Windows: the pages are generated identically there (gendocs
+        # asks for every command regardless of OS), but core.autocrlf on the
+        # runner would report every file as modified. ubuntu and macOS cover it.
+        if: runner.os != 'Windows'
         run: |
           go run ./internal/gendocs
           # --porcelain covers all three drift shapes: modified (usage text
@@ -62,6 +88,22 @@ jobs:
             git diff -- man/
             exit 1
           fi
+
+  # Cross-compile check: the cheapest possible Windows signal. `go vet` under
+  # GOOS=windows type-checks every build-tagged file AND the test files, so a
+  # unix-only symbol leaking into an untagged test breaks here, on ubuntu, in
+  # seconds — without waiting for a Windows runner.
+  cross:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.24'
+      - name: windows/amd64
+        run: GOOS=windows GOARCH=amd64 go build ./... && GOOS=windows GOARCH=amd64 go vet ./...
+      - name: windows/arm64
+        run: GOOS=windows GOARCH=arm64 go build ./... && GOOS=windows GOARCH=arm64 go vet ./...
 
   lint:
     runs-on: ubuntu-latest

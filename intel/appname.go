@@ -33,6 +33,9 @@ import (
 // /Applications/Other.app/…` is not Other, and naming it that — with raised
 // confidence — is worse than the generic label it replaced.
 func AppName(cmdline string) string {
+	if name := windowsAppName(cmdline); name != "" {
+		return name
+	}
 	argv0 := executableArg(cmdline)
 	if argv0 == "" {
 		return ""
@@ -145,4 +148,45 @@ func helperSuffix(l scan.Listener) string {
 		return ""
 	}
 	return " Helper: " + name + "."
+}
+
+// windowsAppName is AppName for a Windows command line, and "" for anything
+// else — the guard is a drive letter on argv[0], so a unix path never enters.
+// The install roots play the role /Applications and Application Support play
+// on macOS, in the same priority order and for the same reason:
+//
+//	C:\Program Files\<Product>\…              → Product  (the install dir IS the product)
+//	C:\Program Files (x86)\<Product>\…
+//	…\AppData\Local\Programs\<Product>\…     → Product  (per-user installs: VS Code, Discord)
+//	…\AppData\Local\<Vendor>\…               → Vendor   (sidecars and updaters)
+//
+// Matching is case-insensitive, as the filesystem is, but the name returned
+// keeps the on-disk spelling.
+func windowsAppName(cmdline string) string {
+	argv0 := windowsArgv0(cmdline)
+	if len(argv0) < 3 || argv0[1] != ':' || argv0[2] != '\\' {
+		return ""
+	}
+	for _, root := range []string{`\program files\`, `\program files (x86)\`, `\appdata\local\programs\`, `\appdata\local\`} {
+		if name := segmentAfterFold(argv0, root); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+// segmentAfterFold is segmentAfter for backslash paths, matched
+// case-insensitively. The segment must be a directory (followed by another
+// separator): a bare executable directly under the root names nothing.
+func segmentAfterFold(path, marker string) string {
+	i := strings.Index(strings.ToLower(path), marker)
+	if i < 0 {
+		return ""
+	}
+	rest := path[i+len(marker):]
+	end := strings.IndexByte(rest, '\\')
+	if end <= 0 {
+		return ""
+	}
+	return rest[:end]
 }

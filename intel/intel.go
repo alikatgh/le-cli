@@ -778,6 +778,9 @@ func isSystem(l scan.Listener) bool {
 		strings.HasPrefix(c, "/usr/sbin/") || strings.HasPrefix(c, "/sbin/") {
 		return true
 	}
+	if isWindowsSystem(c, strings.ToLower(l.User)) {
+		return true
+	}
 	if l.User == "root" && !strings.Contains(c, "/cellar/") && !strings.Contains(c, "/users/") {
 		// Match the daemon name against the EXECUTABLE's basename, not the
 		// whole command line — otherwise a root process whose path or args
@@ -792,13 +795,16 @@ func isSystem(l scan.Listener) bool {
 	return false
 }
 
-// argv0Base returns the lowercased basename of a command line's first token.
+// argv0Base returns the basename of a command line's first token. It splits
+// on both separators rather than using filepath.Base, which only knows the
+// host OS's: a Windows command line inspected on a macOS test machine (or
+// vice versa) must yield the same name.
 func argv0Base(cmd string) string {
 	fields := strings.Fields(cmd)
 	if len(fields) == 0 {
 		return ""
 	}
-	return filepath.Base(fields[0])
+	return baseAny(fields[0])
 }
 
 func isBackgroundApp(l scan.Listener) bool {

@@ -27,6 +27,13 @@ Generalized bug shapes. Grep here before reproducing anything.
   `le 2>run.log` would have written the recovery sequence into the log file and
   left the terminal exactly as wedged. Match the stream, do not assume the two
   are interchangeable just because both are usually the same tty. (LE-CLI-016)
+- **"Supports Linux" is a claim about every absolute path, not just the
+  scanner.** The lsof/ps path worked on Linux, so Linux was listed as
+  supported — while `le open` ran `/usr/bin/open`, a macOS binary, and could
+  never have worked there. Nobody noticed because nobody ran it on Linux.
+  Adding a platform (or claiming one) means grepping for hardcoded paths and
+  tools across the WHOLE tree and deciding each one: tag it, seam it, or it is
+  a bug. (LE-CLI-019)
 - **A one-line UI element with a priority chain needs an EXIT CONDITION for
   whatever wins it.** The TUI footer renders a status message *instead of* the
   key hints. The flash had ~40 setters and four clearers, so the first
@@ -208,6 +215,13 @@ Generalized bug shapes. Grep here before reproducing anything.
 ---
 
 ## Chronological log
+### 2026-08-30 — `le open` on Linux launched a macOS binary (LE-CLI-019)
+- **Where:** `tools/exit_open.go` `OpenWhenReady` → now `browserCommand` in `tools/platform_{darwin,other,windows}.go`.
+- **Symptom:** on Linux, `le open 3000` waited for the port and then failed every time with `port is ready but couldn't open http://localhost:3000/: exec: "/usr/bin/open": no such file`.
+- **Cause:** the launcher was the hardcoded macOS path. "Works on macOS and Linux" was true of the scanner (lsof + ps are on both) and silently assumed for everything downstream of it.
+- **Fix:** a per-platform seam — `open` / `xdg-open` / `rundll32 url.dll,FileProtocolHandler` — found while adding the Windows one.
+- **Lesson:** a second platform is a claim about every absolute path in the tree, not just the scanner. When you add a platform, `grep -rn '/usr/bin' --include='*.go'` first; each hit is either tagged or a bug.
+
 ### 2026-08-21 — one status message ate the hotkey footer for the whole session (LE-CLI-018)
 - **Where:** `ui/ui.go` — `footerView` (the priority chain), new `flashExpiredMsg`/`flashTTL`/`flashGen` and the `Update`→`update` wrapper. Tests: `ui/ui_test.go`.
 - **Symptom:** reported from a screenshot — "I started to click things and I lost hotkeys that were present at the beginning." The footer showed `revealed /Library/Frameworks/…/Python` where `j/k move · z group · / filter · …` had been, and never went back.
