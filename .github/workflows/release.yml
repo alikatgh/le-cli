@@ -78,7 +78,13 @@ jobs:
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: 'dist/*.tar.gz'
+          # Every archive, not just the tarballs: 0.1.25 shipped the first
+          # Windows zips and `gh attestation verify le_*.zip` 404'd on them,
+          # because this glob predated zips. A Windows user had no way to
+          # check their download came from this CI. (LE-CLI-020)
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
 
       # A skipped tap bump used to be a green run with one line buried in the
       # log — so v0.1.16 shipped and brew users stayed on v0.1.15 for a month
