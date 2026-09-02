@@ -42,6 +42,11 @@ jobs:
           go-version: '1.24'
 
       - name: gofmt
+        # Not on Windows: actions/checkout there honours core.autocrlf, so
+        # every .go file arrives with CRLF endings and gofmt -l lists the
+        # entire tree. Formatting is a property of the source, not the OS;
+        # ubuntu and macOS check it. (Same reason the man-page step skips.)
+        if: runner.os != 'Windows'
         run: |
           fmt="$(gofmt -l .)"
           if [ -n "$fmt" ]; then
