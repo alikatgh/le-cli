@@ -28,7 +28,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.24'
       - name: Test
@@ -47,7 +47,7 @@ jobs:
       # download that used to paper over the gap — so the release job needs
       # the newer Go explicitly. The test matrix stays on 1.24 to match
       # go.mod, proving the module still builds at its declared floor.
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.26'
 
