@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -36,7 +37,7 @@ const configWarningPause = 1500 * time.Millisecond
 // is derived from the error (see exit.go) rather than being a flat 1, because
 // scripts have to distinguish a timed-out wait from a misuse from a failure.
 func Execute(version string) {
-	if err := newRoot(version).Execute(); err != nil {
+	if err := newRoot(version, false).Execute(); err != nil {
 		os.Exit(exitCodeFor(err))
 	}
 }
@@ -44,11 +45,18 @@ func Execute(version string) {
 // NewRootForDocs builds the same command tree Execute uses, for tools that
 // need it without actually running the CLI (e.g. the man page generator in
 // internal/gendocs).
+// NewRootForDocs builds the command tree for the man-page generator. It asks
+// for EVERY command regardless of the host OS, so man/ documents the whole
+// tool and CI's drift check produces the same pages on every runner.
 func NewRootForDocs() *cobra.Command {
-	return newRoot("dev")
+	return newRoot("dev", true)
 }
 
-func newRoot(version string) *cobra.Command {
+// newRoot builds the tree. allPlatforms registers the mac-only housekeeping
+// commands even off macOS — only the doc generator wants that; at runtime a
+// Windows or Linux user should not see `restart-dock` in --help and be handed
+// a "killall: not found" when they try it.
+func newRoot(version string, allPlatforms bool) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "le",
 		Short: "See and stop what's listening on localhost",
@@ -94,8 +102,14 @@ func newRoot(version string) *cobra.Command {
 		stopCmd(), restartCmd())
 	group(root, "ports", "Hold, wait on, or forward a port (for scripts):",
 		holdCmd(), waitCmd(), readyCmd(), openCmd(), forwardCmd())
-	group(root, "macos", "macOS housekeeping:",
-		flushDNSCmd(), restartDockCmd(), restartFinderCmd(), sleepDisplayCmd(), keepAwakeCmd())
+	if allPlatforms || runtime.GOOS == "darwin" {
+		group(root, "macos", "macOS housekeeping:",
+			flushDNSCmd(), restartDockCmd(), restartFinderCmd(), sleepDisplayCmd(), keepAwakeCmd())
+	} else {
+		// flush-dns has a native command on every platform (tools/platform_*.go);
+		// the other four are Dock, Finder, pmset and caffeinate — macOS by name.
+		group(root, "system", "System housekeeping:", flushDNSCmd())
+	}
 	// Its own group, fenced after the macOS tools for the same reason they are
 	// fenced: it is housekeeping, not the thesis. It does NOT go ungrouped —
 	// "Additional Commands" is where a command goes to be undiscoverable, and
@@ -320,7 +334,7 @@ func fixTerminalCmd() *cobra.Command {
 func flushDNSCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "flush-dns",
-		Short: "Flush the macOS DNS cache",
+		Short: "Flush the DNS resolver cache",
 		Args:  usageArgs(cobra.NoArgs),
 		RunE:  func(cmd *cobra.Command, args []string) error { return tools.FlushDNS() },
 	}

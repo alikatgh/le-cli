@@ -184,7 +184,7 @@ func TestPrintTableRows(t *testing.T) {
 }
 
 func TestNewRootRegistersAllSubcommands(t *testing.T) {
-	root := newRoot("1.2.3")
+	root := newRoot("1.2.3", false)
 	if root.Version != "1.2.3" {
 		t.Errorf("root.Version = %q, want 1.2.3", root.Version)
 	}

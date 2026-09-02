@@ -15,7 +15,7 @@ builds:
     binary: le
     env:
       - CGO_ENABLED=0
-    goos: [darwin, linux]
+    goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
     flags: [-trimpath]
     ldflags:
@@ -24,6 +24,12 @@ builds:
 archives:
   - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Windows gets a zip: it is what Explorer opens, and what winget/scoop
+    # manifests expect if the tool is ever submitted there. Same name
+    # template, so le_<ver>_windows_<arch>.zip sits beside the tarballs.
+    format_overrides:
+      - goos: windows
+        formats: [zip]
     files:
       - man/*.1
 
@@ -38,7 +44,7 @@ changelog:
 release:
   name_template: "le {{ .Version }}"
   header: |
-    Prebuilt `le` binaries for macOS and Linux (amd64 + arm64). See
+    Prebuilt `le` binaries for macOS, Linux and Windows (amd64 + arm64). See
     [CHANGELOG.md](https://github.com/alikatgh/le-cli/blob/main/CHANGELOG.md)
     for what changed, and README.md for install instructions.
 

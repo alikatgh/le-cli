@@ -25,9 +25,10 @@ func runSystem(desc, exe string, args ...string) error {
 	return nil
 }
 
-// FlushDNS clears the macOS DNS cache — /usr/bin/dscacheutil -flushcache,
-// matching the app's Flush DNS tool.
-func FlushDNS() error { return runSystem("flush DNS", "/usr/bin/dscacheutil", "-flushcache") }
+// FlushDNS clears the resolver cache with the platform's own command
+// (platform_*.go): dscacheutil on macOS, matching the app's Flush DNS tool;
+// ipconfig /flushdns on Windows; resolvectl on Linux.
+func FlushDNS() error { return runSystem("flush DNS", flushDNSExe, flushDNSArgs...) }
 
 // RestartDock relaunches the Dock — /usr/bin/killall Dock.
 func RestartDock() error { return runSystem("restart Dock", "/usr/bin/killall", "Dock") }

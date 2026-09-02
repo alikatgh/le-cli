@@ -139,3 +139,30 @@ change three packages away fails the build here rather than in your pipeline.
 3. Note it in the changelog under a **Breaking** heading.
 
 A key rename with no entry here is a bug, not a release.
+
+---
+
+## Platforms
+
+`le` runs on macOS, Linux and Windows. The stable surfaces above — exit codes
+and `--json` field names — are identical on all three. What differs is what
+the platform can tell us, and each difference is an honest blank rather than a
+guess:
+
+| | macOS / Linux | Windows |
+|---|---|---|
+| Listeners | `lsof` | `netstat -ano` |
+| Process identity | `ps` argv, user, `lstart` | `Win32_Process` command line, owner, `CreationDate` |
+| `startTime` (recycle key) | `ps lstart` text | ISO 8601, e.g. `2026-08-30T15:13:51.1234567+03:00` |
+| `cwd` / DIR column | from `lsof` | **empty** — Windows keeps another process's working directory in its PEB, behind privileged reads. `le stop --dir` therefore matches nothing on Windows. |
+| `user` | `albert`, `root` | `DESKTOP\albert`, `NT AUTHORITY\SYSTEM` |
+| Graceful stop | `SIGTERM` | `taskkill /PID n` — posts WM_CLOSE. A console process with no window **cannot** be stopped this way; `le` refuses and prints the `taskkill /F` command rather than escalating to a hard kill on its own. |
+| `brew services` / `launchctl` | detected and used | never selected (not present); Docker works as on unix |
+| `restart-dock`, `restart-finder`, `sleep-display`, `keep-awake` | present | not registered — they are Dock, Finder, `pmset` and `caffeinate` by name |
+| `flush-dns` | `dscacheutil` / `resolvectl` | `ipconfig /flushdns` |
+| `open` | `open` / `xdg-open` | `rundll32 url.dll,FileProtocolHandler` (no shell in between — a `&` in a URL stays a `&`) |
+
+The one guarantee that matters most is the same everywhere: **`le` re-reads
+the start time from the same source immediately before signalling, and
+refuses if it has changed.** A recycled PID never receives a stop meant for
+the process that used to own it, on any platform.

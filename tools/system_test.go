@@ -1,3 +1,5 @@
+//go:build !windows
+
 package tools
 
 import (
@@ -42,7 +44,7 @@ func TestSystemToolsRunTheExactCommandsTheAppRuns(t *testing.T) {
 		exe  string
 		args []string
 	}{
-		{"FlushDNS", FlushDNS, "/usr/bin/dscacheutil", []string{"-flushcache"}},
+		{"FlushDNS", FlushDNS, flushDNSExe, flushDNSArgs},
 		{"RestartDock", RestartDock, "/usr/bin/killall", []string{"Dock"}},
 		{"RestartFinder", RestartFinder, "/usr/bin/killall", []string{"Finder"}},
 		{"SleepDisplay", SleepDisplay, "/usr/bin/pmset", []string{"displaysleepnow"}},
