@@ -176,11 +176,16 @@ var (
 	// openURL launches the default browser. `open` on macOS, `xdg-open`
 	// on Linux — resolved at call time so tests can stub it.
 	openURL = func(url string) error {
-		cmd := "open"
-		if runtime.GOOS != "darwin" {
-			cmd = "xdg-open"
+		switch runtime.GOOS {
+		case "darwin":
+			return exec.Command("open", url).Start()
+		case "windows":
+			// No shell in between: `cmd /c start <url>` would let an `&` in a
+			// query string be read as a command separator. rundll32 takes the
+			// URL as one discrete argument. (Same choice as tools/platform_windows.go.)
+			return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
 		}
-		return exec.Command(cmd, url).Start()
+		return exec.Command("xdg-open", url).Start()
 	}
 	// copyToClipboard emits an OSC 52 sequence, which the terminal — local
 	// OR at the far end of an SSH session — translates into a clipboard
@@ -200,8 +205,13 @@ var (
 	// interpreted as a command. The path itself comes from lsof's cwd field or
 	// from a stat'd argv[0], never from user input.
 	revealPath = func(path string) error {
-		if runtime.GOOS == "darwin" {
+		switch runtime.GOOS {
+		case "darwin":
 			return exec.Command("open", "-R", path).Start()
+		case "windows":
+			// Explorer's select-in-folder; the switch and the path are one
+			// argv token by Explorer's own convention.
+			return exec.Command("explorer", "/select,"+path).Start()
 		}
 		return exec.Command("xdg-open", filepath.Dir(path)).Start()
 	}
@@ -210,14 +220,20 @@ var (
 	// can't change its parent's directory), which is why `c → d` copies a
 	// `cd` command as the in-place alternative.
 	openTerminalAt = func(dir string) error {
-		if runtime.GOOS != "darwin" {
-			return errNoTerminalLauncher
+		switch runtime.GOOS {
+		case "darwin":
+			return exec.Command("open", "-a", "Terminal", dir).Start()
+		case "windows":
+			// A new console window started in dir. `start` is a cmd builtin;
+			// the empty string is the window title it would otherwise take
+			// the first quoted argument for.
+			return exec.Command("cmd", "/c", "start", "", "/d", dir, "cmd").Start()
 		}
-		return exec.Command("open", "-a", "Terminal", dir).Start()
+		return errNoTerminalLauncher
 	}
 )
 
-var errNoTerminalLauncher = errors.New("opening a terminal window is macOS-only — use c → d to copy a cd command")
+var errNoTerminalLauncher = errors.New("opening a terminal window is macOS/Windows-only — use c → d to copy a cd command")
 
 // revealTarget is what "reveal in Finder" should select: the working
 // directory when there is one, otherwise the executable itself. An app helper
@@ -241,7 +257,22 @@ func revealTarget(r Row) (string, bool) {
 // (returns "") rather than guessing.
 func executablePath(cmdline string) string {
 	cmdline = strings.TrimSpace(cmdline)
-	if cmdline == "" || !strings.HasPrefix(cmdline, "/") {
+	if cmdline == "" {
+		return ""
+	}
+	// Windows quotes argv[0] when it contains a space (Program Files), and
+	// the closing quote is then the exact boundary — no prefix search needed.
+	if strings.HasPrefix(cmdline, `"`) {
+		if end := strings.Index(cmdline[1:], `"`); end > 0 {
+			if p := cmdline[1 : end+1]; isPathLike(p) {
+				if _, err := os.Stat(p); err == nil {
+					return p
+				}
+			}
+		}
+		return ""
+	}
+	if !isPathLike(cmdline) {
 		return ""
 	}
 	if _, err := os.Stat(cmdline); err == nil {
@@ -255,6 +286,18 @@ func executablePath(cmdline string) string {
 		}
 	}
 	return ""
+}
+
+// isPathLike is "absolute on some platform": a unix root or a Windows drive.
+// Anything else (a bare `node app.js`) is a command, not a path, and must
+// never be stat'd — the prefix search would otherwise probe the working
+// directory for files named after command words.
+func isPathLike(s string) bool {
+	if strings.HasPrefix(s, "/") {
+		return true
+	}
+	return len(s) >= 3 && s[1] == ':' && (s[2] == '\\' || s[2] == '/') &&
+		((s[0] >= 'a' && s[0] <= 'z') || (s[0] >= 'A' && s[0] <= 'Z'))
 }
 
 // inspectCommand is the context-aware "how do I look into this?" command —

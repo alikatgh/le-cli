@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/charmbracelet/lipgloss"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -135,6 +136,11 @@ func TestPrintTableEmpty(t *testing.T) {
 }
 
 func TestDirCell(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// DIR is always empty on Windows (docs/COMPATIBILITY.md), and the
+		// home-abbreviation rule is written for unix path shapes.
+		t.Skip("dirCell is a unix-path rule; the column is empty on Windows")
+	}
 	home := "/Users/me"
 	cases := []struct {
 		name string
