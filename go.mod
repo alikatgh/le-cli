@@ -1,6 +1,6 @@
 module github.com/alikatgh/le-cli
 
-go 1.24.4
+go 1.26.0
 
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1
@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/sys v0.38.0
+	golang.org/x/sys v0.48.0
 )
 
 require (
