@@ -24,16 +24,17 @@ const (
 
 // Listener is one process holding one or more localhost ports.
 type Listener struct {
-	PID         int      `json:"pid"`
-	Command     string   `json:"command"`     // short name from lsof (c field)
-	CommandLine string   `json:"commandLine"` // full argv from ps
-	User        string   `json:"user"`
-	StartTime   string   `json:"startTime"` // ps lstart — authoritative recycle key
-	Cwd         string   `json:"cwd"`
-	CPU         float64  `json:"cpu"`   // ps %cpu — sustained average, may exceed 100 on multicore
-	RSS         int      `json:"rss"`   // resident set size in KB (ps rss)
-	Addrs       []string `json:"addrs"` // 127.0.0.1:3000, *:5000, [::1]:8080
-	Ports       []string `json:"ports"`
+	PID                 int      `json:"pid"`
+	Command             string   `json:"command"`     // short name from lsof (c field)
+	CommandLine         string   `json:"commandLine"` // full argv from ps
+	CommandLineFallback bool     `json:"-"`           // executable/name substituted for unavailable argv
+	User                string   `json:"user"`
+	StartTime           string   `json:"startTime"` // ps lstart — authoritative recycle key
+	Cwd                 string   `json:"cwd"`
+	CPU                 float64  `json:"cpu"`   // ps %cpu — sustained average, may exceed 100 on multicore
+	RSS                 int      `json:"rss"`   // resident set size in KB (ps rss)
+	Addrs               []string `json:"addrs"` // 127.0.0.1:3000, *:5000, [::1]:8080
+	Ports               []string `json:"ports"`
 }
 
 // Scan returns every TCP listener visible to the current user, sorted by
@@ -72,12 +73,13 @@ func isLocalEndpoint(addr string) bool {
 // psRow is what a platform's process query knows about one PID. The unix path
 // fills it from three ps calls; the Windows path from one Win32_Process query.
 type psRow struct {
-	start   string
-	user    string
-	command string
-	cpu     float64
-	rss     int
-	name    string // short name; Windows only (lsof supplies it separately on unix)
+	start           string
+	user            string
+	command         string
+	commandFallback bool
+	cpu             float64
+	rss             int
+	name            string // short name; Windows only (lsof supplies it separately on unix)
 }
 
 func portsOf(addrs []string) []string {

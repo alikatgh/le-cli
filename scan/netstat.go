@@ -147,6 +147,7 @@ func parseWinProcs(data string) map[int]psRow {
 		if p.PID <= 0 {
 			continue
 		}
+		commandFallback := strings.TrimSpace(p.Cmd) == ""
 		command := p.Cmd
 		if command == "" {
 			command = p.Exe
@@ -155,12 +156,13 @@ func parseWinProcs(data string) map[int]psRow {
 			command = p.Name
 		}
 		rows[p.PID] = psRow{
-			start:   p.Start,
-			user:    p.User,
-			command: command,
-			cpu:     p.CPU,
-			rss:     p.RSS,
-			name:    p.Name,
+			start:           p.Start,
+			user:            p.User,
+			command:         command,
+			commandFallback: commandFallback,
+			cpu:             p.CPU,
+			rss:             p.RSS,
+			name:            p.Name,
 		}
 	}
 	return rows

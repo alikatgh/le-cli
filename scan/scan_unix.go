@@ -141,6 +141,7 @@ func scanPlatform() ([]Listener, error) {
 		l.CommandLine = psInfo[pid].command
 		if l.CommandLine == "" {
 			l.CommandLine = a.command
+			l.CommandLineFallback = true
 		}
 		listeners = append(listeners, l)
 	}

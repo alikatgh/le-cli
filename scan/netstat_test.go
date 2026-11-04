@@ -97,3 +97,16 @@ func TestParseWinProcsAcceptsSingleObjectAndRejectsJunk(t *testing.T) {
 		}
 	}
 }
+
+func TestWindowsCommandFallbackKeepsArgvProvenance(t *testing.T) {
+	rows := parseWinProcs(`[{"pid":1,"name":"node.exe","cmd":null,"exe":"C:\\node\\node.exe"},{"pid":2,"name":"node.exe","cmd":"node.exe server.js","exe":"C:\\node\\node.exe"},{"pid":3,"name":"System","cmd":null,"exe":null}]`)
+	if !rows[1].commandFallback || rows[1].command == "node.exe" {
+		t.Fatalf("executable fallback provenance missing: %+v", rows[1])
+	}
+	if rows[2].commandFallback {
+		t.Fatal("actual argv was marked as fallback")
+	}
+	if !rows[3].commandFallback {
+		t.Fatal("name fallback provenance missing")
+	}
+}

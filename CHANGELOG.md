@@ -5,7 +5,26 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+- **Inspect a stable snapshot.** `p` pauses/resumes collection and the header
+  shows snapshot age. `r` takes one new sample while staying paused; an
+  in-flight live scan cannot replace the paused view.
+- **Inspection evidence.** The detail pane labels listener, command, directory,
+  start time, classification, and owner as observed, inferred, or unavailable.
+  `le list --json` adds the same provenance in `profile.evidence`. Identity
+  scores remain heuristic, and a Docker published-port association does not
+  establish process ownership. Missing/default-zero resource readings are
+  not evidence of a successful measurement.
+
+### Changed
+- Refreshes run one scan at a time, with at most one pending refresh. Selection
+  follows PID and start time through refreshes, sorting, and grouping. If start
+  time is unavailable, retaining selection requires an unchanged full command
+  line; a substituted executable name does not establish identity.
+
 ### Fixed
+- A failed scan retains the last good snapshot and its timestamp. A process
+  disappearing or its PID being reused clears selection before another action.
 - **The Windows zips carry a build-provenance attestation.** 0.1.25's did
   not: the release workflow attested `*.tar.gz` only, a glob written before
   zips existed, so `gh attestation verify le_*.zip --repo alikatgh/le-cli`

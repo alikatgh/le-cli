@@ -47,7 +47,7 @@ func TestDegenerateTerminalSizesHoldTheInvariants(t *testing.T) {
 		for _, n := range []int{0, 1, 17} {
 			var m tea.Model = New(Options{})
 			m, _ = m.Update(tea.WindowSizeMsg{Width: size.w, Height: size.h})
-			m, _ = m.Update(scannedMsg{rows: varietyRows(n), at: time.Now()})
+			m, _ = deliverScanFixture(m, scannedMsg{rows: varietyRows(n), at: time.Now()})
 
 			trail := []string{"<" + itoa(size.w) + "x" + itoa(size.h) + ">"}
 			checkInvariantsAllowingEmptyView(t, m.(model), trail)
@@ -94,7 +94,7 @@ func TestGrowingBackFromDegenerateRestoresAUsableView(t *testing.T) {
 
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
-	m, _ = m.Update(scannedMsg{rows: varietyRows(12), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: varietyRows(12), at: time.Now()})
 	m, _ = m.Update(key("G")) // cursor to the bottom, where offset is non-zero
 
 	for _, s := range degenerateSizes {

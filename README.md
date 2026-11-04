@@ -123,6 +123,30 @@ le ready 8080 -t 30s  # …but give up after 30s and exit 124 (for scripts)
 listening / stop it the right way / wait on a port / macOS housekeeping — and
 every command has its own help: `le <command> --help`.
 
+### Inspect a stable snapshot
+
+Press `p` to pause or resume. The header shows live/paused state and snapshot
+age. `r` takes one fresh snapshot while staying paused; an already-running
+live scan cannot replace the snapshot after pausing. Refresh requests share
+one scan at a time, with at most one pending refresh.
+
+Selection follows the PID **and start time** through refresh and sorting. If
+the process disappears or its PID is reused, choose a row again before acting.
+When the start time is unavailable, selection survives only with an unchanged
+full command line; a short process-name fallback does not establish identity.
+
+The detail pane distinguishes **observed**, **inferred** and **unavailable**
+evidence for listener, command, directory, start time, classification and owner.
+The same provenance is available as additive `profile.evidence` in
+`le list --json`. Identity scores remain heuristic rule scores, not measured
+probabilities. Docker publication matches infer an association with a TCP port;
+they do not verify process ownership. Missing or default-zero resource readings
+do not establish a successful measurement.
+
+This inspection approach takes inspiration from the evidence and snapshot
+workflow in [gputaskman](https://github.com/shanselman/gputaskman) (MIT); `le`
+keeps its existing collectors and stop-safety checks.
+
 ### In scripts
 
 ```sh

@@ -224,6 +224,9 @@ func summarize(view []Row, owner string) string {
 // selectedGroup returns the owner under the cursor when the cursor is on a
 // group header.
 func (m model) selectedGroup() (string, bool) {
+	if m.selectionLost {
+		return "", false
+	}
 	if m.cursor < 0 || m.cursor >= len(m.items) {
 		return "", false
 	}

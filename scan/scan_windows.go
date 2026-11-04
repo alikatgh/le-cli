@@ -51,21 +51,23 @@ func scanPlatform() ([]Listener, error) {
 		}
 		p := procs[pid]
 		l := Listener{
-			PID:         pid,
-			Command:     p.name,
-			CommandLine: p.command,
-			Addrs:       dedup(a.addrs),
-			Ports:       portsOf(a.addrs),
-			StartTime:   p.start,
-			User:        p.user,
-			CPU:         p.cpu,
-			RSS:         p.rss,
+			PID:                 pid,
+			Command:             p.name,
+			CommandLine:         p.command,
+			CommandLineFallback: p.commandFallback,
+			Addrs:               dedup(a.addrs),
+			Ports:               portsOf(a.addrs),
+			StartTime:           p.start,
+			User:                p.user,
+			CPU:                 p.cpu,
+			RSS:                 p.rss,
 		}
 		if l.Command == "" {
 			l.Command = "pid " + fmt.Sprint(pid)
 		}
 		if l.CommandLine == "" {
 			l.CommandLine = l.Command
+			l.CommandLineFallback = true
 		}
 		listeners = append(listeners, l)
 	}
