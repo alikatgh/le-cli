@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/alikatgh/le-cli/intel"
 	"github.com/alikatgh/le-cli/scan"
@@ -22,7 +22,7 @@ import (
 func checkInvariants(t *testing.T, mm model, trail []string) {
 	t.Helper()
 	checkStateInvariants(t, mm, trail)
-	if v := mm.View(); v == "" {
+	if v := mm.View().Content; v == "" {
 		t.Fatalf("empty view — after keys: %s", strings.Join(trail, " "))
 	}
 }
@@ -189,7 +189,7 @@ func TestFilterTypingHoldsTheInvariants(t *testing.T) {
 		}
 		// Backspace out again, one character at a time.
 		for i := 0; i < 10; i++ {
-			m, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+			m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
 			trail = append(trail, "<bs>")
 			checkInvariants(t, m.(model), trail)
 		}

@@ -155,6 +155,23 @@ A key rename with no entry here is a bug, not a release.
 
 ---
 
+## Go toolchain
+
+The module declares `go 1.26.0` as its minimum Go language version and
+`toolchain go1.27.3` as its preferred build toolchain. Use Go 1.27.3 for
+supported builds. The source minimum follows the Charm v2 dependency stack.
+With automatic toolchain selection enabled, Go can download the preferred
+toolchain when needed. Offline builds should install Go 1.27.3 beforehand.
+
+On macOS, binaries built with Go 1.27.3 require macOS 13 (Ventura) or later,
+per the [Go platform requirements](https://go.dev/doc/go1.27#darwin). Existing
+release artifacts retain the requirements of their original build toolchain.
+
+CI, fuzzing and release builds use Go 1.27.3. The terminal UI uses Bubble Tea
+v2.1.1, Bubbles v2.2.1 and Lip Gloss v2.0.6 together. The minimum Go version
+is 1.26.0 because Bubble Tea v2.1.1 requires it; CI verifies the preferred
+Go 1.27.3 toolchain.
+
 ## Platforms
 
 `le` runs on macOS, Linux and Windows. The stable surfaces above — exit codes

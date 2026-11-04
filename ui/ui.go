@@ -5,6 +5,7 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"image/color"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,10 +15,11 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/aymanbagabas/go-osc52/v2"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/alikatgh/le-cli/intel"
@@ -135,6 +137,19 @@ type model struct {
 // New builds the initial model from launch options.
 func New(opts Options) model {
 	ti := textinput.New()
+	// Keep the existing terminal-native input appearance. Bubbles v2's
+	// defaults add a prompt color; these explicit styles preserve v1's
+	// uncolored prompt/text and dim placeholder with its virtual cursor.
+	inputStyles := textinput.Styles{
+		Focused: textinput.StyleState{
+			Placeholder: lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
+			Suggestion:  lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
+		},
+		Cursor: textinput.CursorStyle{Blink: true},
+	}
+	inputStyles.Blurred = inputStyles.Focused
+	ti.SetStyles(inputStyles)
+	ti.SetVirtualCursor(true)
 	ti.Placeholder = "filter by port, name, folder…"
 	ti.Prompt = "/"
 	ti.CharLimit = 64
@@ -265,13 +280,19 @@ var (
 	openURL = func(url string) error {
 		switch runtime.GOOS {
 		case "darwin":
+			// #nosec G204 -- Fixed open binary; callers assemble http(s) localhost
+			// URLs from listener ports and pass one URL argument, without a shell.
 			return exec.Command("open", url).Start()
 		case "windows":
 			// No shell in between: `cmd /c start <url>` would let an `&` in a
 			// query string be read as a command separator. rundll32 takes the
 			// URL as one discrete argument. (Same choice as tools/platform_windows.go.)
+			// #nosec G204 -- Fixed rundll32 handler; callers assemble http(s)
+			// localhost URLs and pass the URL as one argv token, without cmd.exe.
 			return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
 		}
+		// #nosec G204 -- Fixed xdg-open binary; callers assemble http(s) localhost
+		// URLs from listener ports and pass one URL argument, without a shell.
 		return exec.Command("xdg-open", url).Start()
 	}
 	// copyToClipboard emits an OSC 52 sequence, which the terminal — local
@@ -309,16 +330,25 @@ var (
 	openTerminalAt = func(dir string) error {
 		switch runtime.GOOS {
 		case "darwin":
+			// #nosec G204 -- Fixed open/Terminal launcher; dir is one discrete
+			// path argument and is never interpreted by a shell.
 			return exec.Command("open", "-a", "Terminal", dir).Start()
 		case "windows":
-			// A new console window started in dir. `start` is a cmd builtin;
-			// the empty string is the window title it would otherwise take
-			// the first quoted argument for.
-			return exec.Command("cmd", "/c", "start", "", "/d", dir, "cmd").Start()
+			return windowsTerminalCommand(dir).Start()
 		}
 		return errNoTerminalLauncher
 	}
 )
+
+// windowsTerminalCommand keeps the directory out of cmd.exe's command text.
+// start is a shell builtin, so its tokens must all be fixed. The new window
+// inherits cmd.exe's working directory through Cmd.Dir, including literal shell
+// punctuation. The empty argument is start's window title.
+func windowsTerminalCommand(dir string) *exec.Cmd {
+	command := exec.Command("cmd", "/c", "start", "", "cmd")
+	command.Dir = dir
+	return command
+}
 
 var errNoTerminalLauncher = errors.New("opening a terminal window is macOS/Windows-only — use c → d to copy a cd command")
 
@@ -513,19 +543,23 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		return m.onMouse(msg)
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.onKey(msg)
 	}
 
 	if m.filtering {
 		var cmd tea.Cmd
 		m.filter, cmd = m.filter.Update(msg)
+		// Paste is a separate event in Bubble Tea v2 (including asynchronous
+		// clipboard results), so keep the visible rows in sync here too.
+		m.applyFilter()
+		m.clamp()
 		return m, cmd
 	}
 	return m, nil
 }
 
-func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Confirm dialog captures keys first.
 	if m.confirm {
 		switch msg.String() {
@@ -699,7 +733,7 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m = m.setAllGroups(m.anyExpanded())
 		}
 		return m, nil
-	case "enter", "right", "left", " ":
+	case "enter", "right", "left", "space":
 		// On a group header these fold/unfold the group. Enter on a plain
 		// row drops focus into the detail pane — the same entry as tab, so
 		// the row you're on becomes the thing you act on, like clicking a
@@ -918,15 +952,22 @@ func (m model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.help {
 		return m, nil
 	}
-	switch msg.Button {
-	case tea.MouseButtonWheelUp:
-		m.move(-1)
-		return m, nil
-	case tea.MouseButtonWheelDown:
-		m.move(1)
+	// v2 separates wheel, click, motion, and release events. Only a
+	// click may select/open a menu; dragging or releasing must not repeat it.
+	if wheel, ok := msg.(tea.MouseWheelMsg); ok {
+		switch wheel.Button {
+		case tea.MouseWheelUp:
+			m.move(-1)
+		case tea.MouseWheelDown:
+			m.move(1)
+		}
 		return m, nil
 	}
-	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && !m.filtering && !m.confirm {
+	click, ok := msg.(tea.MouseClickMsg)
+	if !ok {
+		return m, nil
+	}
+	if click.Button == tea.MouseLeft && !m.filtering && !m.confirm {
 		// A left click anywhere dismisses the action menu — same instinct as
 		// clicking outside a context menu.
 		m.actionMenu = false
@@ -937,7 +978,7 @@ func (m model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if end > len(m.items) {
 			end = len(m.items)
 		}
-		if idx := m.offset + (msg.Y - 2); msg.Y >= 2 && idx >= m.offset && idx < end {
+		if idx := m.offset + (click.Y - 2); click.Y >= 2 && idx >= m.offset && idx < end {
 			m.cursor, m.selectionLost = idx, false
 			m.clamp()
 		}
@@ -945,12 +986,12 @@ func (m model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// Right-click: the terminal's context menu. Select the row under the
 	// pointer AND pin it for the action footer — exactly the app's gesture.
 	// Right-clicking a different row just moves the menu there.
-	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonRight && !m.filtering && !m.confirm && !m.copyMenu {
+	if click.Button == tea.MouseRight && !m.filtering && !m.confirm && !m.copyMenu {
 		end := m.offset + m.listHeight()
 		if end > len(m.items) {
 			end = len(m.items)
 		}
-		if idx := m.offset + (msg.Y - 2); msg.Y >= 2 && idx >= m.offset && idx < end {
+		if idx := m.offset + (click.Y - 2); click.Y >= 2 && idx >= m.offset && idx < end {
 			m.cursor, m.selectionLost = idx, false
 			m.clamp()
 			if r, ok := m.selected(); ok {
@@ -1084,7 +1125,7 @@ func (m model) less(a, b Row) bool {
 // cpuColor and cpuCell drive the TUI's CPU column. cpuCell renders the
 // percent compactly ("818%"); cpuColor escalates dim → amber → red so a
 // runaway is impossible to miss.
-func cpuColor(pct float64) lipgloss.Color {
+func cpuColor(pct float64) color.Color {
 	switch {
 	case pct >= cpuHotPct:
 		return red
@@ -1159,7 +1200,14 @@ func (m model) listHeight() int {
 
 const detailHeight = 12
 
-func (m model) View() string {
+func (m model) View() tea.View {
+	v := tea.NewView(m.viewContent())
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
+}
+
+func (m model) viewContent() string {
 	if m.w == 0 {
 		return "starting le…"
 	}
@@ -1180,7 +1228,7 @@ func (m model) View() string {
 
 // ---- styles: see theme.go ----
 
-func riskColor(r intel.Risk) lipgloss.Color {
+func riskColor(r intel.Risk) color.Color {
 	switch r {
 	case intel.Low:
 		return green
@@ -1680,25 +1728,84 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
-// ResetTerminal undoes every terminal mode le turns on, in the order a
-// recovering terminal wants them: mouse reporting off (1000 press/release,
-// 1002 cell motion, 1003 all motion, and the 1006/1015 encodings), bracketed
-// paste off, cursor visible, alt screen left.
-//
-// It is exported because the process that turned these on is, in the case that
-// matters, already dead — `kill -9` runs no defers and no signal handlers, so
-// recovery has to come from a SECOND process. That is `le fix-terminal`.
-// Every sequence is idempotent, so sending the whole set is always safe.
-const ResetTerminal = "\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l" +
+// resetTerminalModes is the idempotent mouse/paste/cursor/screen cleanup
+// also used after Bubble Tea has already restored its keyboard protocol stack.
+const resetTerminalModes = "\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l" +
 	"\x1b[?2004l" + // bracketed paste (Bubble Tea enables it by default)
 	"\x1b[?25h" + // cursor visible
 	"\x1b[?1049l" // leave the alt screen
 
-// Run starts the TUI.
+// ResetTerminal recovers a terminal after le was killed without cleanup.
+// Bubble Tea v2 enables modifyOtherKeys and Kitty keyboard disambiguation by
+// default. Reset those in place before leaving the active screen; popping the
+// Kitty stack would consume another entry each time recovery is repeated.
+//
+// This is exported for `le fix-terminal`, a second process that can recover
+// after SIGKILL. Run's normal defer uses resetTerminalModes instead: Bubble Tea
+// already pops its Kitty keyboard entry on exit, restoring the parent's Kitty
+// settings, which must not then be overwritten by emergency keyboard resets.
+const ResetTerminal = "\x1b[>4m\x1b[=0;1u" + resetTerminalModes
+
+// terminalColorOptions preserves the v1 color environment conventions in a
+// private copy for this program. NO_COLOR takes precedence over forced color;
+// CLICOLOR=0 opts out unless CLICOLOR_FORCE is nonempty and nonzero. Normalize
+// forced color for v2's boolean parser so it can retain detected capabilities
+// and provide ANSI color even on dumb terminals or redirected output.
+func terminalColorOptions(environ []string) []tea.ProgramOption {
+	return terminalColorOptionsForPlatform(environ, runtime.GOOS == "windows")
+}
+
+func terminalColorOptionsForPlatform(environ []string, windows bool) []tea.ProgramOption {
+	normalized := normalizeTerminalColorEnv(environ, windows)
+	var noColor, cliColor, forced string
+	for _, entry := range normalized {
+		name, value, _ := strings.Cut(entry, "=")
+		switch name {
+		case "NO_COLOR":
+			noColor = value
+		case "CLICOLOR":
+			cliColor = value
+		case "CLICOLOR_FORCE":
+			forced = value
+		}
+	}
+	options := []tea.ProgramOption{tea.WithEnvironment(normalized)}
+	if noColor != "" || (cliColor == "0" && (forced == "" || forced == "0")) {
+		options = append(options, tea.WithColorProfile(colorprofile.ASCII))
+	}
+	return options
+}
+
+// Windows environment names are case-insensitive, unlike Unix names. Only
+// canonicalize these three controls for the upstream case-sensitive detector;
+// preserve unrelated entries and never mutate the caller's environment.
+func normalizeTerminalColorEnv(environ []string, windows bool) []string {
+	normalized := append([]string(nil), environ...)
+	for i, entry := range normalized {
+		name, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		if windows {
+			for _, control := range []string{"NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE"} {
+				if strings.EqualFold(name, control) {
+					name = control
+					break
+				}
+			}
+		}
+		if name == "CLICOLOR_FORCE" && value != "" && value != "0" {
+			value = "1"
+		}
+		normalized[i] = name + "=" + value
+	}
+	return normalized
+}
+
 // Run launches the TUI with the given options.
 func Run(opts Options) error {
-	p := tea.NewProgram(New(opts), tea.WithAltScreen(), tea.WithMouseCellMotion())
-	// WithMouseCellMotion puts the TERMINAL — not le — into mouse-reporting
+	p := tea.NewProgram(New(opts), terminalColorOptions(os.Environ())...)
+	// The view's MouseModeCellMotion puts the TERMINAL — not le — into mouse-reporting
 	// mode, and le owns turning it back off. Left on, the terminal reports
 	// every mouse MOVE as input for the rest of that shell's life: the prompt
 	// fills with `;62;38M65;62;38M…` and, worse, the byte-encoded modes
@@ -1707,7 +1814,7 @@ func Run(opts Options) error {
 	//
 	// Be precise about what this defer does and does not buy, because it is
 	// easy to over-trust: Bubble Tea already restores on a normal return, on a
-	// panic, and on SIGINT/SIGTERM (it installs its own handler, tea.go:286).
+	// panic, and on SIGINT/SIGTERM (it installs its own handler).
 	// This covers the remaining unwinding paths — an early error return, or a
 	// future refactor that adds one — and nothing more. A defer cannot run on
 	// SIGKILL or on Go's default SIGHUP death, so a `kill -9`'d le still leaves
@@ -1724,7 +1831,7 @@ func Run(opts Options) error {
 	// before — the one situation this line exists for.
 	// Write error discarded: if stdout is already broken there is nothing left
 	// to recover, and the terminal state is the caller's problem either way.
-	defer func() { _, _ = fmt.Fprint(os.Stdout, ResetTerminal) }()
+	defer func() { _, _ = fmt.Fprint(os.Stdout, resetTerminalModes) }()
 	_, err := p.Run()
 	return err
 }

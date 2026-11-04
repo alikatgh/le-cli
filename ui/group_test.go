@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/alikatgh/le-cli/intel"
 	"github.com/alikatgh/le-cli/scan"
@@ -233,7 +233,7 @@ func TestCursorStaysValidWhenFolding(t *testing.T) {
 		// fine either way — just must not panic or point at nothing
 		_ = ok
 	}
-	if v := mm.View(); v == "" {
+	if v := mm.View().Content; v == "" {
 		t.Error("view should still render after folding")
 	}
 }
@@ -289,7 +289,7 @@ func TestPaneFocusDropsWhenARebuildLandsOnAHeader(t *testing.T) {
 	if mm.paneFocus {
 		t.Error("pane focus should drop when the cursor no longer sits on a row")
 	}
-	if v := mm.View(); v == "" {
+	if v := mm.View().Content; v == "" {
 		t.Error("view should still render")
 	}
 }

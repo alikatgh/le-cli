@@ -34,7 +34,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.24"
+          go-version: "1.27.3"
 
       - name: fuzz ${{ matrix.fn }}
         run: go test -run '^$' -fuzz='^${{ matrix.fn }}$' -fuzztime=180s ${{ matrix.pkg }}

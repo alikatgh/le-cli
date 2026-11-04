@@ -23,6 +23,8 @@ func TestFixTerminalWritesTheRecoverySequences(t *testing.T) {
 
 	got := out.String()
 	for _, want := range []struct{ seq, why string }{
+		{"\x1b[>4m", "modifyOtherKeys keyboard reporting"},
+		{"\x1b[=0;1u", "Kitty keyboard enhancements reset in place"},
 		{"\x1b[?1000l", "mouse press/release reporting"},
 		{"\x1b[?1002l", "mouse cell-motion reporting — the mode le actually enables"},
 		{"\x1b[?1003l", "mouse all-motion reporting"},
@@ -56,7 +58,8 @@ func TestFixTerminalPrintsNothingButEscapes(t *testing.T) {
 	// stray X printed into the user's terminal in between. The literal is
 	// spelled out rather than taken from ui.ResetTerminal so the test still
 	// fails if that constant is edited wrongly.
-	want := "\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l" +
+	want := "\x1b[>4m\x1b[=0;1u" +
+		"\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l" +
 		"\x1b[?2004l\x1b[?25h\x1b[?1049l"
 	if got := out.String(); got != want {
 		t.Errorf("output = %q, want exactly the recovery sequences %q", got, want)

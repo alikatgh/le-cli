@@ -17,12 +17,22 @@ All notable changes to `le` are documented here. Format loosely follows
   not evidence of a successful measurement.
 
 ### Changed
+- Upgrade the terminal UI together to Bubble Tea v2.1.1, Bubbles v2.2.1 and
+  Lip Gloss v2.0.6. Keyboard, mouse, filtering, themes and guarded actions
+  retain their existing behavior. Building from source now requires Go 1.26.0
+  or later; the supported build toolchain is Go 1.27.3.
 - Refreshes run one scan at a time, with at most one pending refresh. Selection
   follows PID and start time through refreshes, sorting, and grouping. If start
   time is unavailable, retaining selection requires an unchanged full command
   line; a substituted executable name does not establish identity.
 
 ### Fixed
+- On Windows, opening a terminal keeps its folder path out of shell command
+  text. Spaces and punctuation such as `&`, `|`, `%` and parentheses remain
+  literal parts of the working directory.
+- `le fix-terminal` also resets the keyboard reporting modes enabled by
+  Bubble Tea v2 after an abrupt exit. Normal exit preserves the keyboard
+  protocol state restored by Bubble Tea.
 - A failed scan retains the last good snapshot and its timestamp. A process
   disappearing or its PID being reused clears selection before another action.
 - **The Windows zips carry a build-provenance attestation.** 0.1.25's did

@@ -315,13 +315,15 @@ func fixTerminalCmd() *cobra.Command {
 		Use:   "fix-terminal",
 		Short: "Undo terminal modes a killed TUI left behind",
 		Long: "Undo the terminal modes a TUI leaves behind when it is killed without\n" +
-			"getting to clean up — mouse reporting, bracketed paste, a hidden cursor,\n" +
-			"the alt screen. Symptoms are a prompt that fills with `;62;38M65;…`\n" +
-			"whenever the mouse moves, a missing cursor, or a terminal that stays\n" +
+			"getting to clean up — mouse and keyboard reporting, bracketed paste,\n" +
+			"a hidden cursor, and the alt screen. Symptoms include a prompt filled with\n" +
+			"`;62;38M65;…` on mouse movement, escape codes from ordinary keys,\n" +
+			"a missing cursor, or a terminal that stays\n" +
 			"blank after a crash.\n\n" +
-			"Every sequence it writes is idempotent, so running it on a healthy\n" +
-			"terminal does nothing. Do not redirect its output — the escapes have to\n" +
-			"reach the terminal to have any effect.\n\n" +
+			"The recovery sequences are safe to repeat. They disable enhanced keyboard\n" +
+			"reporting on the active screen, including modes another application may\n" +
+			"have enabled. Use this command to recover after a crash. Do not redirect\n" +
+			"its output — the escapes must reach the terminal to have any effect.\n\n" +
 			"`reset` does this too, and also clears your scrollback.",
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {

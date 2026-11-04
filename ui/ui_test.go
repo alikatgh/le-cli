@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/alikatgh/le-cli/intel"
 	"github.com/alikatgh/le-cli/scan"
@@ -17,15 +18,27 @@ import (
 // Drives the model headlessly through resize, data, navigation, filtering, and
 // the stop-confirm flow. Catches the panics a TTY-less CI would otherwise miss
 // (slice bounds in the row renderer, cursor clamps, negative widths).
-func key(s string) tea.KeyMsg {
-	switch s {
-	case "esc":
-		return tea.KeyMsg{Type: tea.KeyEsc}
-	case "enter":
-		return tea.KeyMsg{Type: tea.KeyEnter}
-	default:
-		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+func key(s string) tea.KeyPressMsg {
+	codes := map[string]rune{
+		"esc": tea.KeyEscape, "enter": tea.KeyEnter, "tab": tea.KeyTab,
+		"backspace": tea.KeyBackspace, "up": tea.KeyUp, "down": tea.KeyDown,
+		"left": tea.KeyLeft, "right": tea.KeyRight, "home": tea.KeyHome,
+		"end": tea.KeyEnd, "space": tea.KeySpace,
 	}
+	if code, ok := codes[s]; ok {
+		if code == tea.KeySpace {
+			return tea.KeyPressMsg{Code: code, Text: " "}
+		}
+		return tea.KeyPressMsg{Code: code}
+	}
+	if s == "ctrl+c" {
+		return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
+	}
+	runes := []rune(s)
+	if len(runes) != 1 {
+		panic("key fixture must be one printable character or a named key: " + s)
+	}
+	return tea.KeyPressMsg{Code: runes[0], Text: s}
 }
 
 func sampleRows() []Row {
@@ -43,7 +56,7 @@ func drive(t *testing.T, m tea.Model, keys ...string) tea.Model {
 	t.Helper()
 	for _, k := range keys {
 		m, _ = m.Update(key(k))
-		if s := m.(model).View(); s == "" {
+		if s := m.(model).View().Content; s == "" {
 			t.Fatalf("empty view after key %q", k)
 		}
 	}
@@ -55,7 +68,7 @@ func TestModelLifecycle(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
-	if !strings.Contains(m.(model).View(), "MongoDB") {
+	if !strings.Contains(m.(model).View().Content, "MongoDB") {
 		t.Fatal("expected MongoDB row in view")
 	}
 
@@ -114,12 +127,12 @@ func TestNarrowWindowDoesNotPanic(t *testing.T) {
 
 func TestEmptyAndLoadingRender(t *testing.T) {
 	var m tea.Model = New(Options{})
-	if m.(model).View() != "starting le…" {
+	if m.(model).View().Content != "starting le…" {
 		t.Fatal("expected pre-size placeholder")
 	}
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m, _ = deliverScanFixture(m, scannedMsg{rows: nil, at: time.Now()})
-	if v := m.(model).View(); v == "" {
+	if v := m.(model).View().Content; v == "" {
 		t.Fatal("empty-state view should not be blank")
 	}
 }
@@ -238,7 +251,7 @@ func TestMouseClickBelowVisibleRowsIsIgnored(t *testing.T) {
 	before := m.(model).cursor
 	// Y far below the visible table (data rows start at Y=2; a short window
 	// shows only a handful) — must be ignored, cursor unchanged.
-	m, _ = m.Update(tea.MouseMsg{Y: 50, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m, _ = m.Update(tea.MouseClickMsg{Y: 50, Button: tea.MouseLeft})
 	if got := m.(model).cursor; got != before {
 		t.Errorf("click far below the visible rows moved cursor to %d (was %d); want unchanged", got, before)
 	}
@@ -412,20 +425,20 @@ func TestMouse(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
-	m, _ = m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	m, _ = m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 	if m.(model).cursor != 1 {
 		t.Fatalf("wheel down => cursor %d, want 1", m.(model).cursor)
 	}
-	m, _ = m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	m, _ = m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
 	if m.(model).cursor != 0 {
 		t.Fatalf("wheel up => cursor %d, want 0", m.(model).cursor)
 	}
 	// Y=2 is the first data row; Y=4 selects index 2.
-	m, _ = m.Update(tea.MouseMsg{Y: 4, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m, _ = m.Update(tea.MouseClickMsg{Y: 4, Button: tea.MouseLeft})
 	if m.(model).cursor != 2 {
 		t.Fatalf("click Y=4 => cursor %d, want 2", m.(model).cursor)
 	}
-	if m.(model).View() == "" {
+	if m.(model).View().Content == "" {
 		t.Fatal("empty view after mouse input")
 	}
 }
@@ -570,14 +583,14 @@ func TestDirColumnIsWidthAdaptive(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	m, _ = deliverScanFixture(m, scannedMsg{rows: rows, at: time.Now()})
-	if v := m.(model).View(); !strings.Contains(v, "DIR") || !strings.Contains(v, "/code/webapp") {
+	if v := m.(model).View().Content; !strings.Contains(v, "DIR") || !strings.Contains(v, "/code/webapp") {
 		t.Errorf("wide window should show the DIR column with the cwd, got:\n%s", v)
 	}
 
 	// Narrow: the DIR column header disappears (the detail pane's lowercase
 	// "dir" line is unaffected — it always showed the cwd).
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
-	if v := m.(model).View(); strings.Contains(v, "DIR") {
+	if v := m.(model).View().Content; strings.Contains(v, "DIR") {
 		t.Errorf("narrow window should hide the DIR column header, got:\n%s", v)
 	}
 }
@@ -587,15 +600,15 @@ func TestSortHeaderShowsDirection(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m, _ = deliverScanFixture(m, scannedMsg{rows: sortRows(), at: time.Now()})
 
-	if v := m.(model).View(); !strings.Contains(v, "PORT^") {
+	if v := m.(model).View().Content; !strings.Contains(v, "PORT^") {
 		t.Errorf("expected default ascending port indicator PORT^ in view, got:\n%s", v)
 	}
 	m, _ = m.Update(key("4"))
-	if v := m.(model).View(); !strings.Contains(v, "RISK^") {
+	if v := m.(model).View().Content; !strings.Contains(v, "RISK^") {
 		t.Errorf("expected RISK^ after pressing 4, got:\n%s", v)
 	}
 	m, _ = m.Update(key("4"))
-	if v := m.(model).View(); !strings.Contains(v, "RISKv") {
+	if v := m.(model).View().Content; !strings.Contains(v, "RISKv") {
 		t.Errorf("expected RISKv after pressing 4 twice, got:\n%s", v)
 	}
 }
@@ -851,7 +864,7 @@ func TestFlashExpiresAndTheKeyHintsComeBack(t *testing.T) {
 	if mm.flashGen == 0 {
 		t.Error("a new flash should bump the generation")
 	}
-	if strings.Contains(mm.footerView(), "q quit") {
+	if strings.Contains(ansi.Strip(mm.footerView()), "q quit") {
 		t.Error("precondition: the flash should be holding the footer")
 	}
 
@@ -868,7 +881,7 @@ func TestFlashExpiresAndTheKeyHintsComeBack(t *testing.T) {
 	if mm.flash != "" {
 		t.Fatalf("flash = %q, want cleared once its timer fires", mm.flash)
 	}
-	if !strings.Contains(mm.footerView(), "q quit") {
+	if !strings.Contains(ansi.Strip(mm.footerView()), "q quit") {
 		t.Error("the key hints must return once the message expires")
 	}
 }
@@ -1111,7 +1124,7 @@ func TestViewFitsTerminalHeight(t *testing.T) {
 			name string
 			mm   model
 		}{{"table focus", m.(model)}, {"pane focus", m.(model).enterPaneFocus()}} {
-			if got := len(strings.Split(c.mm.View(), "\n")); got > h {
+			if got := len(strings.Split(c.mm.View().Content, "\n")); got > h {
 				t.Errorf("%s at terminal height %d rendered %d lines", c.name, h, got)
 			}
 		}
@@ -1384,8 +1397,8 @@ func TestHeaderOmitsStoppableCountWhenItSaysNothing(t *testing.T) {
 
 // --- Right-click action menu: the terminal's context menu. ---
 
-func rightClick(y int) tea.MouseMsg {
-	return tea.MouseMsg{Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonRight}
+func rightClick(y int) tea.MouseClickMsg {
+	return tea.MouseClickMsg{Y: y, Button: tea.MouseRight}
 }
 
 func TestRightClickSelectsRowAndOpensActionMenu(t *testing.T) {
@@ -1427,7 +1440,7 @@ func TestActionMenuEscAndLeftClickDismiss(t *testing.T) {
 	}
 
 	m, _ = m.Update(rightClick(2))
-	m, _ = m.Update(tea.MouseMsg{Y: 3, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m, _ = m.Update(tea.MouseClickMsg{Y: 3, Button: tea.MouseLeft})
 	if m.(model).actionMenu {
 		t.Fatal("a left click must dismiss the action menu, like clicking outside a context menu")
 	}

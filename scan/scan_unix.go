@@ -30,6 +30,8 @@ var cLocaleEnv = append(os.Environ(), "LC_ALL=C")
 // full Scan orchestration without shelling out. Overrides must stay
 // goroutine-safe: readPS invokes this from two goroutines at once.
 var runCmd = func(name string, args ...string) (string, error) {
+	// #nosec G204 -- Private test seam: callers select only lsof/ps with fixed
+	// flags and comma-separated strconv.Itoa PID lists; discrete argv, no shell.
 	cmd := exec.Command(name, args...)
 	cmd.Env = cLocaleEnv
 	out, err := cmd.Output()

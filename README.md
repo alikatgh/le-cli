@@ -88,14 +88,20 @@ and cmd; nothing to install alongside it. Two things work differently there,
 both on purpose — the DIR column is empty and a windowless console server
 can't be stopped gracefully — see
 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md#platforms) for the why.
+The TUI Terminal action treats folder names with spaces and shell punctuation
+literally when a folder is available.
 
-From source (Go 1.24+):
+From source (Go 1.27.3 recommended; module minimum Go 1.26.0):
 
 ```sh
 go install github.com/alikatgh/le-cli@latest   # installs as `le-cli`; rename to `le` if you like
 # or:
 git clone https://github.com/alikatgh/le-cli && cd le-cli && go build -o le .
 ```
+
+Binaries built with Go 1.27.3 require macOS 13 (Ventura) or later, per the
+[Go platform requirements](https://go.dev/doc/go1.27#darwin). Existing release
+artifacts retain the requirements of their original build toolchain.
 
 Needs `lsof` and `ps` on macOS and Linux (preinstalled on macOS; available
 on every Linux), and `netstat` + PowerShell on Windows (both built in).
