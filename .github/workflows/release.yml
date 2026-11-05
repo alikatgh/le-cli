@@ -42,12 +42,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Use the same supported compiler as CI and the release test matrix.
-      # This also covers pinned goreleaser v2.16.0's Go >= 1.26.3 requirement;
-      # the module's older source-language floor is documented separately.
+      # Use the same supported CLI compiler as CI and the release test matrix.
+      # GoReleaser itself is installed separately as its official OSS binary.
       - uses: actions/setup-go@v6
         with:
           go-version: '1.27.3'
+
+      # Install the official OSS binary; compiling the release tool's separate
+      # dependency graph broke v0.1.26 before any CLI archives were built.
+      - name: Install GoReleaser
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: 'v2.16.0'
+          install-only: true
 
       - name: Check Homebrew tap access
         id: tap
@@ -63,15 +71,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
         run: |
+          # The installer can skip checksum verification if its checksum download
+          # fails. Verify the pinned Linux x86_64 executable before executing it.
+          goreleaser_path="$(command -v goreleaser)"
+          printf '%s  %s\n' '00b06a2f8de8711ade37289b2cb61887936a8b04745414c5b23298fc8e9e3dfd' "$goreleaser_path" | sha256sum --check --strict -
           if [ "${{ steps.tap.outputs.ready }}" = "true" ]; then
-            go run github.com/goreleaser/goreleaser/v2@v2.16.0 release --clean
+            goreleaser release --clean
           else
             echo "::warning::Homebrew tap access preflight did not pass — publishing the release WITHOUT updating the tap. Bump it manually per RELEASING.md."
             # Recorded, not exited on: the release must still publish and the
             # attestation step below must still run. The job is failed at the
             # end instead — see "Tap was not updated".
             echo "TAP_SKIPPED=1" >> "$GITHUB_ENV"
-            TAP_GITHUB_TOKEN="" go run github.com/goreleaser/goreleaser/v2@v2.16.0 release --clean --skip=homebrew
+            TAP_GITHUB_TOKEN="" goreleaser release --clean --skip=homebrew
           fi
 
       # Cryptographic build provenance, verifiable with `gh attestation verify

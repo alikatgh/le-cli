@@ -3,8 +3,12 @@
 package scan
 
 import (
+	"context"
 	"errors"
+	"sync/atomic"
+
 	"fmt"
+	"github.com/alikatgh/le-cli/internal/boundedexec"
 	"os"
 	"os/exec"
 	"strconv"
@@ -41,8 +45,32 @@ var runCmd = func(name string, args ...string) (string, error) {
 // scanPlatform is the lsof + ps enumeration — the original Scan body,
 // unchanged. Scan (scan.go) sorts what it returns.
 func scanPlatform() ([]Listener, error) {
+	return scanWithRunner(runCmd)
+}
+
+// scanPlatformContext uses a per-call executor; it never changes legacy hooks.
+func scanPlatformContext(ctx context.Context) ([]Listener, error) {
+	var failed atomic.Bool
+	run := func(name string, args ...string) (string, error) {
+		out, err := boundedexec.Output(ctx, name, args...)
+		if ctx.Err() != nil || errors.Is(err, boundedexec.ErrOutputLimit) {
+			failed.Store(true)
+		}
+		return out, err
+	}
+	rows, err := scanWithRunner(run)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if failed.Load() {
+		return nil, boundedexec.ErrOutputLimit
+	}
+	return rows, err
+}
+
+func scanWithRunner(run func(string, ...string) (string, error)) ([]Listener, error) {
 	// -FpcnPT: field output keyed by p(pid) c(command) n(name/addr) plus protocol/state.
-	out, err := runCmd("lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-FpcnPT")
+	out, err := run("lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-FpcnPT")
 	if err != nil {
 		// Only a silent exit 1 with no listener output means no matches.
 		// Other failures can leave the collection incomplete, even if lsof
@@ -113,8 +141,8 @@ func scanPlatform() ([]Listener, error) {
 	var cwds map[int]string
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); psInfo = readPS(csv) }()
-	go func() { defer wg.Done(); cwds = readCwd(csv) }()
+	go func() { defer wg.Done(); psInfo = readPSWithRunner(csv, run) }()
+	go func() { defer wg.Done(); cwds = readCwdWithRunner(csv, run) }()
 	wg.Wait()
 
 	listeners := make([]Listener, 0, len(order))
@@ -147,7 +175,7 @@ func scanPlatform() ([]Listener, error) {
 	return listeners, nil
 }
 
-// readPS pulls start time, user, and full command line for a set of PIDs.
+// readPSWithRunner pulls start time, user, and full command line for a set of PIDs.
 // Two separate ps calls, each with its free-form field last, rather than one
 // "pid,lstart,user,command" line: lstart is a fixed 5 tokens, but user and
 // command are both variable-length and can each contain spaces (a
@@ -155,7 +183,7 @@ func scanPlatform() ([]Listener, error) {
 // both into one line made a single unexpected space silently shift every
 // field after it. Putting each variable field last in its own call makes it
 // unambiguously "everything remaining on the line," however many words long.
-func readPS(csv string) map[int]psRow {
+func readPSWithRunner(csv string, run func(string, ...string) (string, error)) map[int]psRow {
 	// The ps calls are independent subprocess invocations — run them
 	// concurrently. Each writes only to its own local `out` string during the
 	// concurrent phase; the parse passes below run after wg.Wait(), so they
@@ -171,9 +199,9 @@ func readPS(csv string) map[int]psRow {
 	var out1, out2, out3 string
 	var wg sync.WaitGroup
 	wg.Add(3)
-	go func() { defer wg.Done(); out1, _ = runCmd("ps", "-ww", "-p", csv, "-o", "pid=,lstart=,user=") }()
-	go func() { defer wg.Done(); out2, _ = runCmd("ps", "-ww", "-p", csv, "-o", "pid=,command=") }()
-	go func() { defer wg.Done(); out3, _ = runCmd("ps", "-ww", "-p", csv, "-o", "pid=,%cpu=,rss=") }()
+	go func() { defer wg.Done(); out1, _ = run("ps", "-ww", "-p", csv, "-o", "pid=,lstart=,user=") }()
+	go func() { defer wg.Done(); out2, _ = run("ps", "-ww", "-p", csv, "-o", "pid=,command=") }()
+	go func() { defer wg.Done(); out3, _ = run("ps", "-ww", "-p", csv, "-o", "pid=,%cpu=,rss=") }()
 	wg.Wait()
 
 	rows := map[int]psRow{}
@@ -276,10 +304,10 @@ func parsePSResourceLines(out string, rows map[int]psRow) {
 	}
 }
 
-// readCwd maps PID -> working directory via lsof's cwd file descriptor.
-func readCwd(csv string) map[int]string {
+// readCwdWithRunner maps PID -> working directory via lsof's cwd file descriptor.
+func readCwdWithRunner(csv string, run func(string, ...string) (string, error)) map[int]string {
 	cwds := map[int]string{}
-	out, _ := runCmd("lsof", "-a", "-d", "cwd", "-p", csv, "-Fpn")
+	out, _ := run("lsof", "-a", "-d", "cwd", "-p", csv, "-Fpn")
 	cur := -1
 	for _, line := range strings.Split(out, "\n") {
 		if line == "" {

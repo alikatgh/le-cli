@@ -66,7 +66,7 @@ func evidenceFor(l scan.Listener, p Profile, env Env) Evidence {
 	}
 	switch {
 	case p.Source == SrcContainer:
-		e.Owner = EvidenceItem{Inferred, "Docker published-port association; process ownership unverified."}
+		e.Owner = EvidenceItem{Unavailable, DockerManualReason}
 	case env.LaunchdByPID[l.PID] != "":
 		e.Owner = EvidenceItem{Observed, fmt.Sprintf("launchd reports PID %d as %s.", l.PID, env.LaunchdByPID[l.PID])}
 	case p.Source != "" && p.Source != SrcUnknown:

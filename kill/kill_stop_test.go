@@ -9,16 +9,16 @@ import (
 	"github.com/alikatgh/le-cli/scan"
 )
 
-// withStubs saves the exec-indirection vars (and the two intel re-verify
+// withStubs saves the exec-indirection vars (and the intel re-verify
 // functions Stop depends on) and returns a restore func, so each test can
 // stub only what it needs without leaking into the next.
 func withStubs(t *testing.T) func() {
 	t.Helper()
 	oOut, oComb, oTerm := runOutput, runCombined, termProcess
-	oBrew, oDocker := intel.BrewServiceKnown, intel.DockerContainerID
+	oBrew, oLaunchd := intel.BrewServiceKnown, intel.LaunchdLabelPID
 	return func() {
 		runOutput, runCombined, termProcess = oOut, oComb, oTerm
-		intel.BrewServiceKnown, intel.DockerContainerID = oBrew, oDocker
+		intel.BrewServiceKnown, intel.LaunchdLabelPID = oBrew, oLaunchd
 	}
 }
 
@@ -164,6 +164,7 @@ func TestStopBrewHappyPath(t *testing.T) {
 	defer withStubs(t)()
 	runOutput = func(name string, args ...string) (string, error) { return "T\n", nil }
 	intel.BrewServiceKnown = func(formula string) bool { return true }
+	intel.LaunchdLabelPID = func(label string) (int, bool) { return 1, true }
 	var ranBrew bool
 	runCombined = func(name string, args ...string) (string, error) {
 		if name == "brew" {
@@ -196,6 +197,7 @@ func TestStopBrewSurfacesCommandError(t *testing.T) {
 	defer withStubs(t)()
 	runOutput = func(name string, args ...string) (string, error) { return "T\n", nil }
 	intel.BrewServiceKnown = func(formula string) bool { return true }
+	intel.LaunchdLabelPID = func(label string) (int, bool) { return 1, true }
 	runCombined = func(name string, args ...string) (string, error) {
 		return "Error: service failed", errors.New("exit 1")
 	}
@@ -203,40 +205,5 @@ func TestStopBrewSurfacesCommandError(t *testing.T) {
 	_, err := Stop(l, intel.Profile{StopKind: intel.StopBrew, StopArg: "redis"})
 	if err == nil || !strings.Contains(err.Error(), "service failed") {
 		t.Errorf("expected the brew error surfaced, got %v", err)
-	}
-}
-
-func TestStopDockerHappyPath(t *testing.T) {
-	defer withStubs(t)()
-	runOutput = func(name string, args ...string) (string, error) { return "T\n", nil }
-	intel.DockerContainerID = func(name string) (string, bool) { return "abc123", true }
-	var ranDocker bool
-	runCombined = func(name string, args ...string) (string, error) {
-		if name == "docker" {
-			ranDocker = true
-		}
-		return "", nil
-	}
-	l := scan.Listener{PID: 1, StartTime: "T"}
-	p := intel.Profile{StopKind: intel.StopDocker, StopArg: "web", StopArgID: "abc123"}
-	msg, err := Stop(l, p)
-	if err != nil || !ranDocker || !strings.Contains(msg, "web") {
-		t.Errorf("docker happy path: msg=%q err=%v ranDocker=%v", msg, err, ranDocker)
-	}
-}
-
-func TestStopDockerRefusesChangedContainer(t *testing.T) {
-	defer withStubs(t)()
-	runOutput = func(name string, args ...string) (string, error) { return "T\n", nil }
-	// Scan captured abc123, but the name now resolves to a different container.
-	intel.DockerContainerID = func(name string) (string, bool) { return "def456", true }
-	runCombined = func(name string, args ...string) (string, error) {
-		t.Fatal("must not docker stop a container whose ID changed since scan")
-		return "", nil
-	}
-	l := scan.Listener{PID: 1, StartTime: "T"}
-	p := intel.Profile{StopKind: intel.StopDocker, StopArg: "web", StopArgID: "abc123"}
-	if _, err := Stop(l, p); err == nil {
-		t.Error("Stop should refuse a container whose ID changed since scan")
 	}
 }

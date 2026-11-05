@@ -30,7 +30,8 @@ identifies the owner and picks the stop strategy that actually works:
 
 - plain process → `SIGTERM`
 - Homebrew service → `brew services stop <formula>`
-- Docker container → `docker stop <name>`
+- Docker/container networking helpers → manual inspection; automatic container
+  commands and helper signals require verified local engine and process ownership
 - launchd user agent → `launchctl bootout gui/<uid>/<label>` (a KeepAlive
   agent respawns if you kill the PID — the supervisor is the thing to stop)
 - system / app helpers → flagged with their launchd label, and it refuses
@@ -40,9 +41,11 @@ identifies the owner and picks the stop strategy that actually works:
 the difference from `lsof | kill` — the point isn't sending the signal, it's
 refusing to send one when the process behind a PID can no longer be proven to
 be the process you scanned. Every stop re-verifies the PID's start time
-immediately before acting (and a launchd bootout re-verifies the label→PID
-mapping, and a docker stop the name→ID mapping); anything unproven gets a
-refusal and a "rescan", never a guess. Fast-recycling PIDs are exactly the
+immediately before supported actions (and a launchd bootout re-verifies the
+label→PID mapping). Docker published ports, names and IDs do not prove a local
+engine owns a listener, so Docker actions are refused with a manual inspection
+reason. An ambient Docker context may select a remote engine.
+Fast-recycling PIDs are exactly the
 boring edge case where naive port-killers hit the wrong process.
 
 Every stop re-checks the PID's start time first, so a recycled PID is never the
@@ -105,7 +108,8 @@ artifacts retain the requirements of their original build toolchain.
 
 Needs `lsof` and `ps` on macOS and Linux (preinstalled on macOS; available
 on every Linux), and `netstat` + PowerShell on Windows (both built in).
-Homebrew and Docker detection are best-effort — missing tools are skipped.
+Homebrew and launchd detection are best-effort — missing tools are skipped.
+Docker engines are not queried; recognized container helpers require manual handling.
 
 ## Use
 
@@ -123,11 +127,20 @@ le hold 3000       # squat a port so nothing else can grab it (Ctrl-C frees)
 le wait 5432       # block until a port frees up
 le ready 8080      # block until something starts listening (open-when-ready)
 le ready 8080 -t 30s  # …but give up after 30s and exit 124 (for scripts)
+le companion       # optional foreground connection for the Mac app (macOS)
 ```
 
 `le --help` groups the full command set by what it's for — see what's
 listening / stop it the right way / wait on a port / macOS housekeeping — and
 every command has its own help: `le <command> --help`.
+
+### Optional Mac app companion
+
+Run `le companion` explicitly when you want the Mac app to inspect host processes
+and request supported actions. Select its private connection file in the app;
+keep the Terminal command running and press Ctrl-C to disconnect. No background
+agent is installed. See the [protocol and limits](docs/COMPANION.md). The Mac
+app's standalone tools and ordinary CLI commands work without this connection.
 
 ### Inspect a stable snapshot
 
@@ -145,8 +158,8 @@ The detail pane distinguishes **observed**, **inferred** and **unavailable**
 evidence for listener, command, directory, start time, classification and owner.
 The same provenance is available as additive `profile.evidence` in
 `le list --json`. Identity scores remain heuristic rule scores, not measured
-probabilities. Docker publication matches infer an association with a TCP port;
-they do not verify process ownership. Missing or default-zero resource readings
+probabilities. Container helper names are hints; their engine/container ownership
+remains unavailable. Missing or default-zero resource readings
 do not establish a successful measurement.
 
 This inspection approach takes inspiration from the evidence and snapshot

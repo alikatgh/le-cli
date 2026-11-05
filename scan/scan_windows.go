@@ -3,6 +3,7 @@
 package scan
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 )
@@ -82,4 +83,9 @@ func readWinProcs(pids []int) map[int]psRow {
 	out, _ := runCmd("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
 		"-Command", winProcScript(pids))
 	return parseWinProcs(out)
+}
+
+// The companion command is not available on Windows.
+func scanPlatformContext(ctx context.Context) ([]Listener, error) {
+	return nil, fmt.Errorf("context collector is only available on Unix")
 }

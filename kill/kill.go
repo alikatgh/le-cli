@@ -37,7 +37,7 @@ var (
 
 func execCombined(name string, args ...string) (string, error) {
 	// #nosec G204 -- Private test seam: production callers select fixed brew,
-	// docker, launchctl, or taskkill binaries; targets are discrete argv, no shell.
+	// launchctl or taskkill binaries; targets are discrete argv, no shell.
 	cmd := exec.Command(name, args...)
 	cmd.Env = append(os.Environ(), "LC_ALL=C") // stable English errors, like runOutput (LE-394)
 	out, err := cmd.CombinedOutput()
@@ -57,55 +57,31 @@ func execOutput(name string, args ...string) (string, error) {
 // Stop runs the recommended action for a listener. It returns a short result
 // message, or an error if the PID was recycled or the action failed.
 func Stop(l scan.Listener, p intel.Profile) (string, error) {
+	if p.StopKind == intel.StopDocker || intel.IsDockerHelper(l) {
+		return "", fmt.Errorf("%s", intel.DockerManualReason)
+	}
 	if !stillSame(l) {
 		return "", fmt.Errorf("pid %d is gone or was recycled to a different process — rescan", l.PID)
 	}
 	switch p.StopKind {
 	case intel.StopBrew:
-		// Formula names aren't reassignable to a different service the way
-		// container names are, so this only catches "already uninstalled/
-		// removed between scan and stop" — a narrower check than Docker's,
-		// intentionally, not an oversight. See intel.BrewServiceKnown.
+		// A manual Cellar process may use the same formula as a different
+		// registered service. Verify the selected PID belongs to the formula's
+		// current user-domain launchd job before asking brew to act on it.
 		if !intel.BrewServiceKnown(p.StopArg) {
 			return "", fmt.Errorf("brew formula %q is no longer known to brew services — rescan and try again", p.StopArg)
+		}
+		if pid, ok := intel.LaunchdLabelPID("homebrew.mxcl." + p.StopArg); !launchdGuardOK(l.PID, pid, ok) {
+			return "", fmt.Errorf("homebrew user service no longer owns the selected process — rescan and try again")
 		}
 		out, err := runCombined("brew", "services", "stop", p.StopArg)
 		if err != nil {
 			return "", cmdErr("brew services stop "+p.StopArg, out, err)
 		}
 		return "brew services stop " + p.StopArg, nil
-	case intel.StopDocker:
-		// The PID guard above only confirms the scanned PID (often a Docker
-		// helper process, not the container itself) hasn't been recycled —
-		// it says nothing about whether p.StopArg still names the same
-		// container. Container names, unlike PIDs, can be freed and
-		// reassigned, so re-check the ID immediately before acting.
-		var curID string
-		var lookupOK bool
-		if p.StopArgID != "" {
-			curID, lookupOK = intel.DockerContainerID(p.StopArg)
-		}
-		if !dockerGuardOK(p.StopArgID, curID, lookupOK) {
-			return "", fmt.Errorf("container %q changed since scan — rescan and try again", p.StopArg)
-		}
-		// Stop by the immutable container ID, not the reassignable name. The
-		// guard above confirmed name->ID at check time, but stopping by name
-		// still leaves a TOCTOU window where a freed name could be grabbed by a
-		// different container before this call lands. Fall back to the name only
-		// when no ID was captured at scan time. Report the friendly name — it's
-		// the container the user recognizes. Mirrors the mac app. (LE-060)
-		target := p.StopArgID
-		if target == "" {
-			target = p.StopArg
-		}
-		out, err := runCombined("docker", "stop", target)
-		if err != nil {
-			return "", cmdErr("docker stop "+p.StopArg, out, err)
-		}
-		return "docker stop " + p.StopArg, nil
 	case intel.StopLaunchd:
-		// Same shape as the Docker guard: stillSame above only confirms the
-		// PID; it says nothing about whether the label still maps to this
+		// stillSame confirms only the PID; it says nothing about whether the
+		// label still maps to this
 		// process. Labels can be bootout'd and re-bootstrapped onto a
 		// different program between scan and stop.
 		if pid, ok := intel.LaunchdLabelPID(p.StopArg); !launchdGuardOK(l.PID, pid, ok) {
@@ -127,12 +103,13 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 	}
 }
 
-// Restart bounces a managed listener through its real owner — the CLI half of
-// the app's Restart-listener tool. Only brew-managed and Docker listeners can
-// be restarted (they have a supervisor to bounce them through); anything else
-// has no clean restart, so we refuse rather than guess. Mirrors Stop's identity
-// re-verification (recycled PID, changed container) before acting.
+// Restart bounces a Homebrew-managed listener through its verified owner.
+// Docker actions remain refused until local engine and container ownership can
+// be established; a published-port match is insufficient.
 func Restart(l scan.Listener, p intel.Profile) (string, error) {
+	if p.StopKind == intel.StopDocker || intel.IsDockerHelper(l) {
+		return "", fmt.Errorf("%s", intel.DockerManualReason)
+	}
 	if !stillSame(l) {
 		return "", fmt.Errorf("pid %d is gone or was recycled to a different process — rescan", l.PID)
 	}
@@ -141,50 +118,22 @@ func Restart(l scan.Listener, p intel.Profile) (string, error) {
 		if !intel.BrewServiceKnown(p.StopArg) {
 			return "", fmt.Errorf("brew formula %q is no longer known to brew services — rescan and try again", p.StopArg)
 		}
+		if pid, ok := intel.LaunchdLabelPID("homebrew.mxcl." + p.StopArg); !launchdGuardOK(l.PID, pid, ok) {
+			return "", fmt.Errorf("homebrew user service no longer owns the selected process — rescan and try again")
+		}
 		out, err := runCombined("brew", "services", "restart", p.StopArg)
 		if err != nil {
 			return "", cmdErr("brew services restart "+p.StopArg, out, err)
 		}
 		return "brew services restart " + p.StopArg, nil
-	case intel.StopDocker:
-		var curID string
-		var lookupOK bool
-		if p.StopArgID != "" {
-			curID, lookupOK = intel.DockerContainerID(p.StopArg)
-		}
-		if !dockerGuardOK(p.StopArgID, curID, lookupOK) {
-			return "", fmt.Errorf("container %q changed since scan — rescan and try again", p.StopArg)
-		}
-		target := p.StopArgID
-		if target == "" {
-			target = p.StopArg
-		}
-		out, err := runCombined("docker", "restart", target)
-		if err != nil {
-			return "", cmdErr("docker restart "+p.StopArg, out, err)
-		}
-		return "docker restart " + p.StopArg, nil
 	default:
-		return "", fmt.Errorf("no safe restart for %s — only brew-managed or Docker listeners can be bounced through their owner", p.Identity)
+		return "", fmt.Errorf("no safe restart for %s — only a verified Homebrew-managed listener can be bounced through its owner", p.Identity)
 	}
 }
 
-// launchdGuardOK is the label-recycling comparison, pure for the same reason
-// as dockerGuardOK below: a refactor that inverts it silently defeats the
-// protection, so give the tests something to pin.
+// launchdGuardOK is the exact label-recycling comparison.
 func launchdGuardOK(scanPID, curPID int, lookupOK bool) bool {
 	return lookupOK && curPID == scanPID
-}
-
-// dockerGuardOK is the exact comparison the container-recycling guard rests
-// on, pulled out as a pure function so a future refactor that inverts it
-// (silently defeating the protection this exists to provide) has something to
-// catch it.
-func dockerGuardOK(scanArgID, curID string, lookupOK bool) bool {
-	if scanArgID == "" {
-		return true // nothing was captured at scan time to compare against
-	}
-	return lookupOK && curID == scanArgID
 }
 
 // stillSame confirms the live PID is still the process we scanned. Start time

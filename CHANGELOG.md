@@ -5,17 +5,21 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
-## [0.1.26] - 2026-11-05
+## [0.1.27] - 2026-11-05
 
 ### Added
+- **Optional local Mac companion.** `le companion` runs an explicit foreground,
+  authenticated loopback session for host inspection and supported controls.
+  The private connection file is selected in the Mac app; no background agent
+  is installed. Standalone CLI use remains free and independent.
 - **Inspect a stable snapshot.** `p` pauses/resumes collection and the header
   shows snapshot age. `r` takes one new sample while staying paused; an
   in-flight live scan cannot replace the paused view.
 - **Inspection evidence.** The detail pane labels listener, command, directory,
   start time, classification, and owner as observed, inferred, or unavailable.
   `le list --json` adds the same provenance in `profile.evidence`. Identity
-  scores remain heuristic, and a Docker published-port association does not
-  establish process ownership. Missing/default-zero resource readings are
+  scores remain heuristic; container-helper names do not establish engine or
+  container ownership, and inferred Docker controls are unavailable. Missing/default-zero resource readings are
   not evidence of a successful measurement.
 
 ### Changed
@@ -29,6 +33,19 @@ All notable changes to `le` are documented here. Format loosely follows
   line; a substituted executable name does not establish identity.
 
 ### Fixed
+- Docker port matches no longer attribute unrelated local listeners to containers
+  from an ambient, potentially remote engine. Automatic Docker stop/restart and
+  raw signals to recognized container helpers are intentionally refused until
+  local engine and listener ownership can be verified. Inspect the intended
+  engine and manage the container manually; a name or container ID alone is
+  insufficient.
+- Homebrew stop and restart require the formula's current launchd job to own
+  the captured listener PID. A manually launched binary from the same Cellar
+  installation cannot inherit actions for a different managed service.
+- **Release packaging uses the official pinned GoReleaser 2.16.0 binary.**
+  Its executable hash is checked before use, and Ubuntu CI now validates the
+  release configuration with that same binary before a tag is pushed.
+  This avoids compiling the release tool's separate dependency graph.
 - Unix collector errors are reported as failures instead of successful empty
   lists. Failed JSON scans emit no snapshot, the TUI retains its last good
   rows, and watch-all does not report false listener disappearances.
@@ -45,6 +62,12 @@ All notable changes to `le` are documented here. Format loosely follows
   zips existed, so `gh attestation verify le_*.zip --repo alikatgh/le-cli`
   returned 404 for the very binaries a Windows user would most want to
   check. Every archive is attested from the next release on.
+
+## [0.1.26] - 2026-11-05
+
+Release packaging failed while compiling GoReleaser's dependencies, before any
+CLI archives or GitHub release were published. The tag is retained unchanged;
+its intended features and fixes are carried forward in 0.1.27 above.
 
 ## [0.1.25] - 2026-09-03
 
@@ -533,7 +556,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.26...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.27...HEAD
+[0.1.27]: https://github.com/alikatgh/le-cli/compare/v0.1.25...v0.1.27
 [0.1.26]: https://github.com/alikatgh/le-cli/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/alikatgh/le-cli/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/alikatgh/le-cli/compare/v0.1.23...v0.1.24

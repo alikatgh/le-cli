@@ -53,6 +53,81 @@ jobs:
         with:
           go-version: '1.27.3'
 
+      - name: Install GoReleaser
+        if: runner.os == 'Linux'
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: 'v2.16.0'
+          install-only: true
+
+      - name: Check GoReleaser configuration
+        if: runner.os == 'Linux'
+        run: |
+          # Fail closed even if the installer could not download checksums.txt.
+          goreleaser_path="$(command -v goreleaser)"
+          printf '%s  %s\n' '00b06a2f8de8711ade37289b2cb61887936a8b04745414c5b23298fc8e9e3dfd' "$goreleaser_path" | sha256sum --check --strict -
+          # v2.16.0: exit 2 means valid config with deprecated properties.
+          # `brews` is intentional: our Formula serves both macOS and Linux.
+          # Invalid configuration takes exit 1 even when also deprecated.
+          check_status=0
+          goreleaser check || check_status=$?
+          case "$check_status" in
+            0) ;;
+            2) echo "::notice::Accepting the documented legacy brews Formula deprecation; schema validation passed." ;;
+            *) exit "$check_status" ;;
+          esac
+
+      - name: Package release snapshot
+        if: runner.os == 'Linux'
+        timeout-minutes: 12
+        run: |
+          # No credentials are supplied. Snapshot skips publish/announce, and
+          # --skip=publish makes that boundary explicit. No artifact upload.
+          goreleaser release --snapshot --clean --skip=publish --timeout=10m --parallelism=2
+          python3 - <<'PYARCHIVES'
+          import hashlib
+          from pathlib import Path
+          import tarfile
+          import zipfile
+
+          dist = Path("dist")
+          archives = sorted([*dist.glob("*.tar.gz"), *dist.glob("*.zip")])
+          expected = {
+              f"_{system}_{arch}.{extension}"
+              for system, extension in (("darwin", "tar.gz"), ("linux", "tar.gz"), ("windows", "zip"))
+              for arch in ("amd64", "arm64")
+          }
+          assert len(archives) == 6, "expected four tarballs and two Windows zips"
+          assert all(sum(path.name.endswith(suffix) for path in archives) == 1 for suffix in expected), "archive platform/architecture set changed"
+          checksums = {}
+          for line in (dist / "checksums.txt").read_text().splitlines():
+              digest, name = line.split(maxsplit=1)
+              checksums[name.lstrip("*")] = digest
+          man_pages = {path.as_posix() for path in Path("man").glob("*.1")}
+          assert man_pages, "expected committed man pages"
+          for path in archives:
+              assert path.stat().st_size > 0, "empty archive"
+              with path.open("rb") as source:
+                  assert hashlib.file_digest(source, "sha256").hexdigest() == checksums[path.name], "archive checksum mismatch"
+              if path.suffix == ".zip":
+                  with zipfile.ZipFile(path) as archive:
+                      assert archive.testzip() is None, "corrupt zip member"
+                      names = set(archive.namelist())
+                  binary = "le.exe"
+              else:
+                  with tarfile.open(path, "r:gz") as archive:
+                      names = set(archive.getnames())
+                  binary = "le"
+              assert binary in names and man_pages <= names, "binary or man pages missing"
+          formula = (dist / "homebrew/Formula/le.rb").read_text()
+          assert "on_macos" in formula and "on_linux" in formula, "Formula must support macOS and Linux"
+          for path in archives:
+              if path.name.endswith(".tar.gz"):
+                  assert path.name in formula and checksums[path.name] in formula, "Formula must reference all four tarballs and their checksums"
+          print("Verified six snapshot archives, checksums, binaries/man pages, and the macOS/Linux Formula.")
+          PYARCHIVES
+
       - name: gofmt
         # Not on Windows: actions/checkout there honours core.autocrlf, so
         # every .go file arrives with CRLF endings and gofmt -l lists the

@@ -2,7 +2,7 @@
 .TH "LE" "1" "Aug 2026" "le" ""
 
 .SH NAME
-le-restart - Restart a listener via its owner (brew services / docker)
+le-restart - Restart a listener through its verified Homebrew service
 
 
 .SH SYNOPSIS
@@ -10,9 +10,9 @@ le-restart - Restart a listener via its owner (brew services / docker)
 
 
 .SH DESCRIPTION
-Bounce a brew-managed or Dockerised listener through its real owner —
-no kill -9 surprises. Only managed listeners can be restarted; anything
-else has no supervisor to bounce it through.
+Restart a listener only when its current Homebrew launchd job owns the
+selected PID. Docker/container helpers require manual ownership checks;
+other listeners have no supported automatic restart.
 
 
 .SH OPTIONS

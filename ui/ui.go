@@ -422,12 +422,6 @@ func isPathLike(s string) bool {
 // much the owner knows: a supervisor's own inspect beats a generic lsof.
 func inspectCommand(r Row) string {
 	switch r.P.StopKind {
-	case intel.StopDocker:
-		id := r.P.StopArgID
-		if id == "" {
-			id = r.P.StopArg
-		}
-		return "docker inspect " + id
 	case intel.StopBrew:
 		return "brew services info " + r.P.StopArg
 	case intel.StopLaunchd:
@@ -441,17 +435,12 @@ func inspectCommand(r Row) string {
 // command. StopAvoid rows return false: suggesting a kill command for a
 // process the app itself refuses to auto-stop would undercut the refusal.
 func stopCommand(r Row) (string, bool) {
+	if r.P.StopKind == intel.StopDocker || intel.IsDockerHelper(r.L) {
+		return "", false
+	}
 	switch r.P.StopKind {
 	case intel.StopBrew:
 		return "brew services stop " + r.P.StopArg, true
-	case intel.StopDocker:
-		// Copy the immutable container ID, not the reassignable name — a pasted
-		// `docker stop <name>` can hit the wrong container after name reuse. (LE-420)
-		id := r.P.StopArgID
-		if id == "" {
-			id = r.P.StopArg
-		}
-		return "docker stop " + id, true
 	case intel.StopLaunchd:
 		return "launchctl bootout " + intel.LaunchdDomainTarget(r.P.StopArg), true
 	case intel.StopAvoid:
@@ -648,7 +637,7 @@ func (m model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.copyResult(fmt.Sprintf("ps -p %d -o pid,pcpu,pmem,lstart,command", r.L.PID))
 			m.copyMenu = false
 		case "i":
-			// Context-aware inspect — docker/brew/launchctl know more about
+			// Context-aware inspect — brew/launchctl know more about
 			// their own service than lsof does. The "avoid — inspect first"
 			// advice is only actionable if inspecting is one keystroke.
 			m.copyResult(inspectCommand(r))
@@ -939,7 +928,9 @@ func (m *model) togglePin(r Row) {
 }
 
 func (m *model) requestStop(r Row) {
-	if r.P.StopKind == intel.StopAvoid {
+	if r.P.StopKind == intel.StopDocker || intel.IsDockerHelper(r.L) {
+		m.flash, m.flashErr = intel.DockerManualReason, true
+	} else if r.P.StopKind == intel.StopAvoid {
 		m.flash, m.flashErr = "won't auto-stop "+r.P.Identity+" — inspect it first", true
 	} else {
 		m.confirm, m.confirmed = true, r // pin the row now; see the y/enter handler
@@ -1643,7 +1634,7 @@ func (m model) helpView() string {
 	for _, r := range rows {
 		b.WriteString("  " + keySt.Render(fmt.Sprintf("%-8s", r[0])) + dimSt.Render(r[1]) + "\n")
 	}
-	b.WriteString("\n" + dimSt.Render("  stop strategy is automatic: plain processes get TERM, Homebrew\n  services get `brew services stop`, containers get `docker stop`.\n  Every stop re-checks the PID first, so a recycled PID is never hit.\n"))
+	b.WriteString("\n" + dimSt.Render("  stop strategy is automatic: plain processes get TERM, Homebrew\n  services get `brew services stop`. Container helpers require manual\n  engine and ownership checks. Supported stops re-check PID identity.\n"))
 	b.WriteString("\n" + headSt.Render("  settings") + "\n")
 	b.WriteString("  " + dimSt.Render(fmt.Sprintf("%-10s", "theme")) + currentTheme() + dimSt.Render("   (themes: "+strings.Join(ThemeNames(), " / ")+")") + "\n")
 	b.WriteString("  " + dimSt.Render(fmt.Sprintf("%-10s", "refresh")) + m.interval.String() + "\n")
@@ -1659,7 +1650,7 @@ func stopShort(p intel.Profile) string {
 	case intel.StopBrew:
 		return "brew services stop " + p.StopArg
 	case intel.StopDocker:
-		return "docker stop " + p.StopArg
+		return "manual — Docker ownership unverified"
 	case intel.StopLaunchd:
 		// Show the full domain target the stop actually uses, not the bare
 		// label — the detail pane must match the copied command. (LE-419/427)
@@ -1866,7 +1857,7 @@ func portCellFor(m model, r Row) string {
 // table where it repeated on 12 of 15 rows — in the widest column — while
 // RISK and OWNER already said it. An em dash means "nothing to run here".
 func stopTableCell(p intel.Profile) string {
-	if p.StopKind == intel.StopAvoid {
+	if p.StopKind == intel.StopAvoid || p.StopKind == intel.StopDocker {
 		return "—"
 	}
 	return stopShort(p)
@@ -1878,7 +1869,7 @@ func stopTableCell(p intel.Profile) string {
 // system helpers stops competing with the handful of rows that are yours.
 func railFor(r Row) string {
 	st := lipgloss.NewStyle().Foreground(riskColor(r.P.Risk))
-	if r.P.StopKind == intel.StopAvoid {
+	if !actionable(r) {
 		return st.Faint(true).Render("│")
 	}
 	return st.Render("▎")
@@ -1886,7 +1877,9 @@ func railFor(r Row) string {
 
 // actionable reports whether this row is one the user can actually do
 // something about. It is the axis the table's visual weight is organised on.
-func actionable(r Row) bool { return r.P.StopKind != intel.StopAvoid }
+func actionable(r Row) bool {
+	return r.P.StopKind != intel.StopAvoid && r.P.StopKind != intel.StopDocker && !intel.IsDockerHelper(r.L)
+}
 
 // whatStyleFor gives the identity its weight: bold for a row you can act on,
 // normal for one le refuses to stop. Not dimmed — the app name is the whole

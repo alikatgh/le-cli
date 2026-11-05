@@ -37,7 +37,7 @@ func TestEvidenceNameFallbackIsNotCommandObservation(t *testing.T) {
 func TestEvidenceOwnerUsesExactObservation(t *testing.T) {
 	l := scan.Listener{PID: 42, Command: "docker-proxy", CommandLine: "/usr/bin/docker-proxy -host-port 3000", Ports: []string{"3000"}}
 	e := Make(l, Env{DockerByPort: map[string]dockerContainer{"3000": {name: "web", id: "abc"}}, LaunchdByPID: map[int]string{42: "app.helper"}}).Evidence
-	if e.Owner.Status != Inferred || !strings.Contains(e.Owner.Detail, "process ownership unverified") {
+	if e.Owner.Status != Unavailable || !strings.Contains(e.Owner.Detail, "ownership are unverified") {
 		t.Fatalf("port association claimed as process ownership: %+v", e.Owner)
 	}
 	l.Command, l.CommandLine = "node", "node server.js"

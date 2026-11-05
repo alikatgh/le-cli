@@ -61,8 +61,8 @@ func newRoot(version string, allPlatforms bool) *cobra.Command {
 		Use:   "le",
 		Short: "See and stop what's listening on localhost",
 		Long: "le — a fast, keyboard-driven view of localhost listeners, with the\n" +
-			"smarts to stop each the right way (TERM, brew services, docker, or\n" +
-			"launchctl bootout).\n\n" +
+			"supported stop strategies (TERM, brew services, or launchctl bootout).\n" +
+			"Docker/container helpers require manual ownership checks.\n\n" +
 			"The rule underneath every stop: identity must be proven, twice. le\n" +
 			"re-verifies the PID's start time immediately before signalling, so a\n" +
 			"recycled PID never gets a signal meant for something else — and when\n" +
@@ -103,6 +103,7 @@ func newRoot(version string, allPlatforms bool) *cobra.Command {
 	group(root, "ports", "Hold, wait on, or forward a port (for scripts):",
 		holdCmd(), waitCmd(), readyCmd(), openCmd(), forwardCmd())
 	if allPlatforms || runtime.GOOS == "darwin" {
+		group(root, "companion", "Optional Mac app connection:", companionCmd(version))
 		group(root, "macos", "macOS housekeeping:",
 			flushDNSCmd(), restartDockCmd(), restartFinderCmd(), sleepDisplayCmd(), keepAwakeCmd())
 	} else {
@@ -216,8 +217,9 @@ func stopCmd() *cobra.Command {
 		Use:   "stop [port|pid]",
 		Short: "Stop a listener (by port/pid) or every listener under a directory",
 		Long: "Stop a listener on a port (or the process with a PID), each via its\n" +
-			"recommended strategy (TERM / brew services / docker / launchctl). The\n" +
-			"PID's start time is re-verified immediately before any signal, so a\n" +
+			"recommended strategy (TERM / brew services / launchctl). Container\n" +
+			"helpers require manual ownership checks. The PID's start time is\n" +
+			"re-verified immediately before any signal, so a\n" +
 			"recycled PID is never the one that gets signalled — and when identity\n" +
 			"can't be proven, le refuses and asks you to rescan instead of guessing.\n\n" +
 			"With --dir, stop every listener whose working directory is that path or\n" +
@@ -420,10 +422,10 @@ func checkCmd() *cobra.Command {
 func restartCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "restart [port|pid]",
-		Short: "Restart a listener via its owner (brew services / docker)",
-		Long: "Bounce a brew-managed or Dockerised listener through its real owner —\n" +
-			"no kill -9 surprises. Only managed listeners can be restarted; anything\n" +
-			"else has no supervisor to bounce it through.",
+		Short: "Restart a listener through its verified Homebrew service",
+		Long: "Restart a listener only when its current Homebrew launchd job owns the\n" +
+			"selected PID. Docker/container helpers require manual ownership checks;\n" +
+			"other listeners have no supported automatic restart.",
 		Args: usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error { return runRestart(args[0]) },
 	}
@@ -713,7 +715,7 @@ func runStopDir(dir string, dryRun, asJSON bool) error {
 }
 
 // runRestart bounces every listener matching the port/pid through its service
-// owner (brew/docker). Mirrors runStop's resolve-then-act shape.
+// verified Homebrew owner. Mirrors runStop's resolve-then-act shape.
 func runRestart(target string) error {
 	rows, err := gather()
 	if err != nil {
