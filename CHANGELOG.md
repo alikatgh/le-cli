@@ -5,25 +5,21 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
-### Fixed
-- Docker port matches no longer attribute unrelated local listeners to containers
-  from an ambient, potentially remote engine. Automatic Docker stop/restart and
-  raw signals to recognized container helpers are intentionally refused until
-  local engine and listener ownership can be verified. Inspect the intended
-  engine and manage the container manually; a name or container ID alone is
-  insufficient.
-
 ## [0.1.27] - 2026-11-05
 
 ### Added
+- **Optional local Mac companion.** `le companion` runs an explicit foreground,
+  authenticated loopback session for host inspection and supported controls.
+  The private connection file is selected in the Mac app; no background agent
+  is installed. Standalone CLI use remains free and independent.
 - **Inspect a stable snapshot.** `p` pauses/resumes collection and the header
   shows snapshot age. `r` takes one new sample while staying paused; an
   in-flight live scan cannot replace the paused view.
 - **Inspection evidence.** The detail pane labels listener, command, directory,
   start time, classification, and owner as observed, inferred, or unavailable.
   `le list --json` adds the same provenance in `profile.evidence`. Identity
-  scores remain heuristic, and a Docker published-port association does not
-  establish process ownership. Missing/default-zero resource readings are
+  scores remain heuristic; container-helper names do not establish engine or
+  container ownership, and inferred Docker controls are unavailable. Missing/default-zero resource readings are
   not evidence of a successful measurement.
 
 ### Changed
@@ -37,6 +33,12 @@ All notable changes to `le` are documented here. Format loosely follows
   line; a substituted executable name does not establish identity.
 
 ### Fixed
+- Docker port matches no longer attribute unrelated local listeners to containers
+  from an ambient, potentially remote engine. Automatic Docker stop/restart and
+  raw signals to recognized container helpers are intentionally refused until
+  local engine and listener ownership can be verified. Inspect the intended
+  engine and manage the container manually; a name or container ID alone is
+  insufficient.
 - Homebrew stop and restart require the formula's current launchd job to own
   the captured listener PID. A manually launched binary from the same Cellar
   installation cannot inherit actions for a different managed service.

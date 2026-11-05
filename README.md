@@ -127,11 +127,20 @@ le hold 3000       # squat a port so nothing else can grab it (Ctrl-C frees)
 le wait 5432       # block until a port frees up
 le ready 8080      # block until something starts listening (open-when-ready)
 le ready 8080 -t 30s  # …but give up after 30s and exit 124 (for scripts)
+le companion       # optional foreground connection for the Mac app (macOS)
 ```
 
 `le --help` groups the full command set by what it's for — see what's
 listening / stop it the right way / wait on a port / macOS housekeeping — and
 every command has its own help: `le <command> --help`.
+
+### Optional Mac app companion
+
+Run `le companion` explicitly when you want the Mac app to inspect host processes
+and request supported actions. Select its private connection file in the app;
+keep the Terminal command running and press Ctrl-C to disconnect. No background
+agent is installed. See the [protocol and limits](docs/COMPANION.md). The Mac
+app's standalone tools and ordinary CLI commands work without this connection.
 
 ### Inspect a stable snapshot
 
