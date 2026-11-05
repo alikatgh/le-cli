@@ -8,6 +8,7 @@
 package scan
 
 import (
+	"context"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,6 +47,19 @@ func Scan() ([]Listener, error) {
 	if err != nil {
 		return nil, err
 	}
+	return sortListeners(listeners), nil
+}
+
+// ScanContext is the cancellable collector used by the optional companion.
+func ScanContext(ctx context.Context) ([]Listener, error) {
+	listeners, err := scanPlatformContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return sortListeners(listeners), nil
+}
+
+func sortListeners(listeners []Listener) []Listener {
 	sort.Slice(listeners, func(i, j int) bool {
 		pi, pj := firstPortNum(listeners[i].Ports), firstPortNum(listeners[j].Ports)
 		if pi != pj {
@@ -53,7 +67,7 @@ func Scan() ([]Listener, error) {
 		}
 		return listeners[i].PID < listeners[j].PID
 	})
-	return listeners, nil
+	return listeners
 }
 
 // isLocalEndpoint reports whether an lsof address is reachable from localhost:
