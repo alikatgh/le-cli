@@ -65,9 +65,11 @@ func TestDescriptorPreservesExistingAndSymlinkPaths(t *testing.T) {
 		})
 	}
 	root := t.TempDir()
+	// #nosec G301 -- Deliberately nonprivate t.TempDir fixture verifies unsafe directories are rejected and preserved.
 	if err := os.Mkdir(filepath.Join(root, "le"), 0755); err != nil {
 		t.Fatal(err)
 	}
+	// #nosec G301 -- Deliberately nonprivate t.TempDir fixture verifies unsafe directories are rejected and preserved.
 	if err := os.Mkdir(filepath.Join(root, "le", "companion"), 0755); err != nil {
 		t.Fatal(err)
 	}

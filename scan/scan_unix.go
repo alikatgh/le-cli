@@ -175,7 +175,7 @@ func scanWithRunner(run func(string, ...string) (string, error)) ([]Listener, er
 	return listeners, nil
 }
 
-// readPS pulls start time, user, and full command line for a set of PIDs.
+// readPSWithRunner pulls start time, user, and full command line for a set of PIDs.
 // Two separate ps calls, each with its free-form field last, rather than one
 // "pid,lstart,user,command" line: lstart is a fixed 5 tokens, but user and
 // command are both variable-length and can each contain spaces (a
@@ -183,10 +183,6 @@ func scanWithRunner(run func(string, ...string) (string, error)) ([]Listener, er
 // both into one line made a single unexpected space silently shift every
 // field after it. Putting each variable field last in its own call makes it
 // unambiguously "everything remaining on the line," however many words long.
-func readPS(csv string) map[int]psRow {
-	return readPSWithRunner(csv, runCmd)
-}
-
 func readPSWithRunner(csv string, run func(string, ...string) (string, error)) map[int]psRow {
 	// The ps calls are independent subprocess invocations — run them
 	// concurrently. Each writes only to its own local `out` string during the
@@ -308,11 +304,7 @@ func parsePSResourceLines(out string, rows map[int]psRow) {
 	}
 }
 
-// readCwd maps PID -> working directory via lsof's cwd file descriptor.
-func readCwd(csv string) map[int]string {
-	return readCwdWithRunner(csv, runCmd)
-}
-
+// readCwdWithRunner maps PID -> working directory via lsof's cwd file descriptor.
 func readCwdWithRunner(csv string, run func(string, ...string) (string, error)) map[int]string {
 	cwds := map[int]string{}
 	out, _ := run("lsof", "-a", "-d", "cwd", "-p", csv, "-Fpn")

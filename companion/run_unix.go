@@ -42,7 +42,7 @@ func Run(ctx context.Context, version string, out io.Writer) error {
 	if err != nil {
 		return errors.New("unable to open local companion listener")
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	var tokenBytes [32]byte
 	if _, err = rand.Read(tokenBytes[:]); err != nil {
 		return errors.New("secure randomness unavailable")
@@ -63,7 +63,7 @@ func Run(ctx context.Context, version string, out io.Writer) error {
 // tests. Fixtures supply synthetic credentials and an injected engine, so they
 // never inspect user connection files or invoke real service managers.
 func serveSession(ctx context.Context, listener net.Listener, out io.Writer, configDir string, descriptor Descriptor, engine Engine) error {
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
 	path, retire, err := writeDescriptor(configDir, descriptor)
@@ -104,11 +104,11 @@ func openDirectoryAt(parent int, name string, private bool) (int, error) {
 	}
 	var stat unix.Stat_t
 	if err = unix.Fstat(fd, &stat); err != nil {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		return -1, err
 	}
 	if int(stat.Uid) != os.Getuid() || (private && stat.Mode&0777 != 0700) {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		return -1, errors.New("directory is not privately owned")
 	}
 	return fd, nil
@@ -121,24 +121,24 @@ func writeDescriptor(configDir string, descriptor Descriptor) (string, func(), e
 	if err != nil {
 		return "", nil, err
 	}
-	defer unix.Close(root)
+	defer func() { _ = unix.Close(root) }()
 	le, err := openDirectoryAt(root, "le", false)
 	if err != nil {
 		return "", nil, err
 	}
-	defer unix.Close(le)
+	defer func() { _ = unix.Close(le) }()
 	dir, err := openDirectoryAt(le, "companion", true)
 	if err != nil {
 		return "", nil, err
 	}
 	name := "connection-" + descriptor.ServerInstance + ".leconnection"
 	if !idPattern.MatchString(descriptor.ServerInstance) {
-		unix.Close(dir)
+		_ = unix.Close(dir)
 		return "", nil, errors.New("invalid instance identifier")
 	}
 	fd, err := unix.Openat(dir, name, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0600)
 	if err != nil {
-		unix.Close(dir)
+		_ = unix.Close(dir)
 		return "", nil, err
 	}
 	file := os.NewFile(uintptr(fd), name)
@@ -162,11 +162,11 @@ func writeDescriptor(configDir string, descriptor Descriptor) (string, func(), e
 	}
 	if err != nil {
 		_ = unix.Unlinkat(dir, name, 0)
-		unix.Close(dir)
+		_ = unix.Close(dir)
 		return "", nil, err
 	}
 	retire := func() {
-		defer unix.Close(dir)
+		defer func() { _ = unix.Close(dir) }()
 		var current unix.Stat_t
 		if unix.Fstatat(dir, name, &current, unix.AT_SYMLINK_NOFOLLOW) == nil && current.Dev == owned.Dev && current.Ino == owned.Ino && current.Size == owned.Size {
 			currentFD, openErr := unix.Openat(dir, name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)

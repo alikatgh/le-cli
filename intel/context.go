@@ -49,7 +49,7 @@ func DockerContainerIDContext(ctx context.Context, name string) (string, bool, e
 	if err := ctx.Err(); err != nil {
 		return "", false, err
 	}
-	return "", false, errors.New("Docker engine and local listener ownership are unverified")
+	return "", false, errors.New("docker engine and local listener ownership are unverified")
 }
 
 func LaunchdLabelPIDContext(ctx context.Context, label string) (int, bool, error) {

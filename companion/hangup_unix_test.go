@@ -66,6 +66,7 @@ func TestCompanionHangupHelper(t *testing.T) {
 
 func TestHangupCancelsOwnedWorkAndRetiresDescriptor(t *testing.T) {
 	root := t.TempDir()
+	// #nosec G204 G702 -- Re-executes this owned Go test binary with a fixed test selector and no shell.
 	command := exec.Command(os.Args[0], "-test.run=^TestCompanionHangupHelper$")
 	command.Env = append(os.Environ(), "LE_OWNED_HANGUP_FIXTURE=1", "LE_OWNED_HANGUP_ROOT="+root)
 	var diagnostics bytes.Buffer
@@ -75,11 +76,12 @@ func TestHangupCancelsOwnedWorkAndRetiresDescriptor(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
-	defer command.Process.Kill()
+	defer func() { _ = command.Process.Kill() }()
 	pidPath := filepath.Join(root, "owned-pids")
 	var pids []int
 	deadline := time.Now().Add(4 * time.Second)
 	for time.Now().Before(deadline) {
+		// #nosec G304 -- pidPath is an owned fixture file beneath this test's t.TempDir.
 		data, err := os.ReadFile(pidPath)
 		if err == nil {
 			fields := strings.Fields(string(data))
@@ -104,7 +106,7 @@ func TestHangupCancelsOwnedWorkAndRetiresDescriptor(t *testing.T) {
 	if len(pids) != 2 {
 		t.Fatal("owned fixture did not start")
 	}
-	defer syscall.Kill(-pids[0], syscall.SIGKILL)
+	defer func() { _ = syscall.Kill(-pids[0], syscall.SIGKILL) }()
 	descriptorPath := filepath.Join(root, "le", "companion", "connection-"+testDescriptor().ServerInstance+".leconnection")
 	if _, err := os.Stat(descriptorPath); err != nil {
 		t.Fatal("owned descriptor not created", err)

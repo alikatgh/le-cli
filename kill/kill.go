@@ -72,7 +72,7 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 			return "", fmt.Errorf("brew formula %q is no longer known to brew services — rescan and try again", p.StopArg)
 		}
 		if pid, ok := intel.LaunchdLabelPID("homebrew.mxcl." + p.StopArg); !launchdGuardOK(l.PID, pid, ok) {
-			return "", fmt.Errorf("Homebrew user service no longer owns the selected process — rescan and try again")
+			return "", fmt.Errorf("homebrew user service no longer owns the selected process — rescan and try again")
 		}
 		out, err := runCombined("brew", "services", "stop", p.StopArg)
 		if err != nil {
@@ -119,7 +119,7 @@ func Restart(l scan.Listener, p intel.Profile) (string, error) {
 			return "", fmt.Errorf("brew formula %q is no longer known to brew services — rescan and try again", p.StopArg)
 		}
 		if pid, ok := intel.LaunchdLabelPID("homebrew.mxcl." + p.StopArg); !launchdGuardOK(l.PID, pid, ok) {
-			return "", fmt.Errorf("Homebrew user service no longer owns the selected process — rescan and try again")
+			return "", fmt.Errorf("homebrew user service no longer owns the selected process — rescan and try again")
 		}
 		out, err := runCombined("brew", "services", "restart", p.StopArg)
 		if err != nil {

@@ -23,6 +23,7 @@ func TestCancellationRetiresOwnedDescendants(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > 2*time.Second {
 		t.Fatal("execution was not bounded", err, time.Since(start))
 	}
+	// #nosec G304 -- pidPath is an owned fixture file beneath this test's t.TempDir.
 	data, err := os.ReadFile(pidPath)
 	if err != nil {
 		t.Fatal(err)

@@ -43,6 +43,7 @@ func Output(ctx context.Context, name string, args ...string) (string, error) {
 func run(ctx context.Context, name string, args ...string) (string, error) {
 	childCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// #nosec G204 -- Internal callers choose fixed executables/flags; data is discrete argv, never constructed shell text.
 	cmd := exec.CommandContext(childCtx, name, args...)
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	cmd.WaitDelay = 300 * time.Millisecond
