@@ -15,10 +15,10 @@ import (
 func withStubs(t *testing.T) func() {
 	t.Helper()
 	oOut, oComb, oTerm := runOutput, runCombined, termProcess
-	oBrew, oDocker := intel.BrewServiceKnown, intel.DockerContainerID
+	oBrew, oDocker, oLaunchd := intel.BrewServiceKnown, intel.DockerContainerID, intel.LaunchdLabelPID
 	return func() {
 		runOutput, runCombined, termProcess = oOut, oComb, oTerm
-		intel.BrewServiceKnown, intel.DockerContainerID = oBrew, oDocker
+		intel.BrewServiceKnown, intel.DockerContainerID, intel.LaunchdLabelPID = oBrew, oDocker, oLaunchd
 	}
 }
 
@@ -164,6 +164,7 @@ func TestStopBrewHappyPath(t *testing.T) {
 	defer withStubs(t)()
 	runOutput = func(name string, args ...string) (string, error) { return "T\n", nil }
 	intel.BrewServiceKnown = func(formula string) bool { return true }
+	intel.LaunchdLabelPID = func(label string) (int, bool) { return 1, true }
 	var ranBrew bool
 	runCombined = func(name string, args ...string) (string, error) {
 		if name == "brew" {
@@ -196,6 +197,7 @@ func TestStopBrewSurfacesCommandError(t *testing.T) {
 	defer withStubs(t)()
 	runOutput = func(name string, args ...string) (string, error) { return "T\n", nil }
 	intel.BrewServiceKnown = func(formula string) bool { return true }
+	intel.LaunchdLabelPID = func(label string) (int, bool) { return 1, true }
 	runCombined = func(name string, args ...string) (string, error) {
 		return "Error: service failed", errors.New("exit 1")
 	}

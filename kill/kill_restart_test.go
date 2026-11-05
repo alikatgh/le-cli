@@ -15,6 +15,7 @@ func TestRestartBrewBouncesFormula(t *testing.T) {
 	defer withStubs(t)()
 	runOutput = func(name string, args ...string) (string, error) { return "T\n", nil } // stillSame guard
 	intel.BrewServiceKnown = func(formula string) bool { return true }
+	intel.LaunchdLabelPID = func(label string) (int, bool) { return 1, true }
 
 	var got []string
 	runCombined = func(name string, args ...string) (string, error) {

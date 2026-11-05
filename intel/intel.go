@@ -187,18 +187,7 @@ func LaunchdDomainTarget(label string) string {
 //
 // A package var, not a plain func, so kill's tests can stub the re-verify
 // result without real launchd jobs.
-var LaunchdLabelPID = func(label string) (int, bool) {
-	out, err := exec.Command("launchctl", "list").Output()
-	if err != nil {
-		return 0, false
-	}
-	for pid, l := range parseLaunchdList(string(out)) {
-		if l == label {
-			return pid, true
-		}
-	}
-	return 0, false
-}
+var LaunchdLabelPID = launchdLabelPID
 
 // The host side may be a single port (`0.0.0.0:8080->`) or a RANGE
 // (`0.0.0.0:8000-8010->`); capture the optional upper bound so ranged

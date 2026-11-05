@@ -62,12 +62,14 @@ func Stop(l scan.Listener, p intel.Profile) (string, error) {
 	}
 	switch p.StopKind {
 	case intel.StopBrew:
-		// Formula names aren't reassignable to a different service the way
-		// container names are, so this only catches "already uninstalled/
-		// removed between scan and stop" — a narrower check than Docker's,
-		// intentionally, not an oversight. See intel.BrewServiceKnown.
+		// A manual Cellar process may use the same formula as a different
+		// registered service. Verify the selected PID belongs to the formula's
+		// current user-domain launchd job before asking brew to act on it.
 		if !intel.BrewServiceKnown(p.StopArg) {
 			return "", fmt.Errorf("brew formula %q is no longer known to brew services — rescan and try again", p.StopArg)
+		}
+		if pid, ok := intel.LaunchdLabelPID("homebrew.mxcl." + p.StopArg); !launchdGuardOK(l.PID, pid, ok) {
+			return "", fmt.Errorf("Homebrew user service no longer owns the selected process — rescan and try again")
 		}
 		out, err := runCombined("brew", "services", "stop", p.StopArg)
 		if err != nil {
@@ -140,6 +142,9 @@ func Restart(l scan.Listener, p intel.Profile) (string, error) {
 	case intel.StopBrew:
 		if !intel.BrewServiceKnown(p.StopArg) {
 			return "", fmt.Errorf("brew formula %q is no longer known to brew services — rescan and try again", p.StopArg)
+		}
+		if pid, ok := intel.LaunchdLabelPID("homebrew.mxcl." + p.StopArg); !launchdGuardOK(l.PID, pid, ok) {
+			return "", fmt.Errorf("Homebrew user service no longer owns the selected process — rescan and try again")
 		}
 		out, err := runCombined("brew", "services", "restart", p.StopArg)
 		if err != nil {

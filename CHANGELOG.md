@@ -29,6 +29,9 @@ All notable changes to `le` are documented here. Format loosely follows
   line; a substituted executable name does not establish identity.
 
 ### Fixed
+- Homebrew stop and restart require the formula's current launchd job to own
+  the captured listener PID. A manually launched binary from the same Cellar
+  installation cannot inherit actions for a different managed service.
 - **Release packaging uses the official pinned GoReleaser 2.16.0 binary.**
   Its executable hash is checked before use, and Ubuntu CI now validates the
   release configuration with that same binary before a tag is pushed.
