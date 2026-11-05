@@ -5,7 +5,7 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
-## [0.1.26] - 2026-11-05
+## [0.1.27] - 2026-11-05
 
 ### Added
 - **Inspect a stable snapshot.** `p` pauses/resumes collection and the header
@@ -29,6 +29,10 @@ All notable changes to `le` are documented here. Format loosely follows
   line; a substituted executable name does not establish identity.
 
 ### Fixed
+- **Release packaging uses the official pinned GoReleaser 2.16.0 binary.**
+  Its executable hash is checked before use, and Ubuntu CI now validates the
+  release configuration with that same binary before a tag is pushed.
+  This avoids compiling the release tool's separate dependency graph.
 - Unix collector errors are reported as failures instead of successful empty
   lists. Failed JSON scans emit no snapshot, the TUI retains its last good
   rows, and watch-all does not report false listener disappearances.
@@ -45,6 +49,12 @@ All notable changes to `le` are documented here. Format loosely follows
   zips existed, so `gh attestation verify le_*.zip --repo alikatgh/le-cli`
   returned 404 for the very binaries a Windows user would most want to
   check. Every archive is attested from the next release on.
+
+## [0.1.26] - 2026-11-05
+
+Release packaging failed while compiling GoReleaser's dependencies, before any
+CLI archives or GitHub release were published. The tag is retained unchanged;
+its intended features and fixes are carried forward in 0.1.27 above.
 
 ## [0.1.25] - 2026-09-03
 
@@ -533,7 +543,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.26...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.27...HEAD
+[0.1.27]: https://github.com/alikatgh/le-cli/compare/v0.1.25...v0.1.27
 [0.1.26]: https://github.com/alikatgh/le-cli/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/alikatgh/le-cli/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/alikatgh/le-cli/compare/v0.1.23...v0.1.24

@@ -41,6 +41,45 @@ The [`release`](.github/workflows/release.yml) workflow runs the tests, then
 (amd64 + arm64), attaches the tarballs (binary + man pages) +
 `checksums.txt` to a GitHub release, and attests build provenance.
 
+**Release-tool installation:** CI and release install the official OSS
+GoReleaser `v2.16.0` through
+[`goreleaser/goreleaser-action` v7.3.0](https://github.com/goreleaser/goreleaser-action/tree/a4f02ab5355a589de60d917a659ce617ed19b3de),
+pinned to commit `a4f02ab5355a589de60d917a659ce617ed19b3de`, with
+`install-only: true`. That mode adds the executable to `PATH` and returns
+before running it. The existing release branches then call `goreleaser`;
+Go `1.27.3` remains the CLI compiler. Version 2.16.0 is retained because this
+project intentionally uses its deprecated `brews` configuration.
+
+The official installer warns and can use an unverified download if
+`checksums.txt` cannot be downloaded. Both workflows therefore check the
+installed Linux x86_64 executable against the fixed SHA256 below **before its
+first execution**, failing the job on a mismatch. Cosign verification remains
+optional in the installer; the fixed executable digest is enforced regardless.
+
+```text
+Official v2.16.0 goreleaser_Linux_x86_64.tar.gz
+archive bytes: 26196931
+archive sha256: eaae05b5eba07533bd0f06846b68c808399504784df00c62eb219541fc04e5e2
+goreleaser ELF64 x86_64 member bytes: 85733538
+goreleaser executable sha256: 00b06a2f8de8711ade37289b2cb61887936a8b04745414c5b23298fc8e9e3dfd
+```
+
+The receipt was established on 2026-11-05 from the
+[official release asset](https://github.com/goreleaser/goreleaser/releases/tag/v2.16.0):
+archive size and published SHA256 matched, then the bounded tar member was
+streamed into SHA256 without extracting or executing it. The temporary archive
+was removed. Deliberate tool upgrades must refresh the action pin, tool version
+and executable digest together.
+
+The existing Ubuntu CI job installs and verifies this same binary, then runs
+`goreleaser check` without publishing, archiving, artifact uploads or tap
+credentials. Actual archive/publication checks still belong to the tag workflow.
+
+The `v0.1.26` attempt failed while compiling the release tool's dependency graph
+(`grpc@v1.80.0`: undefined `http2.TrailerPrefix`), before any CLI archives or
+GitHub release were published. Preserve that tag; the repair and its original
+feature set are prepared as `v0.1.27` with a `v0.1.25...v0.1.27` comparison.
+
 **Homebrew tap automation:** the `TAP_GITHUB_TOKEN` secret should be a
 fine-grained PAT with `contents: write` on `alikatgh/homebrew-tap`. Before
 GoReleaser, a bounded preflight checks that the tap's default branch is
