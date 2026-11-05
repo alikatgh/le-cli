@@ -11,8 +11,9 @@ le-stop - Stop a listener (by port/pid) or every listener under a directory
 
 .SH DESCRIPTION
 Stop a listener on a port (or the process with a PID), each via its
-recommended strategy (TERM / brew services / docker / launchctl). The
-PID's start time is re-verified immediately before any signal, so a
+recommended strategy (TERM / brew services / launchctl). Container
+helpers require manual ownership checks. The PID's start time is
+re-verified immediately before any signal, so a
 recycled PID is never the one that gets signalled — and when identity
 can't be proven, le refuses and asks you to rescan instead of guessing.
 
