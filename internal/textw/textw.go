@@ -15,7 +15,7 @@ package textw
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // Width returns the number of terminal columns s occupies.

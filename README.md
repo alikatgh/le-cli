@@ -88,14 +88,20 @@ and cmd; nothing to install alongside it. Two things work differently there,
 both on purpose — the DIR column is empty and a windowless console server
 can't be stopped gracefully — see
 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md#platforms) for the why.
+The TUI Terminal action treats folder names with spaces and shell punctuation
+literally when a folder is available.
 
-From source (Go 1.24+):
+From source (Go 1.27.3 recommended; module minimum Go 1.26.0):
 
 ```sh
 go install github.com/alikatgh/le-cli@latest   # installs as `le-cli`; rename to `le` if you like
 # or:
 git clone https://github.com/alikatgh/le-cli && cd le-cli && go build -o le .
 ```
+
+Binaries built with Go 1.27.3 require macOS 13 (Ventura) or later, per the
+[Go platform requirements](https://go.dev/doc/go1.27#darwin). Existing release
+artifacts retain the requirements of their original build toolchain.
 
 Needs `lsof` and `ps` on macOS and Linux (preinstalled on macOS; available
 on every Linux), and `netstat` + PowerShell on Windows (both built in).
@@ -122,6 +128,30 @@ le ready 8080 -t 30s  # …but give up after 30s and exit 124 (for scripts)
 `le --help` groups the full command set by what it's for — see what's
 listening / stop it the right way / wait on a port / macOS housekeeping — and
 every command has its own help: `le <command> --help`.
+
+### Inspect a stable snapshot
+
+Press `p` to pause or resume. The header shows live/paused state and snapshot
+age. `r` takes one fresh snapshot while staying paused; an already-running
+live scan cannot replace the snapshot after pausing. Refresh requests share
+one scan at a time, with at most one pending refresh.
+
+Selection follows the PID **and start time** through refresh and sorting. If
+the process disappears or its PID is reused, choose a row again before acting.
+When the start time is unavailable, selection survives only with an unchanged
+full command line; a short process-name fallback does not establish identity.
+
+The detail pane distinguishes **observed**, **inferred** and **unavailable**
+evidence for listener, command, directory, start time, classification and owner.
+The same provenance is available as additive `profile.evidence` in
+`le list --json`. Identity scores remain heuristic rule scores, not measured
+probabilities. Docker publication matches infer an association with a TCP port;
+they do not verify process ownership. Missing or default-zero resource readings
+do not establish a successful measurement.
+
+This inspection approach takes inspiration from the evidence and snapshot
+workflow in [gputaskman](https://github.com/shanselman/gputaskman) (MIT); `le`
+keeps its existing collectors and stop-safety checks.
 
 ### In scripts
 

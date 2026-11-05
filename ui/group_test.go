@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/alikatgh/le-cli/intel"
 	"github.com/alikatgh/le-cli/scan"
@@ -43,7 +43,7 @@ func grouped(t *testing.T, rows []Row) tea.Model {
 	t.Helper()
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 128, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: rows, at: time.Now()})
 	m, _ = m.Update(key("z"))
 	if !m.(model).grouped {
 		t.Fatal("z should turn grouping on")
@@ -233,7 +233,7 @@ func TestCursorStaysValidWhenFolding(t *testing.T) {
 		// fine either way — just must not panic or point at nothing
 		_ = ok
 	}
-	if v := mm.View(); v == "" {
+	if v := mm.View().Content; v == "" {
 		t.Error("view should still render after folding")
 	}
 }
@@ -260,7 +260,7 @@ func TestZTogglesBackToFlat(t *testing.T) {
 func TestGroupOptionStartsGrouped(t *testing.T) {
 	var m tea.Model = New(Options{Group: true})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 128, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: machineRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: machineRows(), at: time.Now()})
 	if !m.(model).grouped {
 		t.Error("Options.Group should start the TUI grouped")
 	}
@@ -275,7 +275,7 @@ func TestGroupOptionStartsGrouped(t *testing.T) {
 func TestPaneFocusDropsWhenARebuildLandsOnAHeader(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 128, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: machineRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: machineRows(), at: time.Now()})
 	m, _ = m.Update(key("tab")) // focus the pane on the first row, flat
 	if !m.(model).paneFocus {
 		t.Fatal("expected pane focus on a row")
@@ -289,7 +289,7 @@ func TestPaneFocusDropsWhenARebuildLandsOnAHeader(t *testing.T) {
 	if mm.paneFocus {
 		t.Error("pane focus should drop when the cursor no longer sits on a row")
 	}
-	if v := mm.View(); v == "" {
+	if v := mm.View().Content; v == "" {
 		t.Error("view should still render")
 	}
 }

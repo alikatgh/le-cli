@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // TestRandomKeySequencesHoldTheInvariants sweeps realistic window sizes — the
@@ -47,7 +47,7 @@ func TestDegenerateTerminalSizesHoldTheInvariants(t *testing.T) {
 		for _, n := range []int{0, 1, 17} {
 			var m tea.Model = New(Options{})
 			m, _ = m.Update(tea.WindowSizeMsg{Width: size.w, Height: size.h})
-			m, _ = m.Update(scannedMsg{rows: varietyRows(n), at: time.Now()})
+			m, _ = deliverScanFixture(m, scannedMsg{rows: varietyRows(n), at: time.Now()})
 
 			trail := []string{"<" + itoa(size.w) + "x" + itoa(size.h) + ">"}
 			checkInvariantsAllowingEmptyView(t, m.(model), trail)
@@ -78,7 +78,7 @@ func TestDegenerateTerminalSizesHoldTheInvariants(t *testing.T) {
 func checkInvariantsAllowingEmptyView(t *testing.T, mm model, trail []string) {
 	t.Helper()
 	if mm.w <= 0 || mm.h <= 0 {
-		_ = mm.View() // must not panic
+		_ = mm.View().Content // must not panic
 		checkStateInvariants(t, mm, trail)
 		return
 	}
@@ -94,7 +94,7 @@ func TestGrowingBackFromDegenerateRestoresAUsableView(t *testing.T) {
 
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
-	m, _ = m.Update(scannedMsg{rows: varietyRows(12), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: varietyRows(12), at: time.Now()})
 	m, _ = m.Update(key("G")) // cursor to the bottom, where offset is non-zero
 
 	for _, s := range degenerateSizes {
@@ -102,7 +102,7 @@ func TestGrowingBackFromDegenerateRestoresAUsableView(t *testing.T) {
 	}
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 
-	if v := m.(model).View(); v == "" {
+	if v := m.(model).View().Content; v == "" {
 		t.Fatal("view stayed empty after growing back to 120x30")
 	}
 	checkInvariants(t, m.(model), []string{"<squeezed then restored>"})

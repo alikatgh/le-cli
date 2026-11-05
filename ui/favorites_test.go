@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // stubFavoritesDir points the favorites file at a temp dir for the test.
@@ -35,7 +35,7 @@ func TestPinKeyMovesRowToTopAndPersists(t *testing.T) {
 	stubFavoritesDir(t)
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
 	// Port-ascending order is 3000, 5000, 27017 — move to the last row
 	// (MongoDB :27017) and pin it.
@@ -78,7 +78,7 @@ func TestFavoritesSurviveFilterAndSort(t *testing.T) {
 	mm := m.(model)
 	mm.favs = map[string]bool{"27017": true}
 	var mi tea.Model = mm
-	mi, _ = mi.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	mi, _ = deliverScanFixture(mi, scannedMsg{rows: sampleRows(), at: time.Now()})
 
 	// Pinned row leads even under a different sort column (2 = PID).
 	mi, _ = mi.Update(key("2"))

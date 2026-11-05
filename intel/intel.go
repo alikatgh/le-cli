@@ -78,6 +78,7 @@ type Profile struct {
 	Note       string   `json:"note"`
 	Warning    string   `json:"warning"`
 	Explain    string   `json:"explain"`
+	Evidence   Evidence `json:"evidence"`
 }
 
 // dockerContainer identifies a container by both the name used in
@@ -204,7 +205,7 @@ var LaunchdLabelPID = func(label string) (int, bool) {
 // publications aren't dropped (which left the docker-proxy listener
 // unattributed → a raw TERM instead of `docker stop`). Mirrors Swift
 // publishedPorts. (R69 parity)
-var dockerPortRe = regexp.MustCompile(`(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]|::):(\d+)(?:-(\d+))?->`)
+var dockerPortRe = regexp.MustCompile(`(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]|::):(\d+)(?:-(\d+))?->\d+(?:-\d+)?/tcp(?:[ ,]|$)`)
 
 func dockerByPort() map[string]dockerContainer {
 	out, err := exec.Command("docker", "ps", "--format", "{{.ID}}\t{{.Names}}\t{{.Ports}}").Output()
@@ -513,6 +514,7 @@ func Make(l scan.Listener, env Env) Profile {
 			p.Note = strings.TrimSpace(p.Note + " Managed by launchd as \"" + label + "\".")
 		}
 	}
+	p.Evidence = evidenceFor(l, p, env)
 	return p
 }
 

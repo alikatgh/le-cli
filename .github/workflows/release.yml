@@ -2,10 +2,10 @@ name: release
 
 # Cuts a GitHub release when a v* tag is pushed. goreleaser builds the 4
 # platform tarballs (binary + man pages), checksums.txt, and the release —
-# and, when the TAP_GITHUB_TOKEN secret is configured (a fine-grained PAT
-# with contents:write on alikatgh/homebrew-tap), also pushes the updated
+# and, when TAP_GITHUB_TOKEN passes the bounded tap-access preflight
+# (contents:write on alikatgh/homebrew-tap), also pushes the updated
 # formula to the tap, replacing the error-prone hand-edit of four sha256s
-# per release. Without the secret the tap step is skipped and the bump
+# per release. Without usable tap access the tap step is skipped and the bump
 # stays manual (see RELEASING.md).
 on:
   push:
@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.27.3'
       - name: Test
         run: go test -race ./...
 
@@ -42,14 +42,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      # goreleaser v2.16.0's go.mod demands go >= 1.26.3, and setup-go@v6
-      # exports GOTOOLCHAIN=local, which forbids the automatic toolchain
-      # download that used to paper over the gap — so the release job needs
-      # the newer Go explicitly. The test matrix stays on 1.24 to match
-      # go.mod, proving the module still builds at its declared floor.
+      # Use the same supported compiler as CI and the release test matrix.
+      # This also covers pinned goreleaser v2.16.0's Go >= 1.26.3 requirement;
+      # the module's older source-language floor is documented separately.
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.26'
+          go-version: '1.27.3'
+
+      - name: Check Homebrew tap access
+        id: tap
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: bash .github/scripts/tap-preflight.sh
 
       # Pinned goreleaser version so releases are reproducible run-over-run;
       # bump deliberately. (`brews` is deprecated upstream — see the note in
@@ -59,10 +63,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
         run: |
-          if [ -n "$TAP_GITHUB_TOKEN" ]; then
+          if [ "${{ steps.tap.outputs.ready }}" = "true" ]; then
             go run github.com/goreleaser/goreleaser/v2@v2.16.0 release --clean
           else
-            echo "::warning::TAP_GITHUB_TOKEN missing or expired — publishing the release WITHOUT updating the Homebrew tap. Bump it manually per RELEASING.md."
+            echo "::warning::Homebrew tap access preflight did not pass — publishing the release WITHOUT updating the tap. Bump it manually per RELEASING.md."
             # Recorded, not exited on: the release must still publish and the
             # attestation step below must still run. The job is failed at the
             # end instead — see "Tap was not updated".
@@ -72,10 +76,11 @@ jobs:
 
       # Cryptographic build provenance, verifiable with `gh attestation verify
       # <tarball> --repo alikatgh/le-cli`. GitHub-native (OIDC) — no external
-      # service. Runs AFTER the release is published, so a hiccup here can
-      # never un-publish the binaries; worst case the job goes red with the
-      # release already live.
+      # service. Also runs if GoReleaser fails after building/uploading archives;
+      # a later tap error must not prevent provenance for those archives. A red
+      # job can still have a published release: inspect the actual release state.
       - name: Attest build provenance
+        if: ${{ !cancelled() && hashFiles('dist/*.tar.gz', 'dist/*.zip') != '' }}
         uses: actions/attest-build-provenance@v4
         with:
           # Every archive, not just the tarballs: 0.1.25 shipped the first
@@ -88,16 +93,17 @@ jobs:
 
       # A skipped tap bump used to be a green run with one line buried in the
       # log — so v0.1.16 shipped and brew users stayed on v0.1.15 for a month
-      # without anyone noticing. Now that the secret exists, its absence means
-      # it EXPIRED, which is exactly the case that must not pass quietly.
+      # without anyone noticing. Missing or unusable tap access must not pass
+      # quietly, including rejected credentials and inconclusive preflight checks.
       # Deliberately last: the release is already published and attested, so
       # this fails the run without costing anything — the same trade the
       # attestation step above documents.
       - name: Tap was not updated
         if: env.TAP_SKIPPED == '1'
         run: |
-          echo "::error::Release published, but the Homebrew tap was NOT updated (TAP_GITHUB_TOKEN missing or expired)."
-          echo "brew users are still on the previous version. Fix: re-create the fine-grained PAT"
-          echo "(contents:write on alikatgh/homebrew-tap), 'gh secret set TAP_GITHUB_TOKEN --repo alikatgh/le-cli',"
-          echo "and bump Formula/le.rb by hand for THIS release per RELEASING.md."
+          echo "::error::Release published, but the Homebrew tap was NOT updated (tap access preflight did not pass)."
+          echo "Check TAP_GITHUB_TOKEN and access to the tap's unprotected default branch."
+          echo "If the token needs replacing, use a fine-grained PAT with contents:write on alikatgh/homebrew-tap"
+          echo "and 'gh secret set TAP_GITHUB_TOKEN --repo alikatgh/le-cli'."
+          echo "Bump Formula/le.rb by hand for THIS release per RELEASING.md."
           exit 1

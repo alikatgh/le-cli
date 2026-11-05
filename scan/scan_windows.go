@@ -19,6 +19,8 @@ import (
 // runCmd runs a subprocess and returns its stdout. A package var for the same
 // reason as the unix one: tests substitute canned output.
 var runCmd = func(name string, args ...string) (string, error) {
+	// #nosec G204 -- Production callers select fixed netstat/powershell binaries.
+	// winProcScript uses a fixed query template with only strconv.Itoa PID values.
 	out, err := exec.Command(name, args...).Output()
 	return string(out), err
 }
@@ -51,21 +53,23 @@ func scanPlatform() ([]Listener, error) {
 		}
 		p := procs[pid]
 		l := Listener{
-			PID:         pid,
-			Command:     p.name,
-			CommandLine: p.command,
-			Addrs:       dedup(a.addrs),
-			Ports:       portsOf(a.addrs),
-			StartTime:   p.start,
-			User:        p.user,
-			CPU:         p.cpu,
-			RSS:         p.rss,
+			PID:                 pid,
+			Command:             p.name,
+			CommandLine:         p.command,
+			CommandLineFallback: p.commandFallback,
+			Addrs:               dedup(a.addrs),
+			Ports:               portsOf(a.addrs),
+			StartTime:           p.start,
+			User:                p.user,
+			CPU:                 p.cpu,
+			RSS:                 p.rss,
 		}
 		if l.Command == "" {
 			l.Command = "pid " + fmt.Sprint(pid)
 		}
 		if l.CommandLine == "" {
 			l.CommandLine = l.Command
+			l.CommandLineFallback = true
 		}
 		listeners = append(listeners, l)
 	}

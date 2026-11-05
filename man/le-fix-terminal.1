@@ -11,15 +11,17 @@ le-fix-terminal - Undo terminal modes a killed TUI left behind
 
 .SH DESCRIPTION
 Undo the terminal modes a TUI leaves behind when it is killed without
-getting to clean up — mouse reporting, bracketed paste, a hidden cursor,
-the alt screen. Symptoms are a prompt that fills with \fB;62;38M65;…\fR
-whenever the mouse moves, a missing cursor, or a terminal that stays
+getting to clean up — mouse and keyboard reporting, bracketed paste,
+a hidden cursor, and the alt screen. Symptoms include a prompt filled with
+\fB;62;38M65;…\fR on mouse movement, escape codes from ordinary keys,
+a missing cursor, or a terminal that stays
 blank after a crash.
 
 .PP
-Every sequence it writes is idempotent, so running it on a healthy
-terminal does nothing. Do not redirect its output — the escapes have to
-reach the terminal to have any effect.
+The recovery sequences are safe to repeat. They disable enhanced keyboard
+reporting on the active screen, including modes another application may
+have enabled. Use this command to recover after a crash. Do not redirect
+its output — the escapes must reach the terminal to have any effect.
 
 .PP
 \fBreset\fR does this too, and also clears your scrollback.

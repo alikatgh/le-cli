@@ -6,20 +6,21 @@
 package ui
 
 import (
+	"image/color"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 type palette struct {
 	name   string
-	brand  lipgloss.Color // le, key hints, the stop command accent
-	subtle lipgloss.Color // dim/secondary text
-	green  lipgloss.Color // low risk / success
-	yellow lipgloss.Color // medium risk / confirm prompt
-	red    lipgloss.Color // high risk / errors
-	selBG  lipgloss.Color // selected-row background
-	fg     lipgloss.Color // primary text
+	brand  color.Color // le, key hints, the stop command accent
+	subtle color.Color // dim/secondary text
+	green  color.Color // low risk / success
+	yellow color.Color // medium risk / confirm prompt
+	red    color.Color // high risk / errors
+	selBG  color.Color // selected-row background
+	fg     color.Color // primary text
 }
 
 // themes is ordered: `t` cycles through it top to bottom. "default" is the
@@ -35,31 +36,31 @@ type palette struct {
 // system7, gameboy, and paper are dark-on-light like "light" — they want a
 // light-background terminal.
 var themes = []palette{
-	{name: "default", brand: "#E0218A", subtle: "#8B949E", green: "#3FB950", yellow: "#D29922", red: "#F85149", selBG: "#23304A", fg: "#E6EDF3"},
-	{name: "light", brand: "#BF3989", subtle: "#6E7781", green: "#1A7F37", yellow: "#9A6700", red: "#CF222E", selBG: "#B6E3FF", fg: "#24292F"},
-	{name: "nord", brand: "#81A1C1", subtle: "#7B88A1", green: "#A3BE8C", yellow: "#EBCB8B", red: "#BF616A", selBG: "#3B4252", fg: "#ECEFF4"},
-	{name: "dracula", brand: "#FF79C6", subtle: "#6272A4", green: "#50FA7B", yellow: "#F1FA8C", red: "#FF5555", selBG: "#44475A", fg: "#F8F8F2"},
-	{name: "solarized", brand: "#D33682", subtle: "#586E75", green: "#859900", yellow: "#B58900", red: "#DC322F", selBG: "#073642", fg: "#93A1A1"},
-	{name: "mono", brand: "#FFFFFF", subtle: "#8A8A8A", green: "#C0C0C0", yellow: "#C0C0C0", red: "#FFFFFF", selBG: "#3A3A3A", fg: "#C0C0C0"},
+	{name: "default", brand: lipgloss.Color("#E0218A"), subtle: lipgloss.Color("#8B949E"), green: lipgloss.Color("#3FB950"), yellow: lipgloss.Color("#D29922"), red: lipgloss.Color("#F85149"), selBG: lipgloss.Color("#23304A"), fg: lipgloss.Color("#E6EDF3")},
+	{name: "light", brand: lipgloss.Color("#BF3989"), subtle: lipgloss.Color("#6E7781"), green: lipgloss.Color("#1A7F37"), yellow: lipgloss.Color("#9A6700"), red: lipgloss.Color("#CF222E"), selBG: lipgloss.Color("#B6E3FF"), fg: lipgloss.Color("#24292F")},
+	{name: "nord", brand: lipgloss.Color("#81A1C1"), subtle: lipgloss.Color("#7B88A1"), green: lipgloss.Color("#A3BE8C"), yellow: lipgloss.Color("#EBCB8B"), red: lipgloss.Color("#BF616A"), selBG: lipgloss.Color("#3B4252"), fg: lipgloss.Color("#ECEFF4")},
+	{name: "dracula", brand: lipgloss.Color("#FF79C6"), subtle: lipgloss.Color("#6272A4"), green: lipgloss.Color("#50FA7B"), yellow: lipgloss.Color("#F1FA8C"), red: lipgloss.Color("#FF5555"), selBG: lipgloss.Color("#44475A"), fg: lipgloss.Color("#F8F8F2")},
+	{name: "solarized", brand: lipgloss.Color("#D33682"), subtle: lipgloss.Color("#586E75"), green: lipgloss.Color("#859900"), yellow: lipgloss.Color("#B58900"), red: lipgloss.Color("#DC322F"), selBG: lipgloss.Color("#073642"), fg: lipgloss.Color("#93A1A1")},
+	{name: "mono", brand: lipgloss.Color("#FFFFFF"), subtle: lipgloss.Color("#8A8A8A"), green: lipgloss.Color("#C0C0C0"), yellow: lipgloss.Color("#C0C0C0"), red: lipgloss.Color("#FFFFFF"), selBG: lipgloss.Color("#3A3A3A"), fg: lipgloss.Color("#C0C0C0")},
 	// Ports of the mac app's native themes — CGA hues for msdos (the Norton
 	// Commander cursor bar is the cyan selBG), one-bit System 7, DMG-olive
 	// gameboy (no yellow on a Game Boy — warm collapses to the mid green),
 	// CRT phosphors, e-ink paper, cyanotype blueprint, and neon vaporwave.
-	{name: "msdos", brand: "#00AAAA", subtle: "#55FFFF", green: "#55FF55", yellow: "#FFFF55", red: "#FF5555", selBG: "#00AAAA", fg: "#FFFFFF"},
-	{name: "system7", brand: "#000000", subtle: "#555555", green: "#2E6B30", yellow: "#7A5A00", red: "#C81414", selBG: "#C0C0C0", fg: "#000000"},
-	{name: "gameboy", brand: "#0F380F", subtle: "#306230", green: "#306230", yellow: "#306230", red: "#8B1E1E", selBG: "#8BAC0F", fg: "#0F380F"},
-	{name: "phosphor", brand: "#33FF33", subtle: "#1D9E1D", green: "#33FF33", yellow: "#B8E62E", red: "#FF5252", selBG: "#0F4A0F", fg: "#33FF33"},
-	{name: "amber", brand: "#FFB000", subtle: "#A87400", green: "#FFB000", yellow: "#FFD25F", red: "#FF5340", selBG: "#4A3300", fg: "#FFB000"},
-	{name: "paper", brand: "#201B14", subtle: "#6E675C", green: "#3F6C42", yellow: "#8A5A00", red: "#B3261E", selBG: "#E4DECF", fg: "#201B14"},
-	{name: "blueprint", brand: "#7FD4FF", subtle: "#7FA3D1", green: "#7FE3A8", yellow: "#FFD166", red: "#FF7A6E", selBG: "#14406E", fg: "#DCE9FB"},
-	{name: "vaporwave", brand: "#00E5FF", subtle: "#B48FD9", green: "#3DFABC", yellow: "#FF9E00", red: "#FF2E63", selBG: "#33196B", fg: "#FFE9FB"},
+	{name: "msdos", brand: lipgloss.Color("#00AAAA"), subtle: lipgloss.Color("#55FFFF"), green: lipgloss.Color("#55FF55"), yellow: lipgloss.Color("#FFFF55"), red: lipgloss.Color("#FF5555"), selBG: lipgloss.Color("#00AAAA"), fg: lipgloss.Color("#FFFFFF")},
+	{name: "system7", brand: lipgloss.Color("#000000"), subtle: lipgloss.Color("#555555"), green: lipgloss.Color("#2E6B30"), yellow: lipgloss.Color("#7A5A00"), red: lipgloss.Color("#C81414"), selBG: lipgloss.Color("#C0C0C0"), fg: lipgloss.Color("#000000")},
+	{name: "gameboy", brand: lipgloss.Color("#0F380F"), subtle: lipgloss.Color("#306230"), green: lipgloss.Color("#306230"), yellow: lipgloss.Color("#306230"), red: lipgloss.Color("#8B1E1E"), selBG: lipgloss.Color("#8BAC0F"), fg: lipgloss.Color("#0F380F")},
+	{name: "phosphor", brand: lipgloss.Color("#33FF33"), subtle: lipgloss.Color("#1D9E1D"), green: lipgloss.Color("#33FF33"), yellow: lipgloss.Color("#B8E62E"), red: lipgloss.Color("#FF5252"), selBG: lipgloss.Color("#0F4A0F"), fg: lipgloss.Color("#33FF33")},
+	{name: "amber", brand: lipgloss.Color("#FFB000"), subtle: lipgloss.Color("#A87400"), green: lipgloss.Color("#FFB000"), yellow: lipgloss.Color("#FFD25F"), red: lipgloss.Color("#FF5340"), selBG: lipgloss.Color("#4A3300"), fg: lipgloss.Color("#FFB000")},
+	{name: "paper", brand: lipgloss.Color("#201B14"), subtle: lipgloss.Color("#6E675C"), green: lipgloss.Color("#3F6C42"), yellow: lipgloss.Color("#8A5A00"), red: lipgloss.Color("#B3261E"), selBG: lipgloss.Color("#E4DECF"), fg: lipgloss.Color("#201B14")},
+	{name: "blueprint", brand: lipgloss.Color("#7FD4FF"), subtle: lipgloss.Color("#7FA3D1"), green: lipgloss.Color("#7FE3A8"), yellow: lipgloss.Color("#FFD166"), red: lipgloss.Color("#FF7A6E"), selBG: lipgloss.Color("#14406E"), fg: lipgloss.Color("#DCE9FB")},
+	{name: "vaporwave", brand: lipgloss.Color("#00E5FF"), subtle: lipgloss.Color("#B48FD9"), green: lipgloss.Color("#3DFABC"), yellow: lipgloss.Color("#FF9E00"), red: lipgloss.Color("#FF2E63"), selBG: lipgloss.Color("#33196B"), fg: lipgloss.Color("#FFE9FB")},
 }
 
 // The active palette's colors and the styles derived from them. Reassigned
 // wholesale by applyTheme — always together, so a style can never mix roles
 // from two palettes.
 var (
-	brand, subtle, green, yellow, red, selBG, fg      lipgloss.Color
+	brand, subtle, green, yellow, red, selBG, fg      color.Color
 	titleSt, dimSt, headSt, selSt, keySt, okSt, errSt lipgloss.Style
 	boxSt                                             lipgloss.Style
 	themeIdx                                          int

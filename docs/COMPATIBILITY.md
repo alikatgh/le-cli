@@ -85,7 +85,7 @@ One object per listener:
 | `identity` | string | Human name, e.g. "Postgres (Homebrew)" |
 | `kind` | string | |
 | `source` | string | How it was started: terminal, brew, docker, launchd, … |
-| `confidence` | number | |
+| `confidence` | number | Heuristic rule score; not a measured probability |
 | `risk` | string | |
 | `stopKind` | string | Which strategy applies; `avoid` means le refuses to stop it |
 | `stopArg` | string | Brew formula or container name |
@@ -95,6 +95,19 @@ One object per listener:
 | `note` | string | |
 | `warning` | string | |
 | `explain` | string | |
+| `evidence` | object | Additive provenance object described below |
+
+`profile.evidence` always has six keys: `listener`, `command`, `directory`,
+`startTime`, `classification`, and `owner`. Each is an object with `status`
+(string: `observed`, `inferred`, or `unavailable`) and `detail` (string).
+Observed describes the actual OS/query field, not the correctness of a
+heuristic identity. Classification is inferred; confidence is not a probability.
+A missing command line replaced by a short process name stays unavailable.
+Docker published **TCP** ports support an inferred association; they do not
+verify process ownership. An exact launchd PID-to-label observation can be
+reported as observed. Zero/default CPU and RSS values have no availability
+flag in the legacy schema and must not be interpreted as verified idle/empty
+measurements. Existing keys and their types are unchanged.
 
 ### `le stop --json`
 
@@ -141,6 +154,23 @@ change three packages away fails the build here rather than in your pipeline.
 A key rename with no entry here is a bug, not a release.
 
 ---
+
+## Go toolchain
+
+The module declares `go 1.26.0` as its minimum Go language version and
+`toolchain go1.27.3` as its preferred build toolchain. Use Go 1.27.3 for
+supported builds. The source minimum follows the Charm v2 dependency stack.
+With automatic toolchain selection enabled, Go can download the preferred
+toolchain when needed. Offline builds should install Go 1.27.3 beforehand.
+
+On macOS, binaries built with Go 1.27.3 require macOS 13 (Ventura) or later,
+per the [Go platform requirements](https://go.dev/doc/go1.27#darwin). Existing
+release artifacts retain the requirements of their original build toolchain.
+
+CI, fuzzing and release builds use Go 1.27.3. The terminal UI uses Bubble Tea
+v2.1.1, Bubbles v2.2.1 and Lip Gloss v2.0.6 together. The minimum Go version
+is 1.26.0 because Bubble Tea v2.1.1 requires it; CI verifies the preferred
+Go 1.27.3 toolchain.
 
 ## Platforms
 

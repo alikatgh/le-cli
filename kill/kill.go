@@ -36,6 +36,8 @@ var (
 )
 
 func execCombined(name string, args ...string) (string, error) {
+	// #nosec G204 -- Private test seam: production callers select fixed brew,
+	// docker, launchctl, or taskkill binaries; targets are discrete argv, no shell.
 	cmd := exec.Command(name, args...)
 	cmd.Env = append(os.Environ(), "LC_ALL=C") // stable English errors, like runOutput (LE-394)
 	out, err := cmd.CombinedOutput()
@@ -43,6 +45,9 @@ func execCombined(name string, args ...string) (string, error) {
 }
 
 func execOutput(name string, args ...string) (string, error) {
+	// #nosec G204 -- Production callers select fixed ps/powershell binaries.
+	// ps receives numeric PID argv; PowerShell templates in taskkill.go interpolate
+	// only strconv.Itoa(pid), never command text from a listener or caller.
 	cmd := exec.Command(name, args...)
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	out, err := cmd.Output()

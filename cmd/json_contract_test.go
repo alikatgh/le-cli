@@ -29,7 +29,7 @@ var listRowKeys = []string{
 }
 
 var profileKeys = []string{
-	"confidence", "explain", "identity", "kind", "note", "restart", "risk",
+	"confidence", "evidence", "explain", "identity", "kind", "note", "restart", "risk",
 	"source", "stopArg", "stopArgID", "stopKind", "stopLabel", "warning",
 }
 
@@ -117,5 +117,43 @@ func TestEmptyJSONIsArrayNotNull(t *testing.T) {
 	}
 	if got := strings.TrimSpace(buf.String()); got != "[]" {
 		t.Errorf("empty le list --json = %q, want []", got)
+	}
+}
+
+// Provenance is an additive nested object; the original row/profile fields
+// remain intact and every evidence item has a stable status/detail shape.
+func TestListJSONEvidenceIsAdditive(t *testing.T) {
+	l := scan.Listener{PID: 42, Command: "node", CommandLine: "node server.js", Ports: []string{"3000"}}
+	p := intel.Make(l, intel.Env{})
+	raw, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var profile map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &profile); err != nil {
+		t.Fatal(err)
+	}
+	assertKeys(t, "profile", keysOf(t, raw), profileKeys)
+	evidenceKeys := []string{"listener", "command", "directory", "startTime", "classification", "owner"}
+	assertKeys(t, "profile.evidence", keysOf(t, profile["evidence"]), evidenceKeys)
+	var evidence map[string]json.RawMessage
+	if err := json.Unmarshal(profile["evidence"], &evidence); err != nil {
+		t.Fatal(err)
+	}
+	for key, item := range evidence {
+		assertKeys(t, "evidence."+key, keysOf(t, item), []string{"status", "detail"})
+		var field struct {
+			Status string `json:"status"`
+			Detail string `json:"detail"`
+		}
+		if err := json.Unmarshal(item, &field); err != nil {
+			t.Fatal(err)
+		}
+		if field.Status != "observed" && field.Status != "inferred" && field.Status != "unavailable" {
+			t.Errorf("%s invalid evidence status %q", key, field.Status)
+		}
+		if field.Detail == "" {
+			t.Errorf("%s has no evidence explanation", key)
+		}
 	}
 }

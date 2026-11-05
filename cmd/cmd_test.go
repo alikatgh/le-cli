@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"bytes"
+	"charm.land/lipgloss/v2"
 	"encoding/json"
 	"errors"
-	"github.com/charmbracelet/lipgloss"
 	"os"
 	"runtime"
 	"strings"

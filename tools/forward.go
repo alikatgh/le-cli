@@ -67,7 +67,7 @@ func Forward(args []string) error {
 		select {
 		case <-sig:
 			kill()
-			<-done
+			<-done //nolint:errcheck // Deliberately killed kubectl; its Wait exit error is expected.
 			fmt.Printf("\n[%s] stopped\n", time.Now().Format("15:04:05"))
 			return nil
 		case runErr := <-done:

@@ -1,6 +1,9 @@
 package ui
 
-import "testing"
+import (
+	"image/color"
+	"testing"
+)
 
 // Every palette must fill every role — a zero color would render invisible
 // text in whatever theme shipped incomplete.
@@ -14,11 +17,11 @@ func TestThemesComplete(t *testing.T) {
 			t.Fatalf("duplicate theme name %q", p.name)
 		}
 		seen[p.name] = true
-		for role, c := range map[string]string{
-			"brand": string(p.brand), "subtle": string(p.subtle), "green": string(p.green),
-			"yellow": string(p.yellow), "red": string(p.red), "selBG": string(p.selBG), "fg": string(p.fg),
+		for role, c := range map[string]color.Color{
+			"brand": p.brand, "subtle": p.subtle, "green": p.green,
+			"yellow": p.yellow, "red": p.red, "selBG": p.selBG, "fg": p.fg,
 		} {
-			if c == "" {
+			if c == nil {
 				t.Errorf("theme %q: role %s is empty", p.name, role)
 			}
 		}

@@ -5,6 +5,7 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"image/color"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,10 +15,12 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/aymanbagabas/go-osc52/v2"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/colorprofile"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/alikatgh/le-cli/intel"
 	"github.com/alikatgh/le-cli/internal/textw"
@@ -63,10 +66,12 @@ type Row struct {
 }
 
 type scannedMsg struct {
+	id   uint64
 	rows []Row
 	at   time.Time
 	err  error
 }
+type scanRequestedMsg struct{}
 type tickMsg time.Time
 type stopResultMsg struct {
 	ok  string
@@ -101,28 +106,50 @@ type model struct {
 	// Right-click action menu: the terminal's context menu. Same pinning
 	// rule as the copy picker — every action targets the row that was
 	// clicked, not wherever the cursor sits when the key lands.
-	actionMenu bool
-	actionRow  Row
-	paneFocus  bool // focus is inside the detail pane (see panefocus.go)
-	paneIdx    int  // which pane field is focused
-	flash      string
-	flashErr   bool
-	flashGen   int // bumped per flash; see flashExpiredMsg
-	help       bool
-	loading    bool
-	lastScan   time.Time
-	interval   time.Duration
-	sortCol    int
-	sortAsc    bool
-	favs       map[string]bool // pinned ports — sort to the top, render a *
-	grouped    bool            // group the list by owner (see group.go)
-	collapsed  map[string]bool // per-owner fold state, only while grouped
-	items      []listItem      // the rendered lines; the cursor indexes THESE
+	actionMenu      bool
+	actionRow       Row
+	paneFocus       bool // focus is inside the detail pane (see panefocus.go)
+	paneIdx         int  // which pane field is focused
+	flash           string
+	flashErr        bool
+	flashGen        int // bumped per flash; see flashExpiredMsg
+	help            bool
+	loading         bool
+	lastScan        time.Time
+	paused          bool
+	scanInFlight    bool
+	nextScanID      uint64
+	activeScanID    uint64
+	applyActiveScan bool
+	activeManual    bool
+	pendingScan     bool
+	pendingManual   bool
+	selectionLost   bool // require explicit selection after disappearance / PID reuse
+	interval        time.Duration
+	sortCol         int
+	sortAsc         bool
+	favs            map[string]bool // pinned ports — sort to the top, render a *
+	grouped         bool            // group the list by owner (see group.go)
+	collapsed       map[string]bool // per-owner fold state, only while grouped
+	items           []listItem      // the rendered lines; the cursor indexes THESE
 }
 
 // New builds the initial model from launch options.
 func New(opts Options) model {
 	ti := textinput.New()
+	// Keep the existing terminal-native input appearance. Bubbles v2's
+	// defaults add a prompt color; these explicit styles preserve v1's
+	// uncolored prompt/text and dim placeholder with its virtual cursor.
+	inputStyles := textinput.Styles{
+		Focused: textinput.StyleState{
+			Placeholder: lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
+			Suggestion:  lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
+		},
+		Cursor: textinput.CursorStyle{Blink: true},
+	}
+	inputStyles.Blurred = inputStyles.Focused
+	ti.SetStyles(inputStyles)
+	ti.SetVirtualCursor(true)
 	ti.Placeholder = "filter by port, name, folder…"
 	ti.Prompt = "/"
 	ti.CharLimit = 64
@@ -140,19 +167,94 @@ func New(opts Options) model {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(scanCmd(), m.tickCmd())
+	return tea.Batch(func() tea.Msg { return scanRequestedMsg{} }, m.tickCmd())
 }
 
-func scanCmd() tea.Cmd {
+func scanCmd(id uint64) tea.Cmd {
 	return func() tea.Msg {
 		listeners, err := scan.Scan()
+		if err != nil {
+			return scannedMsg{id: id, at: time.Now(), err: err}
+		}
 		env := intel.Detect()
 		rows := make([]Row, len(listeners))
 		for i, l := range listeners {
 			rows[i] = Row{L: l, P: intel.Make(l, env)}
 		}
-		return scannedMsg{rows: rows, at: time.Now(), err: err}
+		return scannedMsg{id: id, rows: rows, at: time.Now(), err: err}
 	}
+}
+
+// requestScan is the single entry point for init, ticks, manual refresh,
+// resume and post-stop refresh. The running command owns its slot until its
+// matching completion arrives; requests meanwhile collapse into one successor.
+func (m *model) requestScan(manual bool) tea.Cmd {
+	if m.paused && !manual {
+		return nil
+	}
+	if m.scanInFlight {
+		m.pendingScan = true
+		m.pendingManual = m.pendingManual || manual
+		return nil
+	}
+	m.nextScanID++
+	m.activeScanID, m.scanInFlight = m.nextScanID, true
+	m.applyActiveScan, m.activeManual, m.loading = true, manual, true
+	return scanCmd(m.activeScanID)
+}
+
+type selection struct {
+	row   Row
+	owner string
+	group bool
+	valid bool
+	lost  bool
+}
+
+func (m model) selection() selection {
+	if m.selectionLost {
+		return selection{lost: true}
+	}
+	if r, ok := m.selected(); ok {
+		return selection{row: r, valid: true}
+	}
+	if owner, ok := m.selectedGroup(); ok {
+		return selection{owner: owner, group: true, valid: true}
+	}
+	return selection{}
+}
+
+func sameProcess(a, b scan.Listener) bool {
+	if a.PID != b.PID {
+		return false
+	}
+	if a.StartTime != "" || b.StartTime != "" {
+		return a.StartTime != "" && a.StartTime == b.StartTime
+	}
+	// Without a recycle key, only the exact full command is useful. A short
+	// process name is not enough, including Windows' missing-argv fallback.
+	return intel.HasCommandLine(a) && intel.HasCommandLine(b) && a.CommandLine == b.CommandLine
+}
+
+func (m *model) restoreSelection(s selection) {
+	if s.lost {
+		m.selectionLost, m.paneFocus = true, false
+		return
+	}
+	if !s.valid {
+		return
+	}
+	for i, it := range m.items {
+		if (s.group && it.header && it.owner == s.owner) ||
+			(!s.group && !it.header && sameProcess(s.row.L, it.row.L)) {
+			m.cursor, m.selectionLost = i, false
+			return
+		}
+	}
+	// Do not silently transfer an inspection or stop target to a replacement
+	// PID. Keep keyboard position but remove the highlight/actions until the
+	// user navigates or explicitly clicks a row.
+	m.selectionLost, m.paneFocus = true, false
 }
 
 func (m model) tickCmd() tea.Cmd {
@@ -178,13 +280,19 @@ var (
 	openURL = func(url string) error {
 		switch runtime.GOOS {
 		case "darwin":
+			// #nosec G204 -- Fixed open binary; callers assemble http(s) localhost
+			// URLs from listener ports and pass one URL argument, without a shell.
 			return exec.Command("open", url).Start()
 		case "windows":
 			// No shell in between: `cmd /c start <url>` would let an `&` in a
 			// query string be read as a command separator. rundll32 takes the
 			// URL as one discrete argument. (Same choice as tools/platform_windows.go.)
+			// #nosec G204 -- Fixed rundll32 handler; callers assemble http(s)
+			// localhost URLs and pass the URL as one argv token, without cmd.exe.
 			return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
 		}
+		// #nosec G204 -- Fixed xdg-open binary; callers assemble http(s) localhost
+		// URLs from listener ports and pass one URL argument, without a shell.
 		return exec.Command("xdg-open", url).Start()
 	}
 	// copyToClipboard emits an OSC 52 sequence, which the terminal — local
@@ -222,16 +330,25 @@ var (
 	openTerminalAt = func(dir string) error {
 		switch runtime.GOOS {
 		case "darwin":
+			// #nosec G204 -- Fixed open/Terminal launcher; dir is one discrete
+			// path argument and is never interpreted by a shell.
 			return exec.Command("open", "-a", "Terminal", dir).Start()
 		case "windows":
-			// A new console window started in dir. `start` is a cmd builtin;
-			// the empty string is the window title it would otherwise take
-			// the first quoted argument for.
-			return exec.Command("cmd", "/c", "start", "", "/d", dir, "cmd").Start()
+			return windowsTerminalCommand(dir).Start()
 		}
 		return errNoTerminalLauncher
 	}
 )
+
+// windowsTerminalCommand keeps the directory out of cmd.exe's command text.
+// start is a shell builtin, so its tokens must all be fixed. The new window
+// inherits cmd.exe's working directory through Cmd.Dir, including literal shell
+// punctuation. The empty argument is start's window title.
+func windowsTerminalCommand(dir string) *exec.Cmd {
+	command := exec.Command("cmd", "/c", "start", "", "cmd")
+	command.Dir = dir
+	return command
+}
 
 var errNoTerminalLauncher = errors.New("opening a terminal window is macOS/Windows-only — use c → d to copy a cd command")
 
@@ -369,39 +486,41 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.w, m.h = msg.Width, msg.Height
 		return m, nil
 
+	case scanRequestedMsg:
+		cmd := m.requestScan(false)
+		return m, cmd
+
 	case scannedMsg:
-		// Multiple scans can be in flight at once (tick, manual "r"
-		// refresh, and the post-stop refresh in stopResultMsg below all
-		// fire scanCmd() independently), and each stamps "at" only when
-		// IT finishes — Bubble Tea delivers messages in whatever order
-		// their goroutines happen to complete, which is not guaranteed
-		// to match the order the scans started or the order their
-		// timestamps would sort in. Applying an older result after a
-		// newer one has already landed would roll the table back to
-		// stale data, so drop anything not at least as recent as what's
-		// currently displayed.
-		if msg.at.Before(m.lastScan) {
+		// IDs identify the actual active command. Neither a stale success nor
+		// an unrelated error may release its slot or alter the last good view.
+		if !m.scanInFlight || msg.id != m.activeScanID {
 			return m, nil
 		}
-		if msg.err != nil {
-			// A genuine scan failure (scan.Scan already distinguishes lsof's
-			// non-zero "empty match" exit from a real exec failure — LE-CLI-002),
-			// so surface it instead of silently rendering an empty table as
-			// "no listeners". Keep the last-good rows rather than blanking them,
-			// and don't advance lastScan so a later success still applies. (R69)
-			m.flash, m.flashErr = "scan failed: "+msg.err.Error(), true
-			m.loading = false
-			return m, nil
+		m.scanInFlight, m.loading = false, false
+		if m.applyActiveScan && (!m.paused || m.activeManual) && !msg.at.Before(m.lastScan) {
+			if msg.err != nil {
+				m.flash, m.flashErr = "scan failed: "+msg.err.Error(), true
+			} else {
+				selected := m.selection()
+				m.all, m.lastScan = msg.rows, msg.at
+				m.applyFilter()
+				m.restoreSelection(selected)
+				m.clamp()
+			}
 		}
-		m.all = msg.rows
-		m.loading = false
-		m.lastScan = msg.at
-		m.applyFilter()
-		m.clamp()
+		// At most one coalesced request survives. Pausing never frees the
+		// active slot; a manual refresh can wait for that command to finish.
+		pending, manual := m.pendingScan, m.pendingManual
+		m.pendingScan, m.pendingManual = false, false
+		if pending {
+			cmd := m.requestScan(manual)
+			return m, cmd
+		}
 		return m, nil
 
 	case tickMsg:
-		return m, tea.Batch(scanCmd(), m.tickCmd())
+		cmd := m.requestScan(false)
+		return m, tea.Batch(cmd, m.tickCmd())
 
 	case flashExpiredMsg:
 		// Stale ticks are the whole reason for the generation: this one was
@@ -418,24 +537,29 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.flash, m.flashErr = "✓ "+msg.ok, false
 		}
-		return m, scanCmd()
+		cmd := m.requestScan(false)
+		return m, cmd
 
 	case tea.MouseMsg:
 		return m.onMouse(msg)
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.onKey(msg)
 	}
 
 	if m.filtering {
 		var cmd tea.Cmd
 		m.filter, cmd = m.filter.Update(msg)
+		// Paste is a separate event in Bubble Tea v2 (including asynchronous
+		// clipboard results), so keep the visible rows in sync here too.
+		m.applyFilter()
+		m.clamp()
 		return m, cmd
 	}
 	return m, nil
 }
 
-func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Confirm dialog captures keys first.
 	if m.confirm {
 		switch msg.String() {
@@ -609,7 +733,7 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m = m.setAllGroups(m.anyExpanded())
 		}
 		return m, nil
-	case "enter", "right", "left", " ":
+	case "enter", "right", "left", "space":
 		// On a group header these fold/unfold the group. Enter on a plain
 		// row drops focus into the detail pane — the same entry as tab, so
 		// the row you're on becomes the thing you act on, like clicking a
@@ -639,20 +763,31 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.move(-1)
 		m.paneIdx = 0
 	case "g", "home":
-		m.cursor = 0
+		m.cursor, m.selectionLost = 0, false
 		m.paneIdx = 0
 		m.clamp()
 	case "G", "end":
-		m.cursor = len(m.items) - 1
+		m.cursor, m.selectionLost = len(m.items)-1, false
 		m.paneIdx = 0
 		m.clamp()
 	case "/":
 		m.filtering = true
 		m.flash = ""
 		return m, m.filter.Focus()
+	case "p":
+		m.paused = !m.paused
+		if m.paused {
+			// Freeze the snapshot even when a live command is still running.
+			m.applyActiveScan = false
+			m.pendingScan, m.pendingManual, m.loading = false, false, false
+			return m, nil
+		}
+		cmd := m.requestScan(false)
+		return m, cmd
 	case "r":
-		m.flash, m.loading = "", true
-		return m, scanCmd()
+		m.flash = ""
+		cmd := m.requestScan(true)
+		return m, cmd
 	case "t":
 		name := cycleTheme()
 		m.flash, m.flashErr = "theme: "+name+"   (persist: theme = "+name+" in "+configPathHint+")", false
@@ -663,7 +798,10 @@ func (m model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.sortCol, m.sortAsc = col, true
 		}
+		selected := m.selection()
 		m.sortView()
+		m.buildItems()
+		m.restoreSelection(selected)
 		m.clamp()
 	case "x", "s":
 		if r, ok := m.selected(); ok {
@@ -796,7 +934,7 @@ func (m *model) togglePin(r Row) {
 	// moved.
 	m.sortView()
 	m.buildItems() // pinning can un-collapse a group, changing line count
-	m.focusRowByPID(r.L.PID)
+	m.restoreSelection(selection{row: r, valid: true})
 	m.clamp()
 }
 
@@ -814,15 +952,22 @@ func (m model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.help {
 		return m, nil
 	}
-	switch msg.Button {
-	case tea.MouseButtonWheelUp:
-		m.move(-1)
-		return m, nil
-	case tea.MouseButtonWheelDown:
-		m.move(1)
+	// v2 separates wheel, click, motion, and release events. Only a
+	// click may select/open a menu; dragging or releasing must not repeat it.
+	if wheel, ok := msg.(tea.MouseWheelMsg); ok {
+		switch wheel.Button {
+		case tea.MouseWheelUp:
+			m.move(-1)
+		case tea.MouseWheelDown:
+			m.move(1)
+		}
 		return m, nil
 	}
-	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && !m.filtering && !m.confirm {
+	click, ok := msg.(tea.MouseClickMsg)
+	if !ok {
+		return m, nil
+	}
+	if click.Button == tea.MouseLeft && !m.filtering && !m.confirm {
 		// A left click anywhere dismisses the action menu — same instinct as
 		// clicking outside a context menu.
 		m.actionMenu = false
@@ -833,21 +978,21 @@ func (m model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if end > len(m.items) {
 			end = len(m.items)
 		}
-		if idx := m.offset + (msg.Y - 2); msg.Y >= 2 && idx >= m.offset && idx < end {
-			m.cursor = idx
+		if idx := m.offset + (click.Y - 2); click.Y >= 2 && idx >= m.offset && idx < end {
+			m.cursor, m.selectionLost = idx, false
 			m.clamp()
 		}
 	}
 	// Right-click: the terminal's context menu. Select the row under the
 	// pointer AND pin it for the action footer — exactly the app's gesture.
 	// Right-clicking a different row just moves the menu there.
-	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonRight && !m.filtering && !m.confirm && !m.copyMenu {
+	if click.Button == tea.MouseRight && !m.filtering && !m.confirm && !m.copyMenu {
 		end := m.offset + m.listHeight()
 		if end > len(m.items) {
 			end = len(m.items)
 		}
-		if idx := m.offset + (msg.Y - 2); msg.Y >= 2 && idx >= m.offset && idx < end {
-			m.cursor = idx
+		if idx := m.offset + (click.Y - 2); click.Y >= 2 && idx >= m.offset && idx < end {
+			m.cursor, m.selectionLost = idx, false
 			m.clamp()
 			if r, ok := m.selected(); ok {
 				m.actionMenu, m.actionRow, m.flash = true, r, ""
@@ -868,6 +1013,7 @@ func (m *model) move(d int) {
 	if len(m.items) == 0 {
 		return
 	}
+	m.selectionLost = false
 	m.cursor += d
 	m.clamp()
 }
@@ -979,7 +1125,7 @@ func (m model) less(a, b Row) bool {
 // cpuColor and cpuCell drive the TUI's CPU column. cpuCell renders the
 // percent compactly ("818%"); cpuColor escalates dim → amber → red so a
 // runaway is impossible to miss.
-func cpuColor(pct float64) lipgloss.Color {
+func cpuColor(pct float64) color.Color {
 	switch {
 	case pct >= cpuHotPct:
 		return red
@@ -1032,6 +1178,9 @@ func firstPortNum(ports []string) int {
 // but not a listener, so it reports false — every row action then refuses
 // with its usual message instead of acting on a neighbouring row.
 func (m model) selected() (Row, bool) {
+	if m.selectionLost {
+		return Row{}, false
+	}
 	if m.cursor >= 0 && m.cursor < len(m.items) {
 		if it := m.items[m.cursor]; !it.header {
 			return it.row, true
@@ -1049,9 +1198,16 @@ func (m model) listHeight() int {
 	return h
 }
 
-const detailHeight = 9
+const detailHeight = 12
 
-func (m model) View() string {
+func (m model) View() tea.View {
+	v := tea.NewView(m.viewContent())
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
+}
+
+func (m model) viewContent() string {
 	if m.w == 0 {
 		return "starting le…"
 	}
@@ -1072,7 +1228,7 @@ func (m model) View() string {
 
 // ---- styles: see theme.go ----
 
-func riskColor(r intel.Risk) lipgloss.Color {
+func riskColor(r intel.Risk) color.Color {
 	switch r {
 	case intel.Low:
 		return green
@@ -1127,16 +1283,36 @@ func (m model) headerView() string {
 	if canStop > 0 && canStop < len(m.view) {
 		pulse += okSt.Render(fmt.Sprintf("%d stoppable", canStop)) + dimSt.Render("  ·  ")
 	}
-	when := "scanning…"
+	mode := "live"
+	if m.paused {
+		mode = "paused"
+	}
+	when := mode + " · no snapshot"
 	if !m.lastScan.IsZero() {
-		when = "updated " + m.lastScan.Format("15:04:05")
+		age := time.Since(m.lastScan).Truncate(time.Second)
+		if age < 0 {
+			age = 0
+		}
+		when = mode + " · snapshot " + age.String() + " old"
+	}
+	if m.scanInFlight && !m.paused {
+		when += " · scanning…"
 	}
 	right := pulse + dimSt.Render(count+"  ·  "+when)
+	leftBudget := m.w - lipgloss.Width(right) - 1
+	if leftBudget < 2 {
+		right = dimSt.Render(when)
+		leftBudget = m.w - lipgloss.Width(right) - 1
+	}
+	if leftBudget < 0 {
+		leftBudget = 0
+	}
+	left = ansi.Truncate(left, leftBudget, "")
 	gap := m.w - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
 	}
-	return left + strings.Repeat(" ", gap) + right
+	return ansi.Truncate(left+strings.Repeat(" ", gap)+right, m.w, "…")
 }
 
 func (m model) tableView() string {
@@ -1220,7 +1396,7 @@ func (m model) tableView() string {
 	}
 	for i := m.offset; i < end; i++ {
 		if it := m.items[i]; it.header {
-			b.WriteString(m.groupHeaderLine(it, i == m.cursor, m.w-gutterW))
+			b.WriteString(m.groupHeaderLine(it, i == m.cursor && !m.selectionLost, m.w-gutterW))
 			if i < end-1 {
 				b.WriteString("\n")
 			}
@@ -1249,7 +1425,7 @@ func (m model) tableView() string {
 		stop := truncate(stopTableCell(r.P), stopW)
 
 		gutter := railFor(r) + " "
-		if i == m.cursor {
+		if i == m.cursor && !m.selectionLost {
 			line := port + " " + pid + " " + cpu + " " + what + " " + dir + risk + " " + owner + " " + stop
 			b.WriteString(gutter + selSt.Width(m.w-gutterW).Render(line))
 		} else {
@@ -1332,12 +1508,19 @@ func osc8(text, url string) string {
 func (m model) detailView() string {
 	r, ok := m.selected()
 	if !ok {
-		return boxSt.Width(m.w - 2).Height(detailHeight - 2).Render(dimSt.Render("select a listener"))
+		prompt := "select a listener"
+		if m.selectionLost {
+			prompt = "process changed or disappeared — select a listener"
+		}
+		return boxSt.Width(m.w - 2).Height(detailHeight - 2).Render(dimSt.Render(truncate(prompt, m.w-4)))
 	}
 	risk := lipgloss.NewStyle().Foreground(riskColor(r.P.Risk)).Bold(true).Render(strings.ToUpper(string(r.P.Risk)) + " risk")
-	title := lipgloss.NewStyle().Bold(true).Foreground(fg).Render(r.P.Identity) +
-		dimSt.Render(fmt.Sprintf("  (%d%% sure)  ", r.P.Confidence)) + risk
-	cpuStr := lipgloss.NewStyle().Foreground(cpuColor(r.L.CPU)).Render(fmt.Sprintf("%.1f%%", r.L.CPU))
+	title := lipgloss.NewStyle().Bold(true).Foreground(fg).Render(truncate(r.P.Identity, clampInt(m.w-40, 10, 80))) +
+		dimSt.Render("  inferred identity  ") + risk
+	cpuStr := dimSt.Render("—")
+	if r.L.CPU > 0 {
+		cpuStr = lipgloss.NewStyle().Foreground(cpuColor(r.L.CPU)).Render(fmt.Sprintf("%.1f%%", r.L.CPU))
+	}
 	if r.L.CPU >= cpuHotPct {
 		cpuStr = lipgloss.NewStyle().Foreground(cpuColor(r.L.CPU)).Bold(true).Render(fmt.Sprintf("%.1f%%", r.L.CPU))
 	}
@@ -1347,8 +1530,10 @@ func (m model) detailView() string {
 	// in both states, so focusing a field never shifts the text under you.
 	lines := []string{
 		m.gutter(-1) + title,
+		m.gutter(-1) + dimSt.Render("evidence "+strings.Split(r.P.Evidence.Summary(), "\n")[0]),
+		m.gutter(-1) + dimSt.Render("         "+strings.Split(r.P.Evidence.Summary(), "\n")[1]),
 		m.gutter(fieldPort) + m.paneLabel("ports  ", fieldPort) + m.portsCell(r) + dimSt.Render("   pid ") + fmt.Sprintf("%d", r.L.PID) + dimSt.Render("   owner ") + string(r.P.Source),
-		m.gutter(-1) + dimSt.Render("usage  ") + cpuStr + dimSt.Render(" cpu   ") + fmtMem(r.L.RSS) + dimSt.Render(" mem"),
+		m.gutter(-1) + dimSt.Render("usage  ") + cpuStr + dimSt.Render(" cpu   ") + fmtMem(r.L.RSS) + dimSt.Render(" mem · zero/absent readings unavailable"),
 		m.gutter(fieldCmd) + m.paneLabel("cmd    ", fieldCmd) + truncate(r.L.CommandLine, m.w-14),
 		m.gutter(fieldDir) + m.paneLabel("dir    ", fieldDir) + truncate(orDash(r.L.Cwd), m.w-14) + m.revealHint(r),
 		m.gutter(fieldStop) + m.paneLabel("stop   ", fieldStop) + lipgloss.NewStyle().Foreground(brand).Render(stopShort(r.P)) + dimSt.Render("   (c copies)"),
@@ -1359,32 +1544,49 @@ func (m model) detailView() string {
 	} else if r.P.Note != "" {
 		lines = append(lines, m.gutter(-1)+dimSt.Render(r.P.Note))
 	}
+	// Clip every line by display width, including long restart commands,
+	// labels and warnings. Border + padding consume four terminal columns.
+	width := m.w - 4
+	if width < 0 {
+		width = 0
+	}
+	for i := range lines {
+		lines[i] = ansi.Truncate(lines[i], width, "…")
+	}
 	body := strings.Join(lines, "\n")
-	return boxSt.Width(m.w - 2).Render(body)
+	return boxSt.Width(m.w - 2).Height(detailHeight - 2).Render(body)
 }
 
-func (m model) footerView() string {
+func (m model) footerView() (footer string) {
+	defer func() { footer = ansi.Truncate(footer, m.w, "…") }()
+	fit := func(label, actions string) string {
+		budget := m.w - lipgloss.Width(actions)
+		if budget < 0 {
+			budget = 0
+		}
+		return ansi.Truncate(label, budget, "…") + actions
+	}
 	if m.confirm {
 		// Describe the PINNED row, so the prompt and the action can't disagree
 		// if the view shifted under the cursor while the dialog is open.
 		r := m.confirmed
 		q := lipgloss.NewStyle().Foreground(yellow).Render(
 			fmt.Sprintf("⚠ Stop %s?  → %s   ", r.P.Identity, stopShort(r.P)))
-		return q + keySt.Render("y") + dimSt.Render(" yes  ") + keySt.Render("n") + dimSt.Render(" no")
+		return fit(q, keySt.Render("y")+dimSt.Render(" yes  ")+keySt.Render("n")+dimSt.Render(" no"))
 	}
 	if m.actionMenu {
 		label := lipgloss.NewStyle().Foreground(yellow).Render(m.actionRow.P.Identity + ":  ")
 		opt := func(k, desc string) string { return keySt.Render(k) + dimSt.Render(" "+desc+"  ") }
-		return label + opt("o", "open") + opt("c", "copy…") + opt("x", "stop") + opt("f", "pin") +
-			opt("F", "reveal") + opt("T", "terminal") +
-			keySt.Render("esc") + dimSt.Render(" cancel")
+		return fit(label, opt("o", "open")+opt("c", "copy…")+opt("x", "stop")+opt("f", "pin")+
+			opt("F", "reveal")+opt("T", "terminal")+
+			keySt.Render("esc")+dimSt.Render(" cancel"))
 	}
 	if m.copyMenu {
 		label := lipgloss.NewStyle().Foreground(yellow).Render("copy " + m.copyRow.P.Identity + ":  ")
 		opt := func(k, desc string) string { return keySt.Render(k) + dimSt.Render(" "+desc+"  ") }
-		return label + opt("u", "url") + opt("r", "curl") + opt("l", "lsof") + opt("s", "stop") +
-			opt("p", "ps") + opt("i", "inspect") + opt("d", "cd") + opt("a", "one-liner") +
-			keySt.Render("esc") + dimSt.Render(" cancel")
+		return fit(label, opt("u", "url")+opt("r", "curl")+opt("l", "lsof")+opt("s", "stop")+
+			opt("p", "ps")+opt("i", "inspect")+opt("d", "cd")+opt("a", "one-liner")+
+			keySt.Render("esc")+dimSt.Render(" cancel"))
 	}
 	if m.paneFocus {
 		// In the footer, not inside the pane: the layout budgets exactly
@@ -1401,13 +1603,17 @@ func (m model) footerView() string {
 		}
 		return okSt.Render(m.flash)
 	}
-	keys := []string{"j/k move", m.groupedHint(), "/ filter", "x stop", "o open", "c copy", "f pin", "? help", "q quit"}
+	pause := "p pause"
+	if m.paused {
+		pause = "p live"
+	}
+	keys := []string{"j/k move", m.groupedHint(), "/ find", pause, "r scan", "x stop", "o open", "c copy", "f pin", "? help", "q quit"}
 	var parts []string
 	for _, k := range keys {
 		sp := strings.SplitN(k, " ", 2)
 		parts = append(parts, keySt.Render(sp[0])+dimSt.Render(" "+sp[1]))
 	}
-	return strings.Join(parts, dimSt.Render("  ·  "))
+	return strings.Join(parts, " ")
 }
 
 func (m model) helpView() string {
@@ -1426,7 +1632,8 @@ func (m model) helpView() string {
 		{"c", "copy… → u url · r curl · l lsof · s stop · p ps · i inspect · d cd · a one-liner (OSC 52 — works over SSH)"},
 		{"f", "pin/unpin the port — pinned ports (*) stay at the top, saved in ~/.config/le/favorites"},
 		{"right-click", "action menu for the row under the pointer — o / c / x / f / F / T, esc or a left click dismisses"},
-		{"r", "refresh now"},
+		{"p", "pause/resume the displayed snapshot; an in-flight live result cannot change it"},
+		{"r", "refresh once now (stays paused when paused)"},
 		{"t", "cycle theme (persist via config: theme = <name>)"},
 		{"?", "toggle this help"},
 		{"q", "quit"},
@@ -1521,25 +1728,84 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
-// ResetTerminal undoes every terminal mode le turns on, in the order a
-// recovering terminal wants them: mouse reporting off (1000 press/release,
-// 1002 cell motion, 1003 all motion, and the 1006/1015 encodings), bracketed
-// paste off, cursor visible, alt screen left.
-//
-// It is exported because the process that turned these on is, in the case that
-// matters, already dead — `kill -9` runs no defers and no signal handlers, so
-// recovery has to come from a SECOND process. That is `le fix-terminal`.
-// Every sequence is idempotent, so sending the whole set is always safe.
-const ResetTerminal = "\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l" +
+// resetTerminalModes is the idempotent mouse/paste/cursor/screen cleanup
+// also used after Bubble Tea has already restored its keyboard protocol stack.
+const resetTerminalModes = "\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l" +
 	"\x1b[?2004l" + // bracketed paste (Bubble Tea enables it by default)
 	"\x1b[?25h" + // cursor visible
 	"\x1b[?1049l" // leave the alt screen
 
-// Run starts the TUI.
+// ResetTerminal recovers a terminal after le was killed without cleanup.
+// Bubble Tea v2 enables modifyOtherKeys and Kitty keyboard disambiguation by
+// default. Reset those in place before leaving the active screen; popping the
+// Kitty stack would consume another entry each time recovery is repeated.
+//
+// This is exported for `le fix-terminal`, a second process that can recover
+// after SIGKILL. Run's normal defer uses resetTerminalModes instead: Bubble Tea
+// already pops its Kitty keyboard entry on exit, restoring the parent's Kitty
+// settings, which must not then be overwritten by emergency keyboard resets.
+const ResetTerminal = "\x1b[>4m\x1b[=0;1u" + resetTerminalModes
+
+// terminalColorOptions preserves the v1 color environment conventions in a
+// private copy for this program. NO_COLOR takes precedence over forced color;
+// CLICOLOR=0 opts out unless CLICOLOR_FORCE is nonempty and nonzero. Normalize
+// forced color for v2's boolean parser so it can retain detected capabilities
+// and provide ANSI color even on dumb terminals or redirected output.
+func terminalColorOptions(environ []string) []tea.ProgramOption {
+	return terminalColorOptionsForPlatform(environ, runtime.GOOS == "windows")
+}
+
+func terminalColorOptionsForPlatform(environ []string, windows bool) []tea.ProgramOption {
+	normalized := normalizeTerminalColorEnv(environ, windows)
+	var noColor, cliColor, forced string
+	for _, entry := range normalized {
+		name, value, _ := strings.Cut(entry, "=")
+		switch name {
+		case "NO_COLOR":
+			noColor = value
+		case "CLICOLOR":
+			cliColor = value
+		case "CLICOLOR_FORCE":
+			forced = value
+		}
+	}
+	options := []tea.ProgramOption{tea.WithEnvironment(normalized)}
+	if noColor != "" || (cliColor == "0" && (forced == "" || forced == "0")) {
+		options = append(options, tea.WithColorProfile(colorprofile.ASCII))
+	}
+	return options
+}
+
+// Windows environment names are case-insensitive, unlike Unix names. Only
+// canonicalize these three controls for the upstream case-sensitive detector;
+// preserve unrelated entries and never mutate the caller's environment.
+func normalizeTerminalColorEnv(environ []string, windows bool) []string {
+	normalized := append([]string(nil), environ...)
+	for i, entry := range normalized {
+		name, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		if windows {
+			for _, control := range []string{"NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE"} {
+				if strings.EqualFold(name, control) {
+					name = control
+					break
+				}
+			}
+		}
+		if name == "CLICOLOR_FORCE" && value != "" && value != "0" {
+			value = "1"
+		}
+		normalized[i] = name + "=" + value
+	}
+	return normalized
+}
+
 // Run launches the TUI with the given options.
 func Run(opts Options) error {
-	p := tea.NewProgram(New(opts), tea.WithAltScreen(), tea.WithMouseCellMotion())
-	// WithMouseCellMotion puts the TERMINAL — not le — into mouse-reporting
+	p := tea.NewProgram(New(opts), terminalColorOptions(os.Environ())...)
+	// The view's MouseModeCellMotion puts the TERMINAL — not le — into mouse-reporting
 	// mode, and le owns turning it back off. Left on, the terminal reports
 	// every mouse MOVE as input for the rest of that shell's life: the prompt
 	// fills with `;62;38M65;62;38M…` and, worse, the byte-encoded modes
@@ -1548,7 +1814,7 @@ func Run(opts Options) error {
 	//
 	// Be precise about what this defer does and does not buy, because it is
 	// easy to over-trust: Bubble Tea already restores on a normal return, on a
-	// panic, and on SIGINT/SIGTERM (it installs its own handler, tea.go:286).
+	// panic, and on SIGINT/SIGTERM (it installs its own handler).
 	// This covers the remaining unwinding paths — an early error return, or a
 	// future refactor that adds one — and nothing more. A defer cannot run on
 	// SIGKILL or on Go's default SIGHUP death, so a `kill -9`'d le still leaves
@@ -1565,7 +1831,7 @@ func Run(opts Options) error {
 	// before — the one situation this line exists for.
 	// Write error discarded: if stdout is already broken there is nothing left
 	// to recover, and the terminal state is the caller's problem either way.
-	defer func() { _, _ = fmt.Fprint(os.Stdout, ResetTerminal) }()
+	defer func() { _, _ = fmt.Fprint(os.Stdout, resetTerminalModes) }()
 	_, err := p.Run()
 	return err
 }

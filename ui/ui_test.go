@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/alikatgh/le-cli/intel"
 	"github.com/alikatgh/le-cli/scan"
@@ -17,15 +18,27 @@ import (
 // Drives the model headlessly through resize, data, navigation, filtering, and
 // the stop-confirm flow. Catches the panics a TTY-less CI would otherwise miss
 // (slice bounds in the row renderer, cursor clamps, negative widths).
-func key(s string) tea.KeyMsg {
-	switch s {
-	case "esc":
-		return tea.KeyMsg{Type: tea.KeyEsc}
-	case "enter":
-		return tea.KeyMsg{Type: tea.KeyEnter}
-	default:
-		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+func key(s string) tea.KeyPressMsg {
+	codes := map[string]rune{
+		"esc": tea.KeyEscape, "enter": tea.KeyEnter, "tab": tea.KeyTab,
+		"backspace": tea.KeyBackspace, "up": tea.KeyUp, "down": tea.KeyDown,
+		"left": tea.KeyLeft, "right": tea.KeyRight, "home": tea.KeyHome,
+		"end": tea.KeyEnd, "space": tea.KeySpace,
 	}
+	if code, ok := codes[s]; ok {
+		if code == tea.KeySpace {
+			return tea.KeyPressMsg{Code: code, Text: " "}
+		}
+		return tea.KeyPressMsg{Code: code}
+	}
+	if s == "ctrl+c" {
+		return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
+	}
+	runes := []rune(s)
+	if len(runes) != 1 {
+		panic("key fixture must be one printable character or a named key: " + s)
+	}
+	return tea.KeyPressMsg{Code: runes[0], Text: s}
 }
 
 func sampleRows() []Row {
@@ -43,7 +56,7 @@ func drive(t *testing.T, m tea.Model, keys ...string) tea.Model {
 	t.Helper()
 	for _, k := range keys {
 		m, _ = m.Update(key(k))
-		if s := m.(model).View(); s == "" {
+		if s := m.(model).View().Content; s == "" {
 			t.Fatalf("empty view after key %q", k)
 		}
 	}
@@ -53,9 +66,9 @@ func drive(t *testing.T, m tea.Model, keys ...string) tea.Model {
 func TestModelLifecycle(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
-	if !strings.Contains(m.(model).View(), "MongoDB") {
+	if !strings.Contains(m.(model).View().Content, "MongoDB") {
 		t.Fatal("expected MongoDB row in view")
 	}
 
@@ -108,18 +121,18 @@ func TestModelLifecycle(t *testing.T) {
 func TestNarrowWindowDoesNotPanic(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 38, Height: 12})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 	_ = drive(t, m, "j", "G", "x", "esc")
 }
 
 func TestEmptyAndLoadingRender(t *testing.T) {
 	var m tea.Model = New(Options{})
-	if m.(model).View() != "starting le…" {
+	if m.(model).View().Content != "starting le…" {
 		t.Fatal("expected pre-size placeholder")
 	}
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	m, _ = m.Update(scannedMsg{rows: nil, at: time.Now()})
-	if v := m.(model).View(); v == "" {
+	m, _ = deliverScanFixture(m, scannedMsg{rows: nil, at: time.Now()})
+	if v := m.(model).View().Content; v == "" {
 		t.Fatal("empty-state view should not be blank")
 	}
 }
@@ -173,12 +186,12 @@ func TestScannedMsgIgnoresStaleResult(t *testing.T) {
 	newer := time.Now()
 	older := newer.Add(-time.Minute)
 
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: newer})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: newer})
 	if got := len(m.(model).all); got != 3 {
 		t.Fatalf("after newer scan: %d rows, want 3", got)
 	}
 
-	m, _ = m.Update(scannedMsg{rows: nil, at: older})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: nil, at: older})
 	if got := len(m.(model).all); got != 3 {
 		t.Fatalf("after stale scan: %d rows, want 3 (stale result should be dropped)", got)
 	}
@@ -193,7 +206,7 @@ func TestScannedMsgIgnoresStaleResult(t *testing.T) {
 func TestConfirmPinsRowAgainstBackgroundScan(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
 	// Cursor 0 is the Node service (PID 101, a stoppable TERM row) after the
 	// default port-ascending sort. Open the confirm dialog on it.
@@ -207,12 +220,12 @@ func TestConfirmPinsRowAgainstBackgroundScan(t *testing.T) {
 	}
 
 	// A background scan lands with PID 101 gone — the view rebuilds and the
-	// cursor now sits over a DIFFERENT process.
+	// cursor position now sits over a DIFFERENT process, without selecting it.
 	remaining := sampleRows()[1:] // drop the Node row (101)
-	m, _ = m.Update(scannedMsg{rows: remaining, at: time.Now().Add(time.Second)})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: remaining, at: time.Now().Add(time.Second)})
 
-	if sel, ok := m.(model).selected(); !ok || sel.L.PID == 101 {
-		t.Fatalf("after the scan, selected() should be a different row, got PID %d", sel.L.PID)
+	if sel, ok := m.(model).selected(); ok || !m.(model).selectionLost {
+		t.Fatalf("after disappearance, selection must clear instead of inheriting PID %d", sel.L.PID)
 	}
 	// The pinned row must NOT have changed — that's what y will act on.
 	if got := m.(model).confirmed.L.PID; got != 101 {
@@ -233,12 +246,12 @@ func TestMouseClickBelowVisibleRowsIsIgnored(t *testing.T) {
 	}
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 16}) // short window -> few visible rows
-	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: rows, at: time.Now()})
 
 	before := m.(model).cursor
 	// Y far below the visible table (data rows start at Y=2; a short window
 	// shows only a handful) — must be ignored, cursor unchanged.
-	m, _ = m.Update(tea.MouseMsg{Y: 50, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m, _ = m.Update(tea.MouseClickMsg{Y: 50, Button: tea.MouseLeft})
 	if got := m.(model).cursor; got != before {
 		t.Errorf("click far below the visible rows moved cursor to %d (was %d); want unchanged", got, before)
 	}
@@ -274,7 +287,7 @@ func TestOpenKeyOpensFirstPort(t *testing.T) {
 
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 	m, _ = m.Update(key("o"))
 
 	if opened != "http://localhost:3000/" {
@@ -296,7 +309,7 @@ func TestOpenKeyDetectsHTTPS(t *testing.T) {
 
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 	_, _ = m.Update(key("o"))
 
 	if opened != "https://localhost:3000/" {
@@ -312,7 +325,7 @@ func TestCopyPickerStopCommand(t *testing.T) {
 
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
 	m, _ = m.Update(key("c")) // open the copy picker (cursor 0 = Node, PID 101, StopTerm)
 	if !m.(model).copyMenu {
@@ -357,7 +370,7 @@ func TestCopyPickerURLCurlLsof(t *testing.T) {
 	base := func() tea.Model {
 		var m tea.Model = New(Options{})
 		m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-		m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+		m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 		return m
 	}
 
@@ -410,22 +423,22 @@ func TestOSC8LinkHasZeroDisplayWidth(t *testing.T) {
 func TestMouse(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
-	m, _ = m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	m, _ = m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 	if m.(model).cursor != 1 {
 		t.Fatalf("wheel down => cursor %d, want 1", m.(model).cursor)
 	}
-	m, _ = m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	m, _ = m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
 	if m.(model).cursor != 0 {
 		t.Fatalf("wheel up => cursor %d, want 0", m.(model).cursor)
 	}
 	// Y=2 is the first data row; Y=4 selects index 2.
-	m, _ = m.Update(tea.MouseMsg{Y: 4, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m, _ = m.Update(tea.MouseClickMsg{Y: 4, Button: tea.MouseLeft})
 	if m.(model).cursor != 2 {
 		t.Fatalf("click Y=4 => cursor %d, want 2", m.(model).cursor)
 	}
-	if m.(model).View() == "" {
+	if m.(model).View().Content == "" {
 		t.Fatal("empty view after mouse input")
 	}
 }
@@ -464,7 +477,7 @@ func assertOrder(t *testing.T, m tea.Model, want ...string) {
 func TestSortColumns(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sortRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sortRows(), at: time.Now()})
 
 	// Default: port ascending (9000 alpha, 3000 charlie, 6000 bravo).
 	assertOrder(t, m, "charlie", "bravo", "alpha")
@@ -502,7 +515,7 @@ func TestSortColumns(t *testing.T) {
 func TestSortDoesNotReorderAll(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sortRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sortRows(), at: time.Now()})
 	m, _ = m.Update(key("4")) // reorders m.view by risk
 
 	want := identities(sortRows())
@@ -517,7 +530,7 @@ func TestSortDoesNotReorderAll(t *testing.T) {
 func TestSortSurvivesFilter(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sortRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sortRows(), at: time.Now()})
 	m, _ = m.Update(key("3")) // sort by identity ascending: alpha, bravo, charlie
 
 	m, _ = m.Update(key("/"))
@@ -554,7 +567,7 @@ func TestSortByDirKey6(t *testing.T) {
 	}
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: rows, at: time.Now()})
 
 	m, _ = m.Update(key("6"))
 	assertOrder(t, m, "first", "last") // /aaa before /zzz
@@ -569,15 +582,15 @@ func TestDirColumnIsWidthAdaptive(t *testing.T) {
 	}}
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
-	if v := m.(model).View(); !strings.Contains(v, "DIR") || !strings.Contains(v, "/code/webapp") {
+	m, _ = deliverScanFixture(m, scannedMsg{rows: rows, at: time.Now()})
+	if v := m.(model).View().Content; !strings.Contains(v, "DIR") || !strings.Contains(v, "/code/webapp") {
 		t.Errorf("wide window should show the DIR column with the cwd, got:\n%s", v)
 	}
 
 	// Narrow: the DIR column header disappears (the detail pane's lowercase
 	// "dir" line is unaffected — it always showed the cwd).
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
-	if v := m.(model).View(); strings.Contains(v, "DIR") {
+	if v := m.(model).View().Content; strings.Contains(v, "DIR") {
 		t.Errorf("narrow window should hide the DIR column header, got:\n%s", v)
 	}
 }
@@ -585,17 +598,17 @@ func TestDirColumnIsWidthAdaptive(t *testing.T) {
 func TestSortHeaderShowsDirection(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sortRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sortRows(), at: time.Now()})
 
-	if v := m.(model).View(); !strings.Contains(v, "PORT^") {
+	if v := m.(model).View().Content; !strings.Contains(v, "PORT^") {
 		t.Errorf("expected default ascending port indicator PORT^ in view, got:\n%s", v)
 	}
 	m, _ = m.Update(key("4"))
-	if v := m.(model).View(); !strings.Contains(v, "RISK^") {
+	if v := m.(model).View().Content; !strings.Contains(v, "RISK^") {
 		t.Errorf("expected RISK^ after pressing 4, got:\n%s", v)
 	}
 	m, _ = m.Update(key("4"))
-	if v := m.(model).View(); !strings.Contains(v, "RISKv") {
+	if v := m.(model).View().Content; !strings.Contains(v, "RISKv") {
 		t.Errorf("expected RISKv after pressing 4 twice, got:\n%s", v)
 	}
 }
@@ -639,7 +652,7 @@ func withRow(t *testing.T, identity string) tea.Model {
 	t.Helper()
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 	for i := 0; i < len(sampleRows()); i++ {
 		if r, ok := m.(model).selected(); ok && r.P.Identity == identity {
 			return m
@@ -838,7 +851,7 @@ func TestDetailPaneAdvertisesReveal(t *testing.T) {
 func TestFlashExpiresAndTheKeyHintsComeBack(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
 	m, cmd := m.Update(key("t")) // theme cycle: sets a flash, touches nothing else
 	mm := m.(model)
@@ -851,14 +864,14 @@ func TestFlashExpiresAndTheKeyHintsComeBack(t *testing.T) {
 	if mm.flashGen == 0 {
 		t.Error("a new flash should bump the generation")
 	}
-	if strings.Contains(mm.footerView(), "q quit") {
+	if strings.Contains(ansi.Strip(mm.footerView()), "q quit") {
 		t.Error("precondition: the flash should be holding the footer")
 	}
 
 	// Movement and a fresh scan must NOT be what clears it — that was the
 	// shape of the bug report ("I clicked things and lost the hotkeys").
 	m, _ = m.Update(key("j"))
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 	if m.(model).flash == "" {
 		t.Error("the message should survive long enough to be read")
 	}
@@ -868,7 +881,7 @@ func TestFlashExpiresAndTheKeyHintsComeBack(t *testing.T) {
 	if mm.flash != "" {
 		t.Fatalf("flash = %q, want cleared once its timer fires", mm.flash)
 	}
-	if !strings.Contains(mm.footerView(), "q quit") {
+	if !strings.Contains(ansi.Strip(mm.footerView()), "q quit") {
 		t.Error("the key hints must return once the message expires")
 	}
 }
@@ -878,7 +891,7 @@ func TestFlashExpiresAndTheKeyHintsComeBack(t *testing.T) {
 func TestStaleFlashTickLeavesTheCurrentMessage(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
 	m, _ = m.Update(key("t"))
 	stale := m.(model).flashGen
@@ -910,7 +923,7 @@ func focused(t *testing.T, rows []Row) tea.Model {
 	t.Helper()
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: rows, at: time.Now()})
 	m, _ = m.Update(key("tab"))
 	if !m.(model).paneFocus {
 		t.Fatal("tab should move focus into the pane")
@@ -924,7 +937,7 @@ func focused(t *testing.T, rows []Row) tea.Model {
 func TestEnterOnRowEntersPaneFocus(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: multiPortRow(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: multiPortRow(), at: time.Now()})
 	m, _ = m.Update(key("enter"))
 	mm := m.(model)
 	if !mm.paneFocus {
@@ -1106,12 +1119,12 @@ func TestViewFitsTerminalHeight(t *testing.T) {
 	for _, h := range []int{20, 24, 30, 50} {
 		var m tea.Model = New(Options{})
 		m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: h})
-		m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+		m, _ = deliverScanFixture(m, scannedMsg{rows: rows, at: time.Now()})
 		for _, c := range []struct {
 			name string
 			mm   model
 		}{{"table focus", m.(model)}, {"pane focus", m.(model).enterPaneFocus()}} {
-			if got := len(strings.Split(c.mm.View(), "\n")); got > h {
+			if got := len(strings.Split(c.mm.View().Content, "\n")); got > h {
 				t.Errorf("%s at terminal height %d rendered %d lines", c.name, h, got)
 			}
 		}
@@ -1173,7 +1186,7 @@ func TestTableColumnsAlign(t *testing.T) {
 	for _, width := range []int{110, 128, 160} {
 		var m tea.Model = New(Options{})
 		m, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: 30})
-		m, _ = m.Update(scannedMsg{rows: tableRows(), at: time.Now()})
+		m, _ = deliverScanFixture(m, scannedMsg{rows: tableRows(), at: time.Now()})
 		mm := m.(model)
 		mm.favs = map[string]bool{"44950": true} // the widest port cell: "*44950 +1"
 		mm.applyFilter()
@@ -1240,7 +1253,7 @@ func TestColumnWidthsDoNotChangeWhileScrolling(t *testing.T) {
 
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 20})
-	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: rows, at: time.Now()})
 
 	headerAt := func(mm model) int {
 		return lipgloss.Width(strings.Split(mm.tableView(), "\n")[0])
@@ -1320,7 +1333,7 @@ func TestTableLabelsDisambiguateCollisions(t *testing.T) {
 	}
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
-	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: rows, at: time.Now()})
 	out := m.(model).tableView()
 
 	for _, want := range []string{"Antigravity IDE · Electron", "Antigravity IDE · language_server"} {
@@ -1350,7 +1363,7 @@ func TestLabelsDoNotDependOnScrollPosition(t *testing.T) {
 
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 20})
-	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: rows, at: time.Now()})
 	if !strings.Contains(m.(model).tableView(), "Node service · node") {
 		t.Error("a collision anywhere in the set should label the rows at the top too")
 	}
@@ -1361,7 +1374,7 @@ func TestLabelsDoNotDependOnScrollPosition(t *testing.T) {
 func TestHeaderCountsStoppableListeners(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
-	m, _ = m.Update(scannedMsg{rows: machineRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: machineRows(), at: time.Now()})
 	if got := m.(model).headerView(); !strings.Contains(got, "3 stoppable") {
 		t.Errorf("header should count stoppable listeners:\n%s", got)
 	}
@@ -1376,7 +1389,7 @@ func TestHeaderOmitsStoppableCountWhenItSaysNothing(t *testing.T) {
 	}
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
-	m, _ = m.Update(scannedMsg{rows: rows, at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: rows, at: time.Now()})
 	if got := m.(model).headerView(); strings.Contains(got, "stoppable") {
 		t.Errorf("all-stoppable list should not restate the total:\n%s", got)
 	}
@@ -1384,14 +1397,14 @@ func TestHeaderOmitsStoppableCountWhenItSaysNothing(t *testing.T) {
 
 // --- Right-click action menu: the terminal's context menu. ---
 
-func rightClick(y int) tea.MouseMsg {
-	return tea.MouseMsg{Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonRight}
+func rightClick(y int) tea.MouseClickMsg {
+	return tea.MouseClickMsg{Y: y, Button: tea.MouseRight}
 }
 
 func TestRightClickSelectsRowAndOpensActionMenu(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
 	// Y=3 is the second data row (rows start at Y=2).
 	m, _ = m.Update(rightClick(3))
@@ -1415,7 +1428,7 @@ func TestRightClickSelectsRowAndOpensActionMenu(t *testing.T) {
 func TestActionMenuEscAndLeftClickDismiss(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
 	m, _ = m.Update(rightClick(2))
 	if !m.(model).actionMenu {
@@ -1427,7 +1440,7 @@ func TestActionMenuEscAndLeftClickDismiss(t *testing.T) {
 	}
 
 	m, _ = m.Update(rightClick(2))
-	m, _ = m.Update(tea.MouseMsg{Y: 3, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m, _ = m.Update(tea.MouseClickMsg{Y: 3, Button: tea.MouseLeft})
 	if m.(model).actionMenu {
 		t.Fatal("a left click must dismiss the action menu, like clicking outside a context menu")
 	}
@@ -1436,7 +1449,7 @@ func TestActionMenuEscAndLeftClickDismiss(t *testing.T) {
 func TestActionMenuChainsIntoCopyPicker(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
 	m, _ = m.Update(rightClick(3))
 	m, _ = m.Update(key("c"))
@@ -1455,7 +1468,7 @@ func TestActionMenuChainsIntoCopyPicker(t *testing.T) {
 func TestActionMenuStopPinsClickedRowNotCursor(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
 	m, _ = m.Update(rightClick(2)) // PID 101, StopTerm — stoppable
 	m, _ = m.Update(key("x"))
@@ -1474,7 +1487,7 @@ func TestActionMenuStopPinsClickedRowNotCursor(t *testing.T) {
 func TestRightClickBelowRowsDoesNotOpenMenu(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
 	m, _ = m.Update(rightClick(30))
 	if m.(model).actionMenu {
@@ -1485,7 +1498,7 @@ func TestRightClickBelowRowsDoesNotOpenMenu(t *testing.T) {
 func TestRightClickAnotherRowMovesMenu(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
 	m, _ = m.Update(rightClick(2))
 	m, _ = m.Update(rightClick(4))
@@ -1501,7 +1514,7 @@ func TestRightClickAnotherRowMovesMenu(t *testing.T) {
 func TestRightClickGroupHeaderClosesMenu(t *testing.T) {
 	var m tea.Model = New(Options{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m, _ = m.Update(scannedMsg{rows: sampleRows(), at: time.Now()})
+	m, _ = deliverScanFixture(m, scannedMsg{rows: sampleRows(), at: time.Now()})
 
 	// Group FIRST (the open menu swallows plain keys, copy-picker style),
 	// then open the menu on a data row, then right-click a header line.

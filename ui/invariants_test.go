@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/alikatgh/le-cli/intel"
 	"github.com/alikatgh/le-cli/scan"
@@ -22,7 +22,7 @@ import (
 func checkInvariants(t *testing.T, mm model, trail []string) {
 	t.Helper()
 	checkStateInvariants(t, mm, trail)
-	if v := mm.View(); v == "" {
+	if v := mm.View().Content; v == "" {
 		t.Fatalf("empty view — after keys: %s", strings.Join(trail, " "))
 	}
 }
@@ -49,7 +49,7 @@ func checkStateInvariants(t *testing.T, mm model, trail []string) {
 	sel, ok := mm.selected()
 	if len(mm.items) > 0 {
 		it := mm.items[mm.cursor]
-		if ok == it.header {
+		if ok == it.header && !mm.selectionLost {
 			t.Fatalf("selected()=%v but items[%d].header=%v — %s", ok, mm.cursor, it.header, ctx())
 		}
 		if ok && sel.L.PID != it.row.L.PID {
@@ -142,7 +142,7 @@ func TestRandomKeySequencesHoldTheInvariants(t *testing.T) {
 		for _, n := range counts {
 			var m tea.Model = New(Options{})
 			m, _ = m.Update(tea.WindowSizeMsg{Width: size.w, Height: size.h})
-			m, _ = m.Update(scannedMsg{rows: varietyRows(n), at: time.Now()})
+			m, _ = deliverScanFixture(m, scannedMsg{rows: varietyRows(n), at: time.Now()})
 
 			var trail []string
 			for step := 0; step < 120; step++ {
@@ -155,7 +155,7 @@ func TestRandomKeySequencesHoldTheInvariants(t *testing.T) {
 				// everything under the cursor — the case that has broken
 				// cursor state twice today.
 				if rng.Intn(9) == 0 {
-					m, _ = m.Update(scannedMsg{rows: varietyRows(rng.Intn(20)), at: time.Now().Add(time.Duration(step) * time.Second)})
+					m, _ = deliverScanFixture(m, scannedMsg{rows: varietyRows(rng.Intn(20)), at: time.Now().Add(time.Duration(step) * time.Second)})
 					trail = append(trail, "<scan>")
 					checkInvariants(t, m.(model), trail)
 				}
@@ -178,7 +178,7 @@ func TestFilterTypingHoldsTheInvariants(t *testing.T) {
 	for _, grouped := range []bool{false, true} {
 		var m tea.Model = New(Options{Group: grouped})
 		m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
-		m, _ = m.Update(scannedMsg{rows: varietyRows(25), at: time.Now()})
+		m, _ = deliverScanFixture(m, scannedMsg{rows: varietyRows(25), at: time.Now()})
 
 		trail := []string{"/"}
 		m, _ = m.Update(key("/"))
@@ -189,7 +189,7 @@ func TestFilterTypingHoldsTheInvariants(t *testing.T) {
 		}
 		// Backspace out again, one character at a time.
 		for i := 0; i < 10; i++ {
-			m, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+			m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
 			trail = append(trail, "<bs>")
 			checkInvariants(t, m.(model), trail)
 		}

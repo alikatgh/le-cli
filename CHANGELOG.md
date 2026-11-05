@@ -5,7 +5,41 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.26] - 2026-11-05
+
+### Added
+- **Inspect a stable snapshot.** `p` pauses/resumes collection and the header
+  shows snapshot age. `r` takes one new sample while staying paused; an
+  in-flight live scan cannot replace the paused view.
+- **Inspection evidence.** The detail pane labels listener, command, directory,
+  start time, classification, and owner as observed, inferred, or unavailable.
+  `le list --json` adds the same provenance in `profile.evidence`. Identity
+  scores remain heuristic, and a Docker published-port association does not
+  establish process ownership. Missing/default-zero resource readings are
+  not evidence of a successful measurement.
+
+### Changed
+- Upgrade the terminal UI together to Bubble Tea v2.1.1, Bubbles v2.2.1 and
+  Lip Gloss v2.0.6. Keyboard, mouse, filtering, themes and guarded actions
+  retain their existing behavior. Building from source now requires Go 1.26.0
+  or later; the supported build toolchain is Go 1.27.3.
+- Refreshes run one scan at a time, with at most one pending refresh. Selection
+  follows PID and start time through refreshes, sorting, and grouping. If start
+  time is unavailable, retaining selection requires an unchanged full command
+  line; a substituted executable name does not establish identity.
+
 ### Fixed
+- Unix collector errors are reported as failures instead of successful empty
+  lists. Failed JSON scans emit no snapshot, the TUI retains its last good
+  rows, and watch-all does not report false listener disappearances.
+- On Windows, opening a terminal keeps its folder path out of shell command
+  text. Spaces and punctuation such as `&`, `|`, `%` and parentheses remain
+  literal parts of the working directory.
+- `le fix-terminal` also resets the keyboard reporting modes enabled by
+  Bubble Tea v2 after an abrupt exit. Normal exit preserves the keyboard
+  protocol state restored by Bubble Tea.
+- A failed scan retains the last good snapshot and its timestamp. A process
+  disappearing or its PID being reused clears selection before another action.
 - **The Windows zips carry a build-provenance attestation.** 0.1.25's did
   not: the release workflow attested `*.tar.gz` only, a glob written before
   zips existed, so `gh attestation verify le_*.zip --repo alikatgh/le-cli`
@@ -499,7 +533,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.25...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.26...HEAD
+[0.1.26]: https://github.com/alikatgh/le-cli/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/alikatgh/le-cli/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/alikatgh/le-cli/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/alikatgh/le-cli/compare/v0.1.22...v0.1.23

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/alikatgh/le-cli/internal/label"
 )
@@ -224,6 +224,9 @@ func summarize(view []Row, owner string) string {
 // selectedGroup returns the owner under the cursor when the cursor is on a
 // group header.
 func (m model) selectedGroup() (string, bool) {
+	if m.selectionLost {
+		return "", false
+	}
 	if m.cursor < 0 || m.cursor >= len(m.items) {
 		return "", false
 	}
@@ -239,17 +242,4 @@ func (m model) groupedHint() string {
 		return "z group"
 	}
 	return "z flat"
-}
-
-// focusRowByPID puts the cursor on the line holding pid, if it is visible.
-// Row indices are not line indices once groups exist, so anything that moves
-// a row around (pinning, re-sorting) has to re-find it here rather than reuse
-// a position from m.view.
-func (m *model) focusRowByPID(pid int) {
-	for i, it := range m.items {
-		if !it.header && it.row.L.PID == pid {
-			m.cursor = i
-			return
-		}
-	}
 }
