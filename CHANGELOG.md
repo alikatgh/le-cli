@@ -5,6 +5,15 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.28] - 2026-11-05
+
+### Fixed
+- Include the MIT `LICENSE` and `README.md` in all six release archives,
+  including the Windows zips. The snapshot packaging gate verifies both files
+  against the source bytes and rejects hidden, unsafe, duplicate, or nonregular
+  archive entries while retaining the binary, man-page, checksum, and Formula
+  checks. The existing 0.1.26 and 0.1.27 tags and assets remain unchanged.
+
 ## [0.1.27] - 2026-11-05
 
 ### Added

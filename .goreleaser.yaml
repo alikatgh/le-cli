@@ -1,7 +1,7 @@
 # goreleaser config — replaces build-release.sh + the hand-run Homebrew tap
 # bump. Everything mirrors the previous pipeline byte-for-byte where it
-# matters: archive names (le_<ver>_<os>_<arch>.tar.gz), contents (le + man/),
-# and a plain checksums.txt — so existing formula URLs and verification
+# matters: archive names (le_<ver>_<os>_<arch>.tar.gz), the binary,
+# README.md, LICENSE, man pages, and a plain checksums.txt — so existing formula URLs and verification
 # habits keep working. The brews section automates the tap update that was
 # previously a hand-edit of four sha256s per release (a transposition there
 # would break `brew install` for everyone; automation deletes that error
@@ -30,7 +30,10 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+    # An explicit files list replaces GoReleaser's default document globs.
     files:
+      - LICENSE
+      - README.md
       - man/*.1
 
 checksum:
