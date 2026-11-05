@@ -1,6 +1,6 @@
 // Package intel ports the macOS app's ProcessProfile logic: given a listener,
 // it identifies what the process is, how risky it is to stop, and the right
-// way to stop it (TERM vs `brew services stop` vs `docker stop`). The decision
+// way to stop it (TERM, a verified service manager, or manual inspection). The decision
 // tree, the word-boundary matcher, and the interpreter resolver mirror
 // Sources/LocalhostExplorer/Models/ProcessIntelligence.swift.
 package intel
@@ -55,7 +55,7 @@ const (
 const (
 	StopTerm    StopKind = "term"    // SIGTERM to the PID
 	StopBrew    StopKind = "brew"    // brew services stop <arg>
-	StopDocker  StopKind = "docker"  // docker stop <arg>
+	StopDocker  StopKind = "docker"  // legacy value; automatic Docker actions are refused
 	StopLaunchd StopKind = "launchd" // launchctl bootout gui/<uid>/<arg>
 	StopAvoid   StopKind = "avoid"   // no safe automatic action
 )
@@ -72,7 +72,7 @@ type Profile struct {
 	Risk       Risk     `json:"risk"`
 	StopKind   StopKind `json:"stopKind"`
 	StopArg    string   `json:"stopArg"`   // brew formula or container name
-	StopArgID  string   `json:"stopArgID"` // container short ID, re-verified before stopping (StopDocker only)
+	StopArgID  string   `json:"stopArgID"` // legacy container ID; does not establish local ownership
 	StopLabel  string   `json:"stopLabel"` // human description of the stop action
 	Restart    string   `json:"restart"`
 	Note       string   `json:"note"`
@@ -81,9 +81,9 @@ type Profile struct {
 	Evidence   Evidence `json:"evidence"`
 }
 
-// dockerContainer identifies a container by both the name used in
-// `docker stop <name>` and its short ID, so kill.Stop can re-verify the name
-// still points at the same container immediately before acting on it.
+// dockerContainer is a parsed publication, retained for legacy fixtures and
+// descriptive parsing only. A port/name/ID association proves neither that the
+// engine is local nor that it owns an OS listener, so it cannot grant actions.
 type dockerContainer struct {
 	name string
 	id   string
@@ -92,22 +92,31 @@ type dockerContainer struct {
 // Env is the environment-wide context gathered once per scan.
 type Env struct {
 	BrewStarted  map[string]bool            // formula -> started via `brew services`
-	DockerByPort map[string]dockerContainer // port -> container identity
+	DockerByPort map[string]dockerContainer // legacy/informational only; never action authority
 	LaunchdByPID map[int]string             // pid -> user-domain launchd label
 }
 
-// Detect gathers brew + docker + launchd context once. All are best-effort:
-// missing tools just mean those branches stay empty.
+// Detect gathers brew + launchd context once. Docker publications are deliberately
+// not collected: the ambient Docker context/DOCKER_HOST may select a remote
+// engine. Even a Unix socket can forward elsewhere and does not prove ownership.
+// Missing tools just mean the supported manager branches stay empty.
 func Detect() Env {
 	return Env{
 		BrewStarted:  brewStarted(),
-		DockerByPort: dockerByPort(),
+		DockerByPort: map[string]dockerContainer{},
 		LaunchdByPID: launchdByPID(),
 	}
 }
 
+// detectOutput is a read-only execution seam for supported manager collectors.
+// Detection must never query an ambient Docker engine.
+var detectOutput = func(name string, args ...string) ([]byte, error) {
+	// #nosec G204 -- callers select fixed brew/launchctl binaries and arguments.
+	return exec.Command(name, args...).Output()
+}
+
 func brewStarted() map[string]bool {
-	out, err := exec.Command("brew", "services", "list").Output()
+	out, err := detectOutput("brew", "services", "list")
 	if err != nil {
 		return map[string]bool{}
 	}
@@ -137,7 +146,7 @@ func parseBrewStarted(out string) map[string]bool {
 // Why this exists: a KeepAlive agent respawns the moment its PID dies, so a
 // plain TERM turns into a ghost-chase — the supervisor is the thing to stop.
 func launchdByPID() map[int]string {
-	out, err := exec.Command("launchctl", "list").Output()
+	out, err := detectOutput("launchctl", "list")
 	if err != nil {
 		return map[int]string{} // not macOS, or launchctl unavailable
 	}
@@ -189,27 +198,11 @@ func LaunchdDomainTarget(label string) string {
 // result without real launchd jobs.
 var LaunchdLabelPID = launchdLabelPID
 
-// The host side may be a single port (`0.0.0.0:8080->`) or a RANGE
-// (`0.0.0.0:8000-8010->`); capture the optional upper bound so ranged
-// publications aren't dropped (which left the docker-proxy listener
-// unattributed → a raw TERM instead of `docker stop`). Mirrors Swift
-// publishedPorts. (R69 parity)
+// dockerPortRe matches TCP publications, including bounded host-port ranges.
 var dockerPortRe = regexp.MustCompile(`(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]|::):(\d+)(?:-(\d+))?->\d+(?:-\d+)?/tcp(?:[ ,]|$)`)
 
-func dockerByPort() map[string]dockerContainer {
-	out, err := exec.Command("docker", "ps", "--format", "{{.ID}}\t{{.Names}}\t{{.Ports}}").Output()
-	if err != nil {
-		return map[string]dockerContainer{}
-	}
-	return parseDockerPorts(string(out))
-}
-
-// parseDockerPorts is split out from dockerByPort so it's testable without
-// shelling out. A port that two different containers both claim — a real,
-// if transient, state during a container restart or handoff — is dropped
-// rather than silently attributed to whichever line happened to come last:
-// a wrong attribution here would make kill.Stop issue `docker stop` against
-// the wrong container.
+// parseDockerPorts is retained for descriptive/legacy fixtures only.
+// Its port matches cannot establish local engine or process ownership.
 func parseDockerPorts(out string) map[string]dockerContainer {
 	m := map[string]dockerContainer{}
 	ambiguous := map[string]bool{}
@@ -252,38 +245,9 @@ func parseDockerPorts(out string) map[string]dockerContainer {
 	return m
 }
 
-// DockerContainerID returns the short ID of the currently-running container
-// with the given exact name, if exactly one matches. kill.Stop calls this
-// immediately before a `docker stop` to confirm the name still points at the
-// same container it did at scan time — container names, unlike PIDs, can be
-// freed and reassigned to a completely different container.
-//
-// A package var, not a plain func, so kill's tests can stub the re-verify
-// result without a running Docker daemon.
-var DockerContainerID = func(name string) (string, bool) {
-	// Docker's --filter name= value is regex-matched, not literal — a name
-	// containing a regex metacharacter (".", "+", "*"... all legal in Docker
-	// container names, and routine in docker-compose-generated names) would
-	// otherwise match a differently-named container too. Escape it.
-	//
-	// #nosec G204 -- name is passed as a discrete exec argument (no shell), so
-	// there's no command injection; regexp.QuoteMeta additionally neutralizes
-	// the regex metacharacters that are the only injection surface here.
-	out, err := exec.Command("docker", "ps", "--filter", "name=^"+regexp.QuoteMeta(name)+"$", "--format", "{{.ID}}").Output()
-	if err != nil {
-		return "", false
-	}
-	id := strings.TrimSpace(string(out))
-	if id == "" || strings.Contains(id, "\n") {
-		return "", false // none, or ambiguous — don't guess
-	}
-	return id, true
-}
-
 // BrewServiceKnown reports whether brew currently lists the given formula at
 // all (started, stopped, error — any state). kill.Stop calls this immediately
-// before `brew services stop`, in the same spirit as DockerContainerID's
-// re-verification, though the underlying risk differs: a brew formula name
+// before `brew services stop`. A brew formula name
 // isn't reassignable to a different service the way a Docker container name
 // is (there's no "a different thing now answers to this label" scenario for
 // brew), so this only catches the narrower case of the formula having been
@@ -326,7 +290,6 @@ func Make(l scan.Listener, env Env) Profile {
 	kind := classifyKind(l)
 	formula := brewFormula(l.CommandLine)
 	managedBrew := formula != "" && env.BrewStarted[formula]
-	container := containerFor(l, env)
 	wildcard := hasWildcard(l.Addrs)
 	system := isSystem(l)
 	bgApp := isBackgroundApp(l)
@@ -336,12 +299,12 @@ func Make(l scan.Listener, env Env) Profile {
 	p.StopLabel = "Send TERM to PID " + itoa(l.PID)
 
 	switch {
-	case container.name != "":
-		p.Identity, p.Source, p.Confidence, p.Risk = container.name, SrcContainer, 88, Med
-		p.StopKind, p.StopArg, p.StopArgID, p.StopLabel = StopDocker, container.name, container.id, "docker stop "+container.name
-		p.Restart = "docker start " + container.name
-		p.Explain = "Published by a Docker-compatible container."
-		p.Warning = "Stopping the container is safer than killing the Docker helper process."
+	case IsDockerHelper(l):
+		p.Identity, p.Source, p.Confidence, p.Risk = "Container networking helper", SrcContainer, 80, Med
+		p.StopKind, p.StopLabel = StopAvoid, "Manage manually — Docker ownership unverified"
+		p.Explain = "Known container networking or engine helper."
+		p.Note, p.Warning = DockerManualReason, DockerManualReason
+		p.Restart = "Verify the intended engine and container, then manage them manually."
 
 	case wordMatch(commandText, "kubectl") && strings.Contains(commandText, "port-forward"):
 		identity, target := kubectlForwardIdentity(l.CommandLine)
@@ -476,14 +439,14 @@ func Make(l scan.Listener, env Env) Profile {
 		p.Identity = displayName(l)
 	}
 	if p.Source == "" {
-		p.Source = sourceFor(l, p, container.name != "", managedBrew, system, bgApp)
+		p.Source = sourceFor(l, p, managedBrew, system, bgApp)
 	}
 
 	// launchd override: a KeepAlive agent respawns the moment its PID dies,
 	// so a plain TERM is a ghost-chase — route the stop through the
 	// supervisor instead. Only StopTerm rows convert: brew keeps precedence
-	// (brew services IS the launchd front-end for those jobs), docker stops
-	// the container not the PID, and StopAvoid rows stay refused.
+	// (brew services IS the launchd front-end for those jobs), and StopAvoid
+	// rows, including unverified container helpers, stay refused.
 	if label, ok := env.LaunchdByPID[l.PID]; ok {
 		switch p.StopKind {
 		case StopTerm:
@@ -754,13 +717,40 @@ func brewFormula(cmd string) string {
 	return ""
 }
 
-func containerFor(l scan.Listener, env Env) dockerContainer {
-	for _, port := range l.Ports {
-		if c, ok := env.DockerByPort[port]; ok {
-			return c
+// DockerManualReason is shared by classification and execution. The current
+// collector captures no verified local engine target or listener-to-container
+// ownership, so automatic Docker commands and helper-process signals are unsafe.
+const DockerManualReason = "Docker engine and container ownership are unverified; inspect the intended local engine and manage this listener manually."
+
+// IsDockerHelper recognizes executable identities only. Matching a project path
+// or an ordinary argument (for example node docker-proxy.js) would misclassify an
+// unrelated local listener. These names are hints that require manual handling,
+// never proof that a particular engine or container owns the listener.
+func IsDockerHelper(l scan.Listener) bool {
+	names := []string{l.Command}
+	command := strings.TrimSpace(l.CommandLine)
+	if strings.HasPrefix(command, `"`) {
+		if end := strings.IndexByte(command[1:], '"'); end >= 0 {
+			names = append(names, command[1:end+1])
+		}
+	} else if fields := strings.Fields(command); len(fields) > 0 {
+		names = append(names, fields[0])
+	}
+	for _, name := range names {
+		name = strings.ReplaceAll(strings.Trim(name, `"'`), `\`, "/")
+		name = strings.TrimSuffix(strings.ToLower(filepath.Base(name)), ".exe")
+		if strings.HasPrefix(name, "com.docker.") {
+			return true
+		}
+		switch name {
+		case "docker", "dockerd", "docker-proxy", "docker-proxy-current",
+			"docker-pr", "docker-pro", "docker-prox", "com.docke", "com.docker",
+			"vpnkit", "rootlesskit", "rootlessport", "rootlessk", "rootlessp", "gvproxy",
+			"orbstack", "orbstack helper", "orbstack-helper", "colima", "rancher desktop", "rancher-desktop":
+			return true
 		}
 	}
-	return dockerContainer{} // a docker helper, if any, with no mapped container name
+	return false
 }
 
 func isSystem(l scan.Listener) bool {
@@ -811,10 +801,8 @@ func hasWildcard(addrs []string) bool {
 	return false
 }
 
-func sourceFor(l scan.Listener, p Profile, container, brew, system, bgApp bool) Source {
+func sourceFor(l scan.Listener, p Profile, brew, system, bgApp bool) Source {
 	switch {
-	case container:
-		return SrcContainer
 	case brew:
 		return SrcHomebrew
 	case system:

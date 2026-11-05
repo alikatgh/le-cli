@@ -266,7 +266,8 @@ func TestStopCommand(t *testing.T) {
 	}{
 		{"term", Row{L: scan.Listener{PID: 42}, P: intel.Profile{StopKind: intel.StopTerm}}, "kill -TERM 42", true},
 		{"brew", Row{P: intel.Profile{StopKind: intel.StopBrew, StopArg: "redis"}}, "brew services stop redis", true},
-		{"docker", Row{P: intel.Profile{StopKind: intel.StopDocker, StopArg: "web"}}, "docker stop web", true},
+		{"legacy Docker refuses", Row{P: intel.Profile{StopKind: intel.StopDocker, StopArg: "web"}}, "", false},
+		{"proxy cannot copy TERM", Row{L: scan.Listener{PID: 42, Command: "docker-proxy"}, P: intel.Profile{StopKind: intel.StopTerm}}, "", false},
 		{"avoid refuses", Row{P: intel.Profile{StopKind: intel.StopAvoid}}, "", false},
 	}
 	for _, c := range cases {
@@ -1541,5 +1542,20 @@ func TestRightClickGroupHeaderClosesMenu(t *testing.T) {
 	m, _ = m.Update(rightClick(headerY))
 	if m.(model).actionMenu {
 		t.Fatal("right-click on a group header must close the action menu, not leave it pinned to the previous row")
+	}
+}
+
+func TestDockerQuarantineHasTruthfulActions(t *testing.T) {
+	row := Row{L: scan.Listener{PID: 42}, P: intel.Profile{StopKind: intel.StopDocker, StopArg: "remote-web", StopArgID: strings.Repeat("a", 64)}}
+	if actionable(row) || stopTableCell(row.P) != "—" || !strings.Contains(stopShort(row.P), "ownership unverified") {
+		t.Fatal("legacy Docker profile advertised an automatic action")
+	}
+	if got := inspectCommand(row); got != "lsof -nP -p 42" {
+		t.Fatalf("inspection suggested an ambient Docker query: %q", got)
+	}
+	m := model{}
+	m.requestStop(row)
+	if m.confirm || !m.flashErr || m.flash != intel.DockerManualReason {
+		t.Fatalf("manual refusal missing: confirm=%v flash=%q", m.confirm, m.flash)
 	}
 }

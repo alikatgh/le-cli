@@ -49,16 +49,13 @@ func emptyEnv() Env {
 	return Env{BrewStarted: map[string]bool{}, DockerByPort: map[string]dockerContainer{}}
 }
 
-func TestMakeDockerContainer(t *testing.T) {
+func TestMakeDockerHelperRequiresManualOwnershipCheck(t *testing.T) {
 	l := scan.Listener{PID: 100, Ports: []string{"3000"}, CommandLine: "/usr/bin/docker-proxy"}
-	env := Env{
-		BrewStarted:  map[string]bool{},
-		DockerByPort: map[string]dockerContainer{"3000": {name: "web", id: "abc123"}},
-	}
+	env := Env{DockerByPort: map[string]dockerContainer{"3000": {name: "web", id: "abc123"}}}
 	got := Make(l, env)
-	check(t, "docker", got, want{identity: "web", source: SrcContainer, kind: Other, risk: Med, stop: StopDocker, stopArg: "web"})
-	if got.StopArgID != "abc123" {
-		t.Errorf("docker: StopArgID = %q, want abc123", got.StopArgID)
+	check(t, "docker", got, want{identity: "Container networking helper", source: SrcContainer, kind: Other, risk: Med, stop: StopAvoid})
+	if got.StopArg != "" || got.StopArgID != "" || !strings.Contains(got.Warning, "ownership are unverified") {
+		t.Fatalf("Docker hint granted an action or omitted the manual reason: %+v", got)
 	}
 }
 
@@ -229,18 +226,14 @@ func TestMakeUnknownFallback(t *testing.T) {
 	check(t, "unknown", got, want{identity: "mysteryapp", source: SrcTerminal, kind: Other, risk: Low, stop: StopTerm})
 }
 
-// Docker attribution wins over everything else — even a process whose command
-// line would otherwise classify as a database — because the port maps to a
-// container, and stopping the container is the right action.
-func TestMakeDockerBeatsCommandLine(t *testing.T) {
+// A same-number publication from another engine is not process ownership.
+func TestMakeDockerPortDoesNotOverrideProcess(t *testing.T) {
 	l := scan.Listener{PID: 1, Ports: []string{"6379"}, CommandLine: "redis-server"}
-	env := Env{
-		BrewStarted:  map[string]bool{},
-		DockerByPort: map[string]dockerContainer{"6379": {name: "cache", id: "d00d"}},
-	}
+	env := Env{DockerByPort: map[string]dockerContainer{"6379": {name: "remote-cache", id: "d00d"}}}
 	got := Make(l, env)
-	if got.Source != SrcContainer || got.StopKind != StopDocker || got.StopArg != "cache" {
-		t.Errorf("docker-vs-db: got source=%q stop=%q arg=%q, want container/docker/cache", got.Source, got.StopKind, got.StopArg)
+	check(t, "unrelated database", got, want{identity: "Redis", source: SrcTerminal, kind: Database, risk: High, stop: StopTerm})
+	if got.StopArg != "" || got.StopArgID != "" {
+		t.Fatalf("unrelated process inherited Docker target: %+v", got)
 	}
 }
 

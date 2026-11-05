@@ -165,27 +165,24 @@ func TestIsSystemMatchesDaemonBasenameNotSubstring(t *testing.T) {
 }
 
 func TestSourceFor(t *testing.T) {
-	// sourceFor is the Source safety net Make falls back to when a branch
-	// leaves Source unset. Priority order: container > brew > system > editor
-	// kind > bg app > has-cwd/cmdline > unknown.
+	// A publication has no place in source fallback: it cannot establish an owner.
 	cases := []struct {
-		name                        string
-		l                           scan.Listener
-		p                           Profile
-		container, brew, system, bg bool
-		want                        Source
+		name             string
+		l                scan.Listener
+		p                Profile
+		brew, system, bg bool
+		want             Source
 	}{
-		{"container wins", scan.Listener{}, Profile{}, true, true, true, true, SrcContainer},
-		{"brew next", scan.Listener{}, Profile{}, false, true, true, true, SrcHomebrew},
-		{"system next", scan.Listener{}, Profile{}, false, false, true, true, SrcMacOS},
-		{"editor kind", scan.Listener{}, Profile{Kind: Editor}, false, false, false, false, SrcIDE},
-		{"bg app", scan.Listener{}, Profile{}, false, false, false, true, SrcApp},
-		{"has cmdline -> terminal", scan.Listener{CommandLine: "x"}, Profile{}, false, false, false, false, SrcTerminal},
-		{"has cwd -> terminal", scan.Listener{Cwd: "/x"}, Profile{}, false, false, false, false, SrcTerminal},
-		{"nothing -> unknown", scan.Listener{}, Profile{}, false, false, false, false, SrcUnknown},
+		{"brew first", scan.Listener{}, Profile{}, true, true, true, SrcHomebrew},
+		{"system next", scan.Listener{}, Profile{}, false, true, true, SrcMacOS},
+		{"editor kind", scan.Listener{}, Profile{Kind: Editor}, false, false, false, SrcIDE},
+		{"bg app", scan.Listener{}, Profile{}, false, false, true, SrcApp},
+		{"has cmdline -> terminal", scan.Listener{CommandLine: "x"}, Profile{}, false, false, false, SrcTerminal},
+		{"has cwd -> terminal", scan.Listener{Cwd: "/x"}, Profile{}, false, false, false, SrcTerminal},
+		{"nothing -> unknown", scan.Listener{}, Profile{}, false, false, false, SrcUnknown},
 	}
 	for _, c := range cases {
-		if got := sourceFor(c.l, c.p, c.container, c.brew, c.system, c.bg); got != c.want {
+		if got := sourceFor(c.l, c.p, c.brew, c.system, c.bg); got != c.want {
 			t.Errorf("sourceFor(%s) = %q, want %q", c.name, got, c.want)
 		}
 	}

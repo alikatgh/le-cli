@@ -84,12 +84,12 @@ One object per listener:
 |-----|------|-------|
 | `identity` | string | Human name, e.g. "Postgres (Homebrew)" |
 | `kind` | string | |
-| `source` | string | How it was started: terminal, brew, docker, launchd, … |
+| `source` | string | Inferred source: terminal, homebrew, container, launchd, …; see ownership evidence |
 | `confidence` | number | Heuristic rule score; not a measured probability |
 | `risk` | string | |
 | `stopKind` | string | Which strategy applies; `avoid` means le refuses to stop it |
-| `stopArg` | string | Brew formula or container name |
-| `stopArgID` | string | Container short ID — the immutable handle docker stops act on |
+| `stopArg` | string | Manager target; empty for unverified container helpers |
+| `stopArgID` | string | Legacy container ID field; empty in current scans and never authorizes a Docker action |
 | `stopLabel` | string | Human description of the stop action |
 | `restart` | string | |
 | `note` | string | |
@@ -97,14 +97,20 @@ One object per listener:
 | `explain` | string | |
 | `evidence` | object | Additive provenance object described below |
 
+Docker publications are not collected from the ambient context. Recognized
+container/engine helpers have `stopKind: "avoid"`, no container target, and an
+explicit manual ownership-check reason. Legacy `stopKind: "docker"` profiles are
+also refused for stop/restart: neither a short/full ID nor a Unix-socket endpoint
+proves that an engine is local and owns the selected process.
+
 `profile.evidence` always has six keys: `listener`, `command`, `directory`,
 `startTime`, `classification`, and `owner`. Each is an object with `status`
 (string: `observed`, `inferred`, or `unavailable`) and `detail` (string).
 Observed describes the actual OS/query field, not the correctness of a
 heuristic identity. Classification is inferred; confidence is not a probability.
 A missing command line replaced by a short process name stays unavailable.
-Docker published **TCP** ports support an inferred association; they do not
-verify process ownership. An exact launchd PID-to-label observation can be
+Container helper executable names are hints; engine/container ownership remains
+unavailable. An exact launchd PID-to-label observation can be
 reported as observed. Zero/default CPU and RSS values have no availability
 flag in the legacy schema and must not be interpreted as verified idle/empty
 measurements. Existing keys and their types are unchanged.
@@ -187,7 +193,8 @@ guess:
 | `cwd` / DIR column | from `lsof` | **empty** — Windows keeps another process's working directory in its PEB, behind privileged reads. `le stop --dir` therefore matches nothing on Windows. |
 | `user` | `albert`, `root` | `DESKTOP\albert`, `NT AUTHORITY\SYSTEM` |
 | Graceful stop | `SIGTERM` | `taskkill /PID n` — posts WM_CLOSE. A console process with no window **cannot** be stopped this way; `le` refuses and prints the `taskkill /F` command rather than escalating to a hard kill on its own. |
-| `brew services` / `launchctl` | detected and used | never selected (not present); Docker works as on unix |
+| `brew services` / `launchctl` | detected and used | never selected (not present) |
+| Docker actions | refused until local engine/process ownership can be verified | same manual restriction |
 | `restart-dock`, `restart-finder`, `sleep-display`, `keep-awake` | present | not registered — they are Dock, Finder, `pmset` and `caffeinate` by name |
 | `flush-dns` | `dscacheutil` / `resolvectl` | `ipconfig /flushdns` |
 | `open` | `open` / `xdg-open` | `rundll32 url.dll,FileProtocolHandler` (no shell in between — a `&` in a URL stays a `&`) |

@@ -5,6 +5,14 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+- Docker port matches no longer attribute unrelated local listeners to containers
+  from an ambient, potentially remote engine. Automatic Docker stop/restart and
+  raw signals to recognized container helpers are intentionally refused until
+  local engine and listener ownership can be verified. Inspect the intended
+  engine and manage the container manually; a name or container ID alone is
+  insufficient.
+
 ## [0.1.27] - 2026-11-05
 
 ### Added
