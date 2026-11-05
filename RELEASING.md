@@ -41,11 +41,30 @@ The [`release`](.github/workflows/release.yml) workflow runs the tests, then
 (amd64 + arm64), attaches the tarballs (binary + man pages) +
 `checksums.txt` to a GitHub release, and attests build provenance.
 
-**Homebrew tap automation:** if the repo has a `TAP_GITHUB_TOKEN` secret
-(a fine-grained PAT with `contents: write` on `alikatgh/homebrew-tap`),
-goreleaser also pushes the updated formula — no hand-editing of sha256s.
-Without the secret, the tap step is skipped and the bump is manual
-(section below).
+**Homebrew tap automation:** the `TAP_GITHUB_TOKEN` secret should be a
+fine-grained PAT with `contents: write` on `alikatgh/homebrew-tap`. Before
+GoReleaser, a bounded preflight checks that the tap's default branch is
+unprotected and negotiates an authenticated `git push --dry-run` through the
+GitHub CLI credential helper. The preflight changes no remote refs and keeps
+its temporary Git/GitHub CLI configuration in a private runner directory.
+A passing check establishes access at that moment; token validity, branch
+policy, and the later formula push can still change or fail.
+
+A missing/unusable token, rejected push, protected/unknown branch, or timeout
+selects the manual fallback: GoReleaser publishes with Homebrew skipped, and
+the workflow attempts archive provenance before deliberately failing with
+`TAP_SKIPPED=1`. Update the tap for that release as described below. If the
+preflight passes, GoReleaser keeps the existing automatic formula update.
+
+Archive attestation also runs after a failed GoReleaser step when archives
+exist and the job has not been cancelled. Built archives, published release
+assets, valid attestations, and an updated tap are separate results. A red job
+may already have published assets; inspect the release and tap before retrying
+or recovering manually. If no archives were built, attestation is skipped.
+
+The preflight's offline regressions run on the existing Ubuntu CI job and can
+be checked locally with `python3 .github/scripts/test-tap-preflight.py`; they
+use only stub clients and synthetic credentials.
 
 ## Local dry-run (no publishing)
 
@@ -107,3 +126,61 @@ Then anyone can install with:
 ```sh
 brew install alikatgh/tap/le
 ```
+
+## Nightly fuzz crash recovery
+
+The nightly fuzz matrix and its six 180-second campaigns are unchanged.
+Failures remain failed; the final reporting step retains the current target's
+complete Go corpus in base64 chunks in the workflow log, with paths, SHA256s,
+source commit and exact replay commands. It uses logs and a short job summary
+instead of Actions artifact uploads. Normal workflow-log retention still applies.
+
+Save the **report crash corpus** step's plain-text log as `crash.log`. In a
+checkout of its recorded `GITHUB_SHA`, run:
+
+```sh
+python3 .github/scripts/report-fuzz-crash.py restore --log crash.log --source-sha <recorded-commit-sha>
+```
+
+The helper validates every chunk, hash, path and source SHA before writing.
+It creates new corpus files only, rejects symlink paths and existing files,
+and prints the exact `go test -run ...` command for each restored case. Review
+and run those commands separately; restoration does not check out code or
+execute a corpus. The restore helper uses macOS/Linux directory-fd guards.
+
+Reporting is explicitly bounded to 32 files and 8 MiB of raw corpus per target,
+with 3 KiB raw chunks and a 16 MiB encoded-log ceiling. A larger or unsafe corpus
+fails the reporter clearly; it never emits a truncated corpus as complete.
+These are reporting bounds: Go 1.27.3's `internal/fuzz/worker.go` allows 100 MiB
+of shared input, so a minimized failure has no guaranteed small size. Summary
+payloads are included only when the whole summary fits within 900 KiB, below
+[GitHub's 1 MiB per-step limit](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#adding-a-job-summary);
+larger payloads remain in the step log. A failure
+that produced no corpus is reported explicitly without changing its status.
+
+Run the offline transport/restore regressions with
+`python3 .github/scripts/test-fuzz-crash-report.py`.
+
+## Public CLI execution cost evidence
+
+This scope is the public `alikatgh/le-cli` repository using standard
+GitHub-hosted runners, public GitHub Release assets and public build-provenance
+attestations. It does not authorize larger runners, private repositories,
+paid storage or services. The verified free paths are standard public runner
+execution, public Release-asset storage, public-repository attestations, and
+workflow logs/summaries; see
+[GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions#examples-of-how-usage-is-measured).
+
+At **2026-11-05 05:26:40 UTC**, a read-only
+`GET /repos/alikatgh/le-cli/actions/cache/storage-limit` returned HTTP 200 and
+`max_cache_size_gb: 10`. This is the repository's configured hard cache maximum,
+matching the included 10 GB allowance; GitHub evicts cache entries at that
+limit rather than allowing storage growth above it. The same check observed
+87,171,255 bytes across one cache entry and zero Actions artifacts. See the
+[cache storage-limit API](https://docs.github.com/en/rest/actions/cache#get-github-actions-cache-storage-limit-for-a-repository).
+
+After the fuzz-report change, no workflow uploads Actions artifacts. Crash
+recovery uses logs and bounded step summaries; GitHub Release assets and
+attestations keep their existing public-repository paths. These observations
+are dated evidence, not permission to raise a limit. Refresh affected account
+and repository controls before later activation or configuration changes.

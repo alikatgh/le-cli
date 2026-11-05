@@ -4,8 +4,8 @@ name: fuzz
 # seed corpus during normal `go test` in ci.yml — that catches regressions on
 # known inputs but never explores new ones. This runs the actual fuzzer on a
 # schedule so it keeps hunting for inputs that crash the ps/lsof/docker
-# parsers, and surfaces any crasher as a failed job + an uploaded corpus file
-# to reproduce from.
+# parsers, and surfaces any crasher as a failed job + lossless corpus in the
+# workflow log/summary, without metered Actions artifact storage.
 
 on:
   schedule:
@@ -39,10 +39,6 @@ jobs:
       - name: fuzz ${{ matrix.fn }}
         run: go test -run '^$' -fuzz='^${{ matrix.fn }}$' -fuzztime=180s ${{ matrix.pkg }}
 
-      - name: upload crash corpus
+      - name: report crash corpus
         if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fuzz-crash-${{ matrix.fn }}
-          path: ${{ matrix.pkg }}testdata/fuzz/
-          if-no-files-found: ignore
+        run: python3 .github/scripts/report-fuzz-crash.py report --package '${{ matrix.pkg }}' --target '${{ matrix.fn }}'

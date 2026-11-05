@@ -41,6 +41,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Homebrew tap preflight regressions
+        if: runner.os == 'Linux'
+        run: python3 .github/scripts/test-tap-preflight.py
+
+      - name: Fuzz crash reporting regressions
+        if: runner.os == 'Linux'
+        run: python3 .github/scripts/test-fuzz-crash-report.py
+
       - uses: actions/setup-go@v6
         with:
           go-version: '1.27.3'
