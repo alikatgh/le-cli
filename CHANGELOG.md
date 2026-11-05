@@ -27,6 +27,9 @@ All notable changes to `le` are documented here. Format loosely follows
   line; a substituted executable name does not establish identity.
 
 ### Fixed
+- Unix collector errors are reported as failures instead of successful empty
+  lists. Failed JSON scans emit no snapshot, the TUI retains its last good
+  rows, and watch-all does not report false listener disappearances.
 - On Windows, opening a terminal keeps its folder path out of shell command
   text. Spaces and punctuation such as `&`, `|`, `%` and parentheses remain
   literal parts of the working directory.

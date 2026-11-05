@@ -168,7 +168,10 @@ func listCmd() *cobra.Command {
 			"command, folder, or owner — the same match the TUI's / filter uses.",
 		Args: usageArgs(cobra.MaximumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			rows := gather()
+			rows, err := gather()
+			if err != nil {
+				return err
+			}
 			if len(args) == 1 {
 				rows = filterRows(rows, args[0])
 			}
@@ -482,17 +485,17 @@ type row struct {
 	Profile intel.Profile `json:"profile"`
 }
 
-func gather() []row {
+func gather() ([]row, error) {
 	listeners, err := scan.Scan()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "scan error:", err)
+		return nil, fmt.Errorf("scan error: %w", err)
 	}
 	env := intel.Detect()
 	rows := make([]row, len(listeners))
 	for i, l := range listeners {
 		rows[i] = row{Listener: l, Profile: intel.Make(l, env)}
 	}
-	return rows
+	return rows, nil
 }
 
 func printJSON(w io.Writer, v any) error {
@@ -663,7 +666,10 @@ func matchRows(rows []row, target string) []row {
 }
 
 func runStop(target string, dryRun, asJSON bool) error {
-	rows := gather()
+	rows, err := gather()
+	if err != nil {
+		return err
+	}
 	matched := matchRows(rows, target)
 	if len(matched) == 0 {
 		return fmt.Errorf("nothing listening on %s", target)
@@ -695,7 +701,10 @@ func dispatchStop(w, errW io.Writer, matched []row, dryRun, asJSON bool, stop fu
 }
 
 func runStopDir(dir string, dryRun, asJSON bool) error {
-	rows := gather()
+	rows, err := gather()
+	if err != nil {
+		return err
+	}
 	matched := matchDir(rows, dir)
 	if len(matched) == 0 {
 		return fmt.Errorf("no listeners have a working directory under %s", dir)
@@ -706,7 +715,10 @@ func runStopDir(dir string, dryRun, asJSON bool) error {
 // runRestart bounces every listener matching the port/pid through its service
 // owner (brew/docker). Mirrors runStop's resolve-then-act shape.
 func runRestart(target string) error {
-	rows := gather()
+	rows, err := gather()
+	if err != nil {
+		return err
+	}
 	matched := matchRows(rows, target)
 	if len(matched) == 0 {
 		return fmt.Errorf("nothing listening on %s", target)
@@ -729,7 +741,10 @@ func runRestart(target string) error {
 
 // runWatch resolves a port/pid to its owning process and blocks until it exits.
 func runWatch(target string, timeout time.Duration) error {
-	rows := gather()
+	rows, err := gather()
+	if err != nil {
+		return err
+	}
 	matched := matchRows(rows, target)
 	if len(matched) == 0 {
 		return fmt.Errorf("nothing listening on %s", target)
@@ -740,7 +755,11 @@ func runWatch(target string, timeout time.Duration) error {
 // runWatchAll polls the listener set and streams every appearance (+) and
 // disappearance (-) — a live "what just started/stopped" feed. Loops until Ctrl-C.
 func runWatchAll(interval time.Duration) error {
-	prev := snapshotKeys(gather())
+	rows, err := gather()
+	if err != nil {
+		return err
+	}
+	prev := snapshotKeys(rows)
 	fmt.Printf("watching for listener changes every %s — Ctrl-C to stop\n", interval)
 
 	sig := make(chan os.Signal, 1)
@@ -754,7 +773,11 @@ func runWatchAll(interval time.Duration) error {
 			fmt.Println("\nstopped")
 			return nil
 		case <-ticker.C:
-			cur := snapshotKeys(gather())
+			rows, err := gather()
+			if err != nil {
+				return err
+			}
+			cur := snapshotKeys(rows)
 			for k, label := range cur {
 				if _, ok := prev[k]; !ok {
 					fmt.Println("+ " + label)

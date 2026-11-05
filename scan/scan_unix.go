@@ -44,16 +44,12 @@ func scanPlatform() ([]Listener, error) {
 	// -FpcnPT: field output keyed by p(pid) c(command) n(name/addr) plus protocol/state.
 	out, err := runCmd("lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-FpcnPT")
 	if err != nil {
-		// lsof exits non-zero when nothing is listening, so a non-zero *exit*
-		// is the normal empty case — not a failure. But if lsof couldn't run at
-		// all (missing binary, unexecutable), that's a real error we must
-		// surface: otherwise a broken environment is indistinguishable from
-		// "nothing is listening", and `le stop` reports "nothing listening"
-		// when the scan actually failed (LE-CLI-002 / LE-CLI-014). An
-		// *exec.ExitError means lsof ran and exited non-zero; anything else
-		// (e.g. *exec.Error wrapping ErrNotFound) means it never ran.
+		// Only a silent exit 1 with no listener output means no matches.
+		// Other failures can leave the collection incomplete, even if lsof
+		// wrote some rows. Do not publish those rows as a complete snapshot.
 		var exitErr *exec.ExitError
-		if !errors.As(err, &exitErr) {
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 ||
+			len(exitErr.Stderr) != 0 || strings.TrimSpace(out) != "" {
 			return nil, fmt.Errorf("lsof: %w", err)
 		}
 	}
