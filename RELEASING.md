@@ -72,8 +72,30 @@ was removed. Deliberate tool upgrades must refresh the action pin, tool version
 and executable digest together.
 
 The existing Ubuntu CI job installs and verifies this same binary, then runs
-`goreleaser check` without publishing, archiving, artifact uploads or tap
-credentials. Actual archive/publication checks still belong to the tag workflow.
+plain `goreleaser check`. Pinned v2.16.0 has no `--ignore=deprecations` option.
+Its [check implementation](https://github.com/goreleaser/goreleaser/blob/v2.16.0/cmd/check.go)
+returns **2** for a valid configuration using deprecated properties; schema or
+default-validation errors return **1**, including a configuration that is also
+deprecated. CI accepts only 0 or 2 and propagates every other failure. The
+exception is deliberate: `brews` generates our existing Formula for macOS and
+Linux; silently switching to a cask would change the installed product contract.
+Deprecation messages remain visible.
+
+CI then performs a real, credential-free snapshot packaging run:
+
+```sh
+goreleaser release --snapshot --clean --skip=publish --timeout=10m --parallelism=2
+```
+
+The [pinned snapshot implementation](https://github.com/goreleaser/goreleaser/blob/v2.16.0/cmd/release.go)
+skips publishing, announcements and release-state validation. The separate
+configuration check above keeps schema validation mandatory. The command is
+bounded to ten minutes/two concurrent tasks, with a twelve-minute CI step limit.
+It supplies no GitHub or tap credentials and uploads no Actions artifacts.
+CI verifies exactly four macOS/Linux tarballs and two Windows zips, matching
+checksums, included binaries/man pages, and a generated Formula referencing all
+four tarballs and their hashes. Files stay on the disposable runner; they are
+not a public release. Publication and provenance remain in the tag workflow.
 
 The `v0.1.26` attempt failed while compiling the release tool's dependency graph
 (`grpc@v1.80.0`: undefined `http2.TrailerPrefix`), before any CLI archives or
