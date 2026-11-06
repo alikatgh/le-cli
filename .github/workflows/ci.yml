@@ -139,7 +139,7 @@ jobs:
             git add --intent-to-add -- man/
             python3 - <<'PYDOC'
           import base64, subprocess
-          patch = subprocess.run(["git", "diff", "--no-ext-diff", "--", "man/"], check=True, capture_output=True, timeout=10).stdout
+          patch = subprocess.run(["git", "diff", "--no-ext-diff", "HEAD", "--", "man/"], check=True, capture_output=True, timeout=10).stdout
           if len(patch) > 262144:
               raise SystemExit("Manual diff exceeds reporting limit")
           print("LE_MAN_PATCH_BASE64=" + base64.b64encode(patch).decode("ascii"))
