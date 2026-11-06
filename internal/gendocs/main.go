@@ -24,7 +24,7 @@ import (
 // one the moment the month rolls over, so the CI drift check would go red on
 // the 1st of every month for a repo nobody touched. Bump it deliberately when
 // the pages get a real overhaul; drift then means content drift, nothing else.
-const manDate = "2026-08-09"
+const manDate = "2026-11-06"
 
 func main() {
 	const dir = "man"

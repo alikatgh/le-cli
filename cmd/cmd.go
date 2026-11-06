@@ -102,6 +102,7 @@ func newRoot(version string, allPlatforms bool) *cobra.Command {
 		stopCmd(), restartCmd())
 	group(root, "ports", "Hold, wait on, or forward a port (for scripts):",
 		holdCmd(), waitCmd(), readyCmd(), openCmd(), forwardCmd())
+	group(root, "text", "Portable developer text tools:", textCmd())
 	if allPlatforms || runtime.GOOS == "darwin" {
 		group(root, "companion", "Optional Mac app connection:", companionCmd(version))
 		group(root, "macos", "macOS housekeeping:",
@@ -411,11 +412,14 @@ func checkCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "check PORT",
 		Short: "HTTP health-check a listener (status + latency + curl)",
-		Long: "GET http://127.0.0.1:PORT/ and report the status code and round-trip\n" +
-			"time, plus a ready-to-run curl command. A non-HTTP listener surfaces as\n" +
-			"a clear error rather than hanging.",
+		Long: "Check literal IPv4/IPv6 loopback and report status, timing and a curl command.\n" +
+			"HTTPS development certificates are diagnostic-only. The complete check has\n" +
+			"a five-second deadline and a 32 KiB aggregate response-header limit.\n" +
+			"Redirects, proxies and cookies are not used; response bodies are not retained.",
 		Args: usageArgs(cobra.ExactArgs(1)),
-		RunE: func(cmd *cobra.Command, args []string) error { return tools.Check(args[0]) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return tools.CheckContext(cmd.Context(), args[0], cmd.OutOrStdout())
+		},
 	}
 }
 

@@ -5,6 +5,24 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.29] - 2026-11-07
+
+### Added
+- All 14 native text-tool equivalents under `le text`, using portable stdin/stdout:
+  UUID, JSON, Unix time/date, plain text, Base64, URL encoding, counts, SHA-256,
+  sample text, starter .gitignore and cryptographically random passwords.
+- One-MiB UTF-8 input/output limits, a JSON depth bound of 128, strict encoding
+  validation and no partial stdout on invalid input. Zero/negative epoch values work.
+
+### Fixed
+- Local HTTP checks dial only literal IPv4/IPv6 loopback, ignore proxies and
+  cookies, refuse redirects/upgrades, and bound all interim/final headers to
+  32 KiB/eight interim responses. One five-second deadline includes TLS detection;
+  cancellation closes active connections and response bodies are not retained.
+- Invalid-port usage preserves exit 2, and HTTP tests use only their own fixtures.
+- Standard-runner CI/release jobs have explicit 20-minute bounds and no persistent
+  build caches or artifact uploads. Manual drift reports include bounded source patches.
+
 ## [0.1.28] - 2026-11-05
 
 ### Fixed

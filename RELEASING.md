@@ -245,3 +245,26 @@ recovery uses logs and bounded step summaries; GitHub Release assets and
 attestations keep their existing public-repository paths. These observations
 are dated evidence, not permission to raise a limit. Refresh affected account
 and repository controls before later activation or configuration changes.
+
+
+## Public CI execution boundary — verified 2026-11-06
+
+For repository `alikatgh/le-cli` (ID 1284801294), the live GitHub repository API
+reports public visibility. CI uses only standard `ubuntu-latest`, `macos-latest`
+and `windows-latest` runners. GitHub's current billing documentation states that
+standard public-repository compute remains free independently of shared included
+usage. Job logs/summaries do not use artifact allowance. This is a provider price
+of zero within this scope, not an estimate against an unknown private quota.
+
+Changed CI/release jobs fail closed with `github.event.repository.private == false`
+at job admission, use explicit 20-minute limits, disable every setup-go cache and
+upload no Actions artifacts or custom runner images. Runner-local package output
+is ephemeral. No paid SDK, private runner, larger runner, provisioning or customer
+API is added. The affected additional variable charge is therefore $0. This does
+not audit unrelated workflows, existing storage or account-wide billing, and does
+not authorize a future private/larger-runner route.
+
+Evidence: https://docs.github.com/en/billing/concepts/product-billing/github-actions
+and remote feature-branch workflow inspection. Before activating a materially
+changed route, recheck repository visibility, runner labels, caches/artifacts and
+all transitive work. Do not infer a spending cap from a $0 historical bill.

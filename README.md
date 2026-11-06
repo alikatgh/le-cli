@@ -40,16 +40,16 @@ identifies the owner and picks the stop strategy that actually works:
 **The rule underneath all of it: no signal without proven identity.** This is
 the difference from `lsof | kill` — the point isn't sending the signal, it's
 refusing to send one when the process behind a PID can no longer be proven to
-be the process you scanned. Every stop re-verifies the PID's start time
-immediately before supported actions (and a launchd bootout re-verifies the
+be the process you scanned. Before supported actions it rechecks the captured
+start time, or requires an exact full command line when start time is unavailable
+(and a launchd bootout re-verifies the
 label→PID mapping). Docker published ports, names and IDs do not prove a local
 engine owns a listener, so Docker actions are refused with a manual inspection
 reason. An ambient Docker context may select a remote engine.
 Fast-recycling PIDs are exactly the
 boring edge case where naive port-killers hit the wrong process.
 
-Every stop re-checks the PID's start time first, so a recycled PID is never the
-one that gets signalled.
+Missing or changed identity evidence prevents the action.
 
 ## Install
 
@@ -133,6 +133,39 @@ le companion       # optional foreground connection for the Mac app (macOS)
 `le --help` groups the full command set by what it's for — see what's
 listening / stop it the right way / wait on a port / macOS housekeeping — and
 every command has its own help: `le <command> --help`.
+
+### Portable text tools
+
+The native Mac app's 14 text utilities also have portable CLI commands in
+**le 0.1.29 or later**. They read UTF-8 from stdin and write to stdout; they do
+not read or replace your clipboard. Input and output are each limited to 1 MiB.
+Invalid input produces no partial result. JSON nesting is limited to 128.
+
+```sh
+printf '{"ready":true}' | le text json
+printf 'hello' | le text base64-encode
+printf '%s' 'aGVsbG8=' | le text base64-decode
+printf '%s' '/path with spaces+plus' | le text url-encode
+printf '%s' '/path%20with%20spaces+plus' | le text url-decode
+printf 'one two\n' | le text count
+printf 'abc' | le text sha256
+le text epoch-to-date --seconds=-1
+```
+
+All commands: `uuid`, `json`, `epoch`, `epoch-to-date`, `plain`,
+`base64-encode`, `base64-decode`, `url-encode`, `url-decode`, `count`,
+`sha256`, `lorem`, `gitignore`, and `password`, under `le text`.
+Generated passwords use 24 cryptographically random bytes; send the output only
+to your intended private destination. Plain and decoded text retain exact
+content. Scalar values and reports end in LF. Base64 input is canonical, allowing
+ASCII whitespace; URL decoding preserves a literal `+`. Zero and negative whole
+Unix seconds are supported within years 0001 through 9999.
+
+`le check PORT` retains HTTP/HTTPS and IPv4/IPv6 loopback support, while refusing
+redirects, DNS redirection, proxy settings and cookies. It applies one five-second
+budget across detection and the request, caps aggregate response headers at
+32 KiB and eight interim responses, and does not retain response bodies.
+Self-signed HTTPS is a loopback development diagnostic, not remote TLS trust.
 
 ### Optional Mac app companion
 
@@ -280,3 +313,7 @@ one click before you kill, that's the companion app: https://localhostexplorer.c
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+The optional datacenter pilot builds on this free CLI and existing monitoring
+tools; it does not change the CLI MIT license or promise a deployed fleet service.
+See [the pilot overview](https://localhostexplorer.com/datacenter) for current scope.

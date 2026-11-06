@@ -22,6 +22,8 @@ jobs:
   # ps/lsof parsing is macOS-first, so a macOS-only regression must not reach a
   # tagged binary — the ubuntu-only, no-race release test missed both. (LE-562/563)
   test:
+    if: github.event.repository.private == false
+    timeout-minutes: 20
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -31,11 +33,14 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.27.3'
+          cache: false
       - name: Test
         run: go test -race ./...
 
   release:
+    if: github.event.repository.private == false
     needs: test
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -47,6 +52,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.27.3'
+          cache: false
 
       # Install the official OSS binary; compiling the release tool's separate
       # dependency graph broke v0.1.26 before any CLI archives were built.

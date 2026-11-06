@@ -1,9 +1,11 @@
 package tools
 
 import (
+	"bytes"
+	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -13,8 +15,7 @@ func TestCheckReachesAListener(t *testing.T) {
 	}))
 	defer srv.Close()
 	// srv.URL is like http://127.0.0.1:PORT — Check hits 127.0.0.1:PORT itself.
-	port := srv.URL[strings.LastIndex(srv.URL, ":")+1:]
-	if err := Check(port); err != nil {
+	if err := checkFixture(context.Background(), srv, &bytes.Buffer{}); err != nil {
 		t.Errorf("Check should reach the local test server, got %v", err)
 	}
 }
@@ -27,15 +28,15 @@ func TestCheckDetectsHTTPS(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
-	port := srv.URL[strings.LastIndex(srv.URL, ":")+1:]
-	if err := Check(port); err != nil {
+	if err := checkFixture(context.Background(), srv, &bytes.Buffer{}); err != nil {
 		t.Errorf("Check should reach the local https test server, got %v", err)
 	}
 }
 
 func TestCheckErrorsOnClosedPort(t *testing.T) {
-	// Nothing listens on :1 → connection refused → a bounded error, not a hang.
-	if err := Check("1"); err == nil {
+	// Refuse through an injected closed dial, without touching an ambient port.
+	var out bytes.Buffer
+	if err := checkContext(context.Background(), "1", &out, func(context.Context, string, string) (net.Conn, error) { return nil, net.ErrClosed }); err == nil {
 		t.Error("Check on a closed port should return an error")
 	}
 }
