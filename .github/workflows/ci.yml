@@ -1,5 +1,8 @@
 name: ci
 
+permissions:
+  contents: read
+
 # Runs on every push and PR, unlike release.yml (which only fires on a v*
 # tag) — so a broken commit fails here long before anyone tags a release.
 # macOS is in the matrix on purpose: le's own ps/lsof parsing is
@@ -25,6 +28,7 @@ concurrency:
 
 jobs:
   test:
+    timeout-minutes: 20
     strategy:
       # Each OS reports on its own. With fail-fast, one platform's failure
       # cancels the others mid-run and hides their result — which is exactly
@@ -56,6 +60,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.27.3'
+          cache: false
 
       - name: Install GoReleaser
         if: runner.os == 'Linux'
@@ -130,8 +135,14 @@ jobs:
           # deletion instead of sitting there tracked and unmodified).
           if [ -n "$(git status --porcelain -- man/)" ]; then
             echo "man/ is stale — run 'go run ./internal/gendocs' and commit the result:"
-            git status --short -- man/
-            git diff -- man/
+            git add --intent-to-add -- man/
+            python3 - <<'PYDOC'
+          import base64, subprocess
+          patch = subprocess.run(["git", "diff", "--no-ext-diff", "--", "man/"], check=True, capture_output=True, timeout=10).stdout
+          if len(patch) > 262144:
+              raise SystemExit("Manual diff exceeds reporting limit")
+          print("LE_MAN_PATCH_BASE64=" + base64.b64encode(patch).decode("ascii"))
+          PYDOC
             exit 1
           fi
 
@@ -140,18 +151,21 @@ jobs:
   # unix-only symbol leaking into an untagged test breaks here, on ubuntu, in
   # seconds — without waiting for a Windows runner.
   cross:
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: '1.27.3'
+          cache: false
       - name: windows/amd64
         run: GOOS=windows GOARCH=amd64 go build ./... && GOOS=windows GOARCH=amd64 go vet ./...
       - name: windows/arm64
         run: GOOS=windows GOARCH=arm64 go build ./... && GOOS=windows GOARCH=arm64 go vet ./...
 
   lint:
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -159,6 +173,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.27.3'
+          cache: false
 
       # Pinned, not @latest: a linter version bump can add new default
       # checks and turn CI red on a commit that didn't actually change

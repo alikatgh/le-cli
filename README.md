@@ -134,6 +134,39 @@ le companion       # optional foreground connection for the Mac app (macOS)
 listening / stop it the right way / wait on a port / macOS housekeeping — and
 every command has its own help: `le <command> --help`.
 
+### Portable text tools
+
+The native Mac app's 14 text utilities also have portable CLI commands in
+**le 0.1.29 or later**. They read UTF-8 from stdin and write to stdout; they do
+not read or replace your clipboard. Input and output are each limited to 1 MiB.
+Invalid input produces no partial result. JSON nesting is limited to 128.
+
+```sh
+printf '{"ready":true}' | le text json
+printf 'hello' | le text base64-encode
+printf '%s' 'aGVsbG8=' | le text base64-decode
+printf '%s' '/path with spaces+plus' | le text url-encode
+printf '%s' '/path%20with%20spaces+plus' | le text url-decode
+printf 'one two\n' | le text count
+printf 'abc' | le text sha256
+le text epoch-to-date --seconds=-1
+```
+
+All commands: `uuid`, `json`, `epoch`, `epoch-to-date`, `plain`,
+`base64-encode`, `base64-decode`, `url-encode`, `url-decode`, `count`,
+`sha256`, `lorem`, `gitignore`, and `password`, under `le text`.
+Generated passwords use 24 cryptographically random bytes; send the output only
+to your intended private destination. Plain and decoded text retain exact
+content. Scalar values and reports end in LF. Base64 input is canonical, allowing
+ASCII whitespace; URL decoding preserves a literal `+`. Zero and negative whole
+Unix seconds are supported within years 0001 through 9999.
+
+`le check PORT` retains HTTP/HTTPS and IPv4/IPv6 loopback support, while refusing
+redirects, DNS redirection, proxy settings and cookies. It applies one five-second
+budget across detection and the request, caps aggregate response headers at
+32 KiB and eight interim responses, and does not retain response bodies.
+Self-signed HTTPS is a loopback development diagnostic, not remote TLS trust.
+
 ### Optional Mac app companion
 
 Run `le companion` explicitly when you want the Mac app to inspect host processes
@@ -280,3 +313,7 @@ one click before you kill, that's the companion app: https://localhostexplorer.c
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+The optional datacenter pilot builds on this free CLI and existing monitoring
+tools; it does not change the CLI MIT license or promise a deployed fleet service.
+See [the pilot overview](https://localhostexplorer.com/datacenter) for current scope.
