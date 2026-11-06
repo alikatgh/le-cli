@@ -583,7 +583,9 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.27...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.29...HEAD
+[0.1.29]: https://github.com/alikatgh/le-cli/compare/v0.1.28...v0.1.29
+[0.1.28]: https://github.com/alikatgh/le-cli/compare/v0.1.27...v0.1.28
 [0.1.27]: https://github.com/alikatgh/le-cli/compare/v0.1.25...v0.1.27
 [0.1.26]: https://github.com/alikatgh/le-cli/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/alikatgh/le-cli/compare/v0.1.24...v0.1.25
