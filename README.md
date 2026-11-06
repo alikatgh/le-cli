@@ -40,16 +40,16 @@ identifies the owner and picks the stop strategy that actually works:
 **The rule underneath all of it: no signal without proven identity.** This is
 the difference from `lsof | kill` — the point isn't sending the signal, it's
 refusing to send one when the process behind a PID can no longer be proven to
-be the process you scanned. Every stop re-verifies the PID's start time
-immediately before supported actions (and a launchd bootout re-verifies the
+be the process you scanned. Before supported actions it rechecks the captured
+start time, or requires an exact full command line when start time is unavailable
+(and a launchd bootout re-verifies the
 label→PID mapping). Docker published ports, names and IDs do not prove a local
 engine owns a listener, so Docker actions are refused with a manual inspection
 reason. An ambient Docker context may select a remote engine.
 Fast-recycling PIDs are exactly the
 boring edge case where naive port-killers hit the wrong process.
 
-Every stop re-checks the PID's start time first, so a recycled PID is never the
-one that gets signalled.
+Missing or changed identity evidence prevents the action.
 
 ## Install
 
