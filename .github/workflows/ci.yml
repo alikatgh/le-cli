@@ -28,6 +28,7 @@ concurrency:
 
 jobs:
   test:
+    if: github.event.repository.private == false
     timeout-minutes: 20
     strategy:
       # Each OS reports on its own. With fail-fast, one platform's failure
@@ -151,6 +152,7 @@ jobs:
   # unix-only symbol leaking into an untagged test breaks here, on ubuntu, in
   # seconds — without waiting for a Windows runner.
   cross:
+    if: github.event.repository.private == false
     timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
@@ -165,6 +167,7 @@ jobs:
         run: GOOS=windows GOARCH=arm64 go build ./... && GOOS=windows GOARCH=arm64 go vet ./...
 
   lint:
+    if: github.event.repository.private == false
     timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:

@@ -22,6 +22,7 @@ jobs:
   # ps/lsof parsing is macOS-first, so a macOS-only regression must not reach a
   # tagged binary — the ubuntu-only, no-race release test missed both. (LE-562/563)
   test:
+    if: github.event.repository.private == false
     timeout-minutes: 20
     strategy:
       matrix:
@@ -37,6 +38,7 @@ jobs:
         run: go test -race ./...
 
   release:
+    if: github.event.repository.private == false
     needs: test
     timeout-minutes: 20
     runs-on: ubuntu-latest
