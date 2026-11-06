@@ -190,8 +190,9 @@ func decodeTextBase64(input []byte) ([]byte, error) {
 		if textASCIIWhitespace(value) {
 			continue
 		}
-		if !(value >= 'A' && value <= 'Z') && !(value >= 'a' && value <= 'z') &&
-			!(value >= '0' && value <= '9') && value != '+' && value != '/' && value != '=' {
+		valid := (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z') ||
+			(value >= '0' && value <= '9') || value == '+' || value == '/' || value == '='
+		if !valid {
 			return nil, ErrTextInvalidBase64
 		}
 		encoded = append(encoded, value)

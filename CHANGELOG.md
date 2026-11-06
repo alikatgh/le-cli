@@ -5,6 +5,8 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.29] - 2026-11-07
+
 ### Added
 - All 14 native text-tool equivalents under `le text`, using portable stdin/stdout:
   UUID, JSON, Unix time/date, plain text, Base64, URL encoding, counts, SHA-256,
