@@ -1,0 +1,33 @@
+--- a/client_conv.go
++++ b/client_conv.go
+@@ -3,6 +3,8 @@
+ // Licensed under the Apache License, Version 2.0 (the "License"); you may
+ // not use this file except in compliance with the License. You may obtain
+ // a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
++//
++// Modified for localhost-explorer: cap server iterations before synchronous key derivation.
+ 
+ package scram
+ 
+@@ -13,6 +15,11 @@
+ 	"fmt"
+ 	"strings"
+ )
++
++// ErrIterationLimit fails closed before PBKDF2 for excessive server work factors.
++var ErrIterationLimit = errors.New("SCRAM server iteration count exceeds 100000 safety limit")
++
++const maxServerIterations = 100000
+ 
+ type clientState int
+ 
+@@ -95,6 +102,9 @@
+ 		return "", errors.New("server nonce did not extend client nonce")
+ 	}
+ 	cc.nonce = msg.nonce
++	if msg.iters > maxServerIterations {
++		return "", ErrIterationLimit
++	}
+ 
+ 	// Check iteration count vs minimum
+ 	if msg.iters < cc.minIters {

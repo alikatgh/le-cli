@@ -97,7 +97,9 @@ literally when a folder is available.
 From source (Go 1.27.3 recommended; module minimum Go 1.26.0):
 
 ```sh
-go install github.com/alikatgh/le-cli@latest   # installs as `le-cli`; rename to `le` if you like
+git clone https://github.com/alikatgh/le-cli.git
+cd le-cli
+go build -o le .
 # or:
 git clone https://github.com/alikatgh/le-cli && cd le-cli && go build -o le .
 ```
@@ -166,6 +168,105 @@ redirects, DNS redirection, proxy settings and cookies. It applies one five-seco
 budget across detection and the request, caps aggregate response headers at
 32 KiB and eight interim responses, and does not retain response bodies.
 Self-signed HTTPS is a loopback development diagnostic, not remote TLS trust.
+
+### Datacenter evidence
+
+CLI 0.1.30 adds read-only views over your existing
+[Prometheus](https://prometheus.io/docs/prometheus/latest/querying/api/),
+[NVIDIA DCGM Exporter](https://github.com/NVIDIA/dcgm-exporter) and
+[NetBox](https://netboxlabs.com/docs/netbox/integrations/rest-api/) installations.
+These remain the sources of truth; no replacement monitoring stack or background
+agent is installed. Start with invented offline data:
+
+```sh
+le datacenter summary --demo
+le datacenter fleet --demo --json
+le datacenter gpu --demo --site demo-east
+le datacenter inventory --demo --details --json
+```
+
+Live collection requires an explicitly approved `--prometheus` and/or `--netbox`
+URL, or `LOCALHOST_PROMETHEUS_URL` / `LOCALHOST_NETBOX_URL`. Tokens are
+environment-only: `LOCALHOST_PROMETHEUS_TOKEN` and `LOCALHOST_NETBOX_TOKEN`.
+NetBox requires a read-only token restricted to approved devices. Run through
+your existing Varlock integration, for example
+`npx -y varlock@1.23.0 run --path .env.schema --inject vars --filter 'LOCALHOST_*' -- le datacenter summary --json`; the committed
+`.env.schema` contains names only. Do not place tokens in URLs, shell history,
+source files or chat.
+
+Use `--site`, `--rack` and `--host` for exact filters. Fleet reports CPU, RAM,
+root filesystem and network observations; GPU reports DCGM utilization,
+framebuffer, temperature and power. Source `up` and sample age accompany the
+values. Missing/stale observations remain explicit; zero utilization does not
+prove reclaimable capacity. Host falls back to exporter `instance` when no host
+label exists. Names do not automatically join Prometheus and NetBox identities.
+Inventory imports only approved operational context and returns aggregate counts
+unless `--details` explicitly requests device/site/rack/owner names.
+
+HTTPS is required except for literal loopback HTTP. Redirects and proxy settings
+are ignored. Each source has a 1 MiB response budget; NetBox source pagination
+stops at 512 records, before local filtering. Narrow the server-side approved
+cohort for larger inventories. The whole command has a maximum 30-second
+deadline. Summary may return partial source status with exit 1; an individual
+failed view emits no partial data. Exporter label conventions and upstream
+query/resource limits remain the operator's responsibility.
+
+### Database tools
+
+`le db query`, `le db schema` and `le db backup` support the explicit engine
+names `postgres`, `mysql`, `mariadb`, `mongodb` and `redis`. Query/schema run on
+macOS, Linux and Windows; vendor backups currently run on macOS and Linux.
+They require an explicit single `--address host:port` and `--database NAME`
+(or `LOCALHOST_DB_ADDRESS` and `LOCALHOST_DB_DATABASE`). Remote connections use
+verified TLS automatically; `--tls` or `--ca /path/to/ca.crt` also enable it for
+literal loopback. Credentials use `LOCALHOST_DB_USERNAME` and
+`LOCALHOST_DB_PASSWORD` through your existing secret loader, never argv.
+
+```sh
+le db schema postgres --demo --json
+le db query mongodb --demo
+printf 'SELECT id FROM records LIMIT 20' | le db query postgres --address 127.0.0.1:5432 --database app
+printf '{"active":true}' | le db query mongodb --address 127.0.0.1:27017 --database app --collection records --json
+printf '["GET","example"]' | le db query redis --address 127.0.0.1:6379 --database 0 --json
+```
+
+Only stdin carries a query (64 KiB UTF-8 maximum). SQL uses a single prepared
+read statement in a read-only transaction. Mongo accepts Find filters, excluding
+server scripts/aggregation/writes. Redis accepts a bounded read-command allowlist;
+there are no scripts, writes or automatic key scans. Schema returns SQL column
+metadata, Mongo collection names/types, or Redis keyspace metadata, respectively.
+Results stop at 1,000 rows / 1 MiB. Driver operations have five-second deadlines,
+and SQL metadata is limited to 256 columns. Mongo SCRAM authentication rejects
+server work factors above 100,000 iterations before key derivation.
+The maximum whole operation budget is ten seconds; reading stdin requires EOF
+and precedes that budget. There are no operation retries or host discovery.
+Use least-privilege read-only accounts: privileged SQL functions, filesystem
+access and external server side effects are **not sandboxed**. Failed/oversized
+reads produce no partial stdout. `--demo` is invented, makes no requests and
+ignores environment credentials and stdin.
+
+Backups invoke independently installed `pg_dump`, `mysqldump`, `mariadb-dump`,
+`mongodump` or `redis-cli`. They create an absolute **new** owner-private file;
+existing files are never replaced. The defaults are 64 MiB and one minute,
+with hard maxima of 256 MiB and five minutes. Failure preserves the partial file
+and reports `complete:false`; never treat it as a usable backup. A trusted
+`--binary /absolute/vendor/path` can select the utility. MySQL/MariaDB and Mongo
+require an **existing** owner-private `--credentials-file` in the vendor's
+format. The CLI validates its scope and never writes a credentials profile.
+PostgreSQL/Redis passwords use the child environment. Remote Redis backups
+require a client supporting `--tls-expected-peer-name`; older clients fail
+closed. Windows backups fail closed pending process-tree containment support.
+
+```sh
+le db backup postgres --address 127.0.0.1:5432 --database app --output /absolute/new/app.dump --json
+```
+
+Redis RDB snapshots include **all logical databases**, even when `--database`
+selects one index, and replication may trigger server BGSAVE. Backups can create
+server load and expose sensitive data; use an explicitly approved target and
+appropriate backup role. Timeouts stop the owned vendor process group on Unix,
+but cannot bound OS-uninterruptible filesystem I/O. Vendor consistency guarantees,
+permissions, utility compatibility and a separate restore test remain necessary.
 
 ### Optional Mac app companion
 
@@ -314,6 +415,18 @@ one click before you kill, that's the companion app: https://localhostexplorer.c
 
 MIT — see [LICENSE](LICENSE).
 
+Source builds use a checkout so the small, source-visible driver safety patches
+in [third_party](third_party/README.md) are included. `go install ...@version`
+cannot apply local module replacements; use Homebrew, release archives or the
+checkout build above.
+
+Dependency copyright and license texts are included in
+[THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt), also shipped in every archive.
+This includes the MySQL driver's MPL 2.0 terms; its unmodified source remains
+available at the module/version links recorded there.
+
 The optional datacenter pilot builds on this free CLI and existing monitoring
 tools; it does not change the CLI MIT license or promise a deployed fleet service.
 See [the pilot overview](https://localhostexplorer.com/datacenter) for current scope.
+The paid Mac offer remains US$99 once, pending verified App Store availability;
+datacenter pilot scope and pricing are discussed separately.

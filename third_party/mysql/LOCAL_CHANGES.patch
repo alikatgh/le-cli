@@ -1,0 +1,122 @@
+--- a/packets.go
++++ b/packets.go
+@@ -5,6 +5,8 @@
+ // This Source Code Form is subject to the terms of the Mozilla Public
+ // License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ // You can obtain one at http://mozilla.org/MPL/2.0/.
++//
++// Modified for localhost-explorer: bound server metadata before conversion or allocation.
+ 
+ package mysql
+ 
+@@ -14,6 +16,7 @@
+ 	"database/sql/driver"
+ 	"encoding/binary"
+ 	"encoding/json"
++	"errors"
+ 	"fmt"
+ 	"io"
+ 	"math"
+@@ -21,6 +24,12 @@
+ 	"strconv"
+ 	"time"
+ )
++
++// ErrMetadataLimit rejects server-announced columns or parameters beyond this
++// application's bounded read contract, before integer conversion/allocation.
++var ErrMetadataLimit = errors.New("mysql: server metadata count exceeds 256 safety limit")
++
++const maxServerMetadataCount = 256
+ 
+ // MySQL client/server protocol documentations.
+ // https://dev.mysql.com/doc/dev/mysql-server/latest/PAGE_PROTOCOL.html
+@@ -559,6 +568,9 @@
+ 	if err != nil {
+ 		return 0, false, err
+ 	}
++	if len(data) == 0 {
++		return 0, false, ErrMalformPkt
++	}
+ 
+ 	switch data[0] {
+ 	case iOK:
+@@ -574,10 +586,31 @@
+ 	// column count
+ 	// https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_query_response_text_resultset.html
+ 	// https://mariadb.com/kb/en/result-set-packets/#column-count-packet
+-	num, _, len := readLengthEncodedInteger(data)
++	needed := 1
++	switch data[0] {
++	case 0xfc:
++		needed = 3
++	case 0xfd:
++		needed = 4
++	case 0xfe:
++		needed = 9
++	}
++	if len(data) < needed {
++		return 0, false, ErrMalformPkt
++	}
++	num, isNull, consumed := readLengthEncodedInteger(data)
++	if isNull {
++		return 0, false, ErrMalformPkt
++	}
++	if num > maxServerMetadataCount {
++		return 0, false, ErrMetadataLimit
++	}
+ 
+ 	if mc.extCapabilities&clientCacheMetadata != 0 {
+-		return int(num), data[len] == 0x01, nil
++		if len(data) <= consumed || data[consumed] > 1 {
++			return 0, false, ErrMalformPkt
++		}
++		return int(num), data[consumed] == 0x01, nil
+ 	}
+ 	// ignore remaining data in the packet. see #1478.
+ 	return int(num), true, nil
+@@ -702,6 +735,12 @@
+ // Read Packets as Field Packets until EOF-Packet or an Error appears
+ // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_query_response_text_resultset_column_definition.html#sect_protocol_com_query_response_text_resultset_column_definition_41
+ func (mc *mysqlConn) readColumns(count int, old []mysqlField) ([]mysqlField, error) {
++	if count < 0 {
++		return nil, ErrMalformPkt
++	}
++	if count > maxServerMetadataCount {
++		return nil, ErrMetadataLimit
++	}
+ 	columns := make([]mysqlField, count)
+ 	if len(old) != count {
+ 		old = nil
+@@ -971,19 +1010,30 @@
+ func (stmt *mysqlStmt) readPrepareResultPacket() (uint16, error) {
+ 	data, err := stmt.mc.readPacket()
+ 	if err == nil {
++		if len(data) == 0 {
++			return 0, ErrMalformPkt
++		}
+ 		// packet indicator [1 byte]
+ 		if data[0] != iOK {
+ 			return 0, stmt.mc.handleErrorPacket(data)
+ 		}
++		if len(data) < 12 {
++			return 0, ErrMalformPkt
++		}
+ 
+ 		// statement id [4 bytes]
+-		stmt.id = binary.LittleEndian.Uint32(data[1:5])
++		statementID := binary.LittleEndian.Uint32(data[1:5])
+ 
+ 		// Column count [16 bit uint]
+ 		columnCount := binary.LittleEndian.Uint16(data[5:7])
+ 
+ 		// Param count [16 bit uint]
+-		stmt.paramCount = int(binary.LittleEndian.Uint16(data[7:9]))
++		parameterCount := binary.LittleEndian.Uint16(data[7:9])
++		if columnCount > maxServerMetadataCount || parameterCount > maxServerMetadataCount {
++			return 0, ErrMetadataLimit
++		}
++		stmt.id = statementID
++		stmt.paramCount = int(parameterCount)
+ 
+ 		// Reserved [8 bit]
+ 
