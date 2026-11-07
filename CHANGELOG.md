@@ -5,7 +5,18 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.31] - 2026-11-07
+
+### Fixed
+- Preserve timeout identity when a database socket deadline fires before the
+  context timer publishes cancellation. Elapsed context/socket deadlines map to
+  exit 124 rather than a generic failure.
+- Includes the datacenter/database commands described below. No 0.1.30 binaries
+  were published: its macOS release gate caught this deadline-classification race.
+
 ## [0.1.30] - 2026-11-07
+
+Source-only tag; no binaries were published. These additions first ship in 0.1.31.
 
 ### Added
 - `le datacenter summary|fleet|gpu|inventory`: bounded, read-only Prometheus/DCGM
@@ -606,7 +617,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.30...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.31...HEAD
+[0.1.31]: https://github.com/alikatgh/le-cli/compare/v0.1.30...v0.1.31
 [0.1.30]: https://github.com/alikatgh/le-cli/compare/v0.1.29...v0.1.30
 [0.1.29]: https://github.com/alikatgh/le-cli/compare/v0.1.28...v0.1.29
 [0.1.28]: https://github.com/alikatgh/le-cli/compare/v0.1.27...v0.1.28

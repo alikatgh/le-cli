@@ -6,7 +6,7 @@ https://proxy.golang.org/<module>/@v/<version>.zip (uppercase paths use Go modul
 Local source-visible modifications: MySQL packets.go metadata-allocation guards
 and xdg SCRAM client_conv.go iteration guards. Their covered source, patches and
 modification notices are available in this release's source under third_party:
-https://github.com/alikatgh/le-cli/tree/v0.1.30/third_party
+https://github.com/alikatgh/le-cli/tree/v0.1.31/third_party
 The MySQL covered source retains MPL-2.0; SCRAM retains Apache-2.0. Other dependency
 source is unmodified. Go standard-library license: https://go.dev/LICENSE
 
