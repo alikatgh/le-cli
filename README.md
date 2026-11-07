@@ -171,7 +171,7 @@ Self-signed HTTPS is a loopback development diagnostic, not remote TLS trust.
 
 ### Datacenter evidence
 
-CLI 0.1.30 adds read-only views over your existing
+CLI 0.1.31 adds read-only views over your existing
 [Prometheus](https://prometheus.io/docs/prometheus/latest/querying/api/),
 [NVIDIA DCGM Exporter](https://github.com/NVIDIA/dcgm-exporter) and
 [NetBox](https://netboxlabs.com/docs/netbox/integrations/rest-api/) installations.

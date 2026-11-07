@@ -36,6 +36,8 @@ jobs:
           cache: false
       - name: Test
         run: go test -race ./...
+      - name: Repeated database deadline regressions
+        run: go test -race ./datacenter/database -run 'Test(DatabaseDeadlineClassification|RedisRESP2ReadAndBoundedCancellation)' -count=50
       - name: Patched driver safety regressions
         run: |
           (cd third_party/mysql && go test -race ./...)

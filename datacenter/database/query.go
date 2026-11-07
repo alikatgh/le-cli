@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"regexp"
 	"time"
 	"unicode/utf8"
@@ -120,6 +121,16 @@ func safeError(ctx context.Context, err error) error {
 	}
 	if ctx.Err() != nil {
 		return ctx.Err()
+	}
+	// Socket deadlines can fire before the context timer goroutine publishes
+	// Err(). Preserve timeout identity instead of turning this race into a
+	// generic query failure (and the wrong script-facing exit code).
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return context.DeadlineExceeded
+	}
+	var timeout net.Error
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		return context.DeadlineExceeded
 	}
 	if errors.Is(err, context.Canceled) {
 		return context.Canceled
