@@ -5,6 +5,29 @@ All notable changes to `le` are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.30] - 2026-11-07
+
+### Added
+- `le datacenter summary|fleet|gpu|inventory`: bounded, read-only Prometheus/DCGM
+  and NetBox evidence, exact cohort filters, source freshness, aggregate inventory
+  by default, explicit detail opt-in, offline demo and table/JSON output.
+- `le db query|schema|backup` for PostgreSQL, MySQL/MariaDB, MongoDB and Redis.
+  Query/schema use maintained native Go drivers, explicit endpoints, verified
+  remote TLS, guarded reads, private environment credentials and row/byte/time caps.
+- Unix vendor-format backups create only new private files, preserve partial
+  output on failure and bound subprocess output/time. Redis snapshots explicitly
+  cover every logical database. Windows backup is unavailable pending containment.
+- Environment-name-only Varlock schema and updated command manuals. Existing
+  localhost workflows, 14 text tools and the free MIT CLI remain available.
+- Source-visible MySQL metadata and Mongo SCRAM safety patches bound work before
+  allocation/key derivation; dependency notices are shipped in every archive.
+  Source builds now require a checkout instead of `go install ...@version`.
+
+### Limits
+- No production datacenter or customer database validation is claimed. Vendor
+  utility compatibility, privileges, restore consistency and upstream query
+  limits need operator verification. Privileged SQL functions are not sandboxed.
+
 ## [0.1.29] - 2026-11-07
 
 ### Added
@@ -583,7 +606,8 @@ smart stop (`le stop <port|pid>` — TERM, `brew services stop`, or
 `docker stop`, whichever fits), plus `le hold` / `le wait` / `le ready`
 for scripting against a port's lifecycle. macOS and Linux.
 
-[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.29...HEAD
+[Unreleased]: https://github.com/alikatgh/le-cli/compare/v0.1.30...HEAD
+[0.1.30]: https://github.com/alikatgh/le-cli/compare/v0.1.29...v0.1.30
 [0.1.29]: https://github.com/alikatgh/le-cli/compare/v0.1.28...v0.1.29
 [0.1.28]: https://github.com/alikatgh/le-cli/compare/v0.1.27...v0.1.28
 [0.1.27]: https://github.com/alikatgh/le-cli/compare/v0.1.25...v0.1.27

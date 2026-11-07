@@ -32,7 +32,7 @@ class ReleaseSnapshotTests(unittest.TestCase):
         self.source = self.root / "source"
         self.source.mkdir()
         (self.source / "man").mkdir()
-        self.documents = {"LICENSE": b"MIT license fixture\n", "README.md": b"# Install fixture\n"}
+        self.documents = {"LICENSE": b"MIT license fixture\n", "README.md": b"# Install fixture\n", "THIRD_PARTY_NOTICES.txt": b"Third-party license fixture\n"}
         for name, data in self.documents.items():
             (self.source / name).write_bytes(data)
         (self.source / "man/le.1").write_bytes(b".TH LE 1\n")

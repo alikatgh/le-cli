@@ -34,6 +34,7 @@ archives:
     files:
       - LICENSE
       - README.md
+      - THIRD_PARTY_NOTICES.txt
       - man/*.1
 
 checksum:
@@ -65,11 +66,12 @@ brews:
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
     directory: Formula
     homepage: https://localhostexplorer.com
-    description: See and stop what's listening on localhost, from the terminal
+    description: Localhost, datacenter and database inspection from the terminal
     license: MIT
     commit_msg_template: "le {{ .Version }}"
     install: |
       bin.install "le"
+      pkgshare.install "THIRD_PARTY_NOTICES.txt"
       man1.install Dir["man/*.1"]
       # Cobra ships `le completion <shell>`; generate + install so `le <tab>`
       # works out of the box. Runs the just-installed binary at install time,

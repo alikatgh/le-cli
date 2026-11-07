@@ -27,6 +27,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  database:
+    if: github.event.repository.private == false
+    timeout-minutes: 20
+    # MongoDB 8.0 rejects the 7.0.0 Azure kernel in current 24.04/26.04
+    # images. 22.04 currently provides compatible 6.8. Revisit this pin when
+    # hosted kernels reach Mongo's supported 7.0.14+/7.1+ range, before 22.04
+    # runner retirement. Never bypass Mongo's startup/kernel safety guard.
+    # https://github.com/docker-library/mongo/issues/765
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Build portable CLI for isolated engine fixtures
+        env:
+          CGO_ENABLED: '0'
+        run: go build -trimpath -o "$RUNNER_TEMP/le-database-fixture" .
+      - name: Fixture harness self-check
+        run: python3 .github/scripts/database-integration.py --self-test
+      - name: Real database and vendor backup journeys
+        timeout-minutes: 15
+        run: python3 .github/scripts/database-integration.py "$RUNNER_TEMP/le-database-fixture"
+
   test:
     if: github.event.repository.private == false
     timeout-minutes: 20
@@ -116,6 +141,11 @@ jobs:
 
       - name: test
         run: go test -race ./...
+
+      - name: Patched driver safety regressions
+        run: |
+          (cd third_party/mysql && go test -race ./...)
+          (cd third_party/scram && go test -race ./...)
 
       # The committed man/ pages are what ship inside the release tarball and
       # what brew installs, but regenerating them was a manual "run gendocs and

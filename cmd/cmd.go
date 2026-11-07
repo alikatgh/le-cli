@@ -103,6 +103,8 @@ func newRoot(version string, allPlatforms bool) *cobra.Command {
 	group(root, "ports", "Hold, wait on, or forward a port (for scripts):",
 		holdCmd(), waitCmd(), readyCmd(), openCmd(), forwardCmd())
 	group(root, "text", "Portable developer text tools:", textCmd())
+	group(root, "datacenter", "Read infrastructure evidence:", datacenterCmd())
+	group(root, "database", "Database inspection and bounded vendor backups:", databaseCmd())
 	if allPlatforms || runtime.GOOS == "darwin" {
 		group(root, "companion", "Optional Mac app connection:", companionCmd(version))
 		group(root, "macos", "macOS housekeeping:",

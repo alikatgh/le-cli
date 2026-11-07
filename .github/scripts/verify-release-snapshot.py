@@ -178,7 +178,7 @@ def verify_archive(path, binary, man_pages, documents):
 
 def verify_snapshot(dist, source):
     documents = {}
-    for name in ("LICENSE", "README.md"):
+    for name in ("LICENSE", "README.md", "THIRD_PARTY_NOTICES.txt"):
         path = source / name
         require(path.is_file() and not path.is_symlink(), "source document unavailable: " + name)
         documents[name] = path.read_bytes()
