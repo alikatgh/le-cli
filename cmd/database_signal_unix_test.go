@@ -35,7 +35,7 @@ func TestDatabaseInterruptRetiresBackupProcessGroup(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	// #nosec G204 -- Spawn only this test executable with a fixed fixture selector.
+	// #nosec G204 G702 -- Spawn only this test executable with a fixed fixture selector.
 	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestDatabaseSignalHelper$")
 	child.Env = []string{"PATH=/usr/bin:/bin", "GORACE=atexit_sleep_ms=0", "LE_DB_SIGNAL_HELPER=yes", "LE_DB_SIGNAL_BINARY=" + vendor, "LE_DB_SIGNAL_OUTPUT=" + output}
 	if err := child.Start(); err != nil {

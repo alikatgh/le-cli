@@ -30,7 +30,12 @@ jobs:
   database:
     if: github.event.repository.private == false
     timeout-minutes: 20
-    runs-on: ubuntu-latest
+    # MongoDB 8.0 rejects the 7.0.0 Azure kernel in current 24.04/26.04
+    # images. 22.04 currently provides compatible 6.8. Revisit this pin when
+    # hosted kernels reach Mongo's supported 7.0.14+/7.1+ range, before 22.04
+    # runner retirement. Never bypass Mongo's startup/kernel safety guard.
+    # https://github.com/docker-library/mongo/issues/765
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v6

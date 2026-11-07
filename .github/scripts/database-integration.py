@@ -232,7 +232,11 @@ class Engine:
             time.sleep(min(0.5, max(0, self.deadline - time.monotonic())))
         # Only fixed classifications are emitted; raw output can contain
         # credentials, database data or complete command lines.
-        raise Failure("readiness exhausted ("+last_reason+")")
+        state=self.run([self.docker,"inspect","--format","{{.State.ExitCode}} {{.State.OOMKilled}}",self.container],"read owned fixture termination state",seconds=5,success=False)
+        termination="unknown"
+        if re.fullmatch(rb"-?\d{1,4} (true|false)\s*",state.stdout):
+            termination=state.stdout.decode("ascii").strip()
+        raise Failure("readiness exhausted ("+last_reason+"; exit/oom="+termination+")")
 
     def sql(self, query: str, *, database: str | None = None,
             readiness: bool = False, data: bytes | None = None) -> subprocess.CompletedProcess:
