@@ -42,6 +42,7 @@ VALUE = "owned-fixture-value"
 ENGINE_SECONDS = 300
 MAX_DUMP = 1 << 20
 DIAGNOSTIC_LIMIT = 2 << 20
+MONGO_SCRIPT_COMMAND = 'umask 077; cat > /tmp/le-fixture-script.js && exec mongosh --quiet --norc --host 127.0.0.1 --port "$1" --file /tmp/le-fixture-script.js'
 
 
 class Failure(Exception):
@@ -212,6 +213,7 @@ class Engine:
 
     def ready(self) -> None:
         # Finite readiness polls are setup checks, not retries of failed tests.
+        last_reason="unknown"
         for _ in range(60):
             if self.engine == "postgres":
                 result = self.execute(["pg_isready", "-h", "127.0.0.1", "-p", str(self.internal_port), "-U", "postgres"], "readiness", success=False, seconds=5)
@@ -223,8 +225,14 @@ class Engine:
                 result = self.execute(["redis-cli", "-h", "127.0.0.1", "-p", str(self.internal_port), "PING"], "readiness", environment={"REDISCLI_AUTH": self.root_password}, success=False, seconds=5)
             if result.returncode == 0 and (self.engine != "redis" or b"PONG" in result.stdout):
                 return
+            text=(result.stdout+result.stderr).lower()
+            last_reason="client-failed"
+            for needle,label in [(b"enxio","stdin-device"),(b"enoent","missing-path"),(b"econnrefused","connection-refused"),(b"authentication failed","authentication"),(b"not running","container-stopped"),(b"not found","client-unavailable"),(b"unknown option","client-option")]:
+                if needle in text:last_reason=label;break
             time.sleep(min(0.5, max(0, self.deadline - time.monotonic())))
-        raise Failure("readiness exhausted")
+        # Only fixed classifications are emitted; raw output can contain
+        # credentials, database data or complete command lines.
+        raise Failure("readiness exhausted ("+last_reason+")")
 
     def sql(self, query: str, *, database: str | None = None,
             readiness: bool = False, data: bytes | None = None) -> subprocess.CompletedProcess:
@@ -242,7 +250,10 @@ class Engine:
 
     def mongo(self, code: str, *, readiness: bool = False) -> subprocess.CompletedProcess:
         prelude = 'db.getSiblingDB("admin").auth("root", process.env.LE_FIXTURE_ROOT_PASSWORD);'
-        return self.execute(["mongosh", "--quiet", "--norc", "--host", "127.0.0.1", "--port", str(self.internal_port), "--file", "/dev/stdin"],
+        # Docker exec stdin may be a socket, which cannot be opened as a file.
+        # Stage only synthetic fixture code in a private container-owned file.
+        # Using mongosh's script loader preserves its async command handling.
+        return self.execute(["sh","-c",MONGO_SCRIPT_COMMAND,"owned-fixture",str(self.internal_port)],
                             "Mongo readiness" if readiness else "fixture Mongo operation",
                             input=(prelude + code).encode(),
                             environment={"LE_FIXTURE_ROOT_PASSWORD": self.root_password, "MONGOSH_DISABLE_TELEMETRY": "1"},
@@ -456,7 +467,8 @@ class OfflineChecks(unittest.TestCase):
             with mock.patch.object(fixture, "execute") as execute:
                 fixture.seed()
                 command = execute.call_args.args[0]
-                self.assertTrue("--file" in command and "/dev/stdin" in command)
+                self.assertEqual(command[:3],["sh","-c",MONGO_SCRIPT_COMMAND])
+                self.assertEqual(command[-1],str(fixture.internal_port))
                 self.assertTrue(fixture.reader_password not in " ".join(command))
                 self.assertTrue(fixture.root_password not in " ".join(command))
                 self.assertTrue(fixture.reader_password.encode() in execute.call_args.kwargs["input"])

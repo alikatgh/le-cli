@@ -204,7 +204,8 @@ Inventory imports only approved operational context and returns aggregate counts
 unless `--details` explicitly requests device/site/rack/owner names.
 
 HTTPS is required except for literal loopback HTTP. Redirects and proxy settings
-are ignored. Each source has a 1 MiB response budget; NetBox source pagination
+are ignored. Each view has a 1 MiB response budget; a summary collects up to
+three views. NetBox source pagination
 stops at 512 records, before local filtering. Narrow the server-side approved
 cohort for larger inventories. The whole command has a maximum 30-second
 deadline. Summary may return partial source status with exit 1; an individual

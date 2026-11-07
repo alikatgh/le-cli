@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 	"unicode"
@@ -99,7 +101,9 @@ func runDatabase(cmd *cobra.Command, action, engine string, o *databaseOptions) 
 			return usage(database.ErrLimit)
 		}
 	}
-	ctx, cancel := context.WithTimeout(cmd.Context(), o.timeout)
+	signalCtx, stopSignals := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	ctx, cancel := context.WithTimeout(signalCtx, o.timeout)
 	defer cancel()
 	if action == "backup" {
 		data, err := database.Backup(ctx, c, database.BackupOptions{Destination: o.output, Binary: o.binary, CredentialsFile: o.credentials, MaxBytes: o.maxBytes, Timeout: o.timeout})
